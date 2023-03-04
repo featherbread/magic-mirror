@@ -8,12 +8,33 @@ type MirrorSpec struct {
 	Platforms     []string
 }
 
-type BlobCopyKey struct {
-	FromRepository string
-	ToRepository   string
+type Repository struct {
+	Registry   string
+	Repository string
 }
 
-type BlobCopyStatus struct {
-	BlobCopyKey
+type Digest string
+
+type BlobMirrorRequest struct {
+	Digest      Digest
+	Destination Repository
+}
+
+type BlobMirrorStatus struct {
+	BlobMirrorRequest
 	Done chan struct{}
+}
+
+type BlobController struct {
+	BlobSources map[Digest][]Repository
+
+	CheckQueue []BlobMirrorRequest
+	MountQueue []BlobMirrorRequest
+
+	CopyStatuses map[BlobMirrorRequest]BlobMirrorStatus
+	CopyQueue    []BlobMirrorRequest
+}
+
+type ManifestMirrorRequest struct {
+	BlobStatuses []*BlobMirrorStatus
 }
