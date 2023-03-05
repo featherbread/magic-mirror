@@ -12,7 +12,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
-	"go.alexhamlin.co/magic-mirror/internal/registry"
+	"go.alexhamlin.co/magic-mirror/internal/image/registry"
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
