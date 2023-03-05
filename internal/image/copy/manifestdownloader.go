@@ -35,7 +35,7 @@ func (d *manifestDownloader) Get(img image.Image) (manifest, error) {
 }
 
 func (d *manifestDownloader) handleRequest(img image.Image) (resp manifest, err error) {
-	reference := img.Digest
+	reference := string(img.Digest)
 	if reference == "" {
 		reference = img.Tag
 	}

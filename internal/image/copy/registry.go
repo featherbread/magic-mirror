@@ -25,7 +25,7 @@ func uploadManifest(img image.Image, contentType string, body json.RawMessage) e
 		return err
 	}
 
-	reference := img.Digest
+	reference := string(img.Digest)
 	if reference == "" {
 		reference = img.Tag
 	}

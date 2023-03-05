@@ -77,7 +77,7 @@ func (c *Copier) handleRequest(req Request) error {
 	} else {
 		imgs := make([]image.Image, len(manifest.Manifests))
 		for i, m := range manifest.Manifests {
-			imgs[i] = image.Image{Repository: req.From.Repository, Digest: string(m.Digest)}
+			imgs[i] = image.Image{Repository: req.From.Repository, Digest: m.Digest}
 		}
 		err = c.platforms.CopyAll(req.To.Repository, imgs...)
 	}

@@ -22,7 +22,7 @@ func (r Repository) String() string {
 type Image struct {
 	Repository
 	Tag    string
-	Digest string
+	Digest Digest
 }
 
 const defaultRegistry = "docker.io"
@@ -39,7 +39,7 @@ func Parse(s string) (Image, error) {
 		registry  = m[1]
 		namespace = m[2]
 		tag       = m[3]
-		digest    = m[4]
+		digest    = Digest(m[4])
 	)
 	if registry == "" {
 		registry = defaultRegistry
@@ -67,7 +67,7 @@ func (i Image) String() string {
 		s += ":" + i.Tag
 	}
 	if i.Digest != "" {
-		s += "@" + i.Digest
+		s += "@" + string(i.Digest)
 	}
 	return s
 }
