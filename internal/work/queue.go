@@ -1,6 +1,9 @@
 package work
 
-import "sync"
+import (
+	"errors"
+	"sync"
+)
 
 // NoValue is the canonical empty value type for a queue.
 type NoValue = struct{}
@@ -69,7 +72,7 @@ func (q *Queue[K, T]) GetOrSubmit(key K) *Task[T] {
 // keys not previously submitted, the new tasks will be scheduled for execution
 // after all existing tasks in the queue, in the order of their corresponding
 // keys, without interleaving tasks from any other call to GetOrSubmit[All].
-func (q *Queue[K, T]) GetOrSubmitAll(keys ...K) []*Task[T] {
+func (q *Queue[K, T]) GetOrSubmitAll(keys ...K) TaskList[T] {
 	tasks, newKeys := q.getOrCreateTasks(keys...)
 	if len(newKeys) > 0 {
 		q.scheduleNewKeys(newKeys)
@@ -89,8 +92,8 @@ func (q *Queue[K, T]) CloseSubmit() {
 	}
 }
 
-func (q *Queue[K, T]) getOrCreateTasks(keys ...K) (tasks []*Task[T], newKeys []K) {
-	tasks = make([]*Task[T], len(keys))
+func (q *Queue[K, T]) getOrCreateTasks(keys ...K) (tasks TaskList[T], newKeys []K) {
+	tasks = make(TaskList[T], len(keys))
 	newKeys = make([]K, 0, len(keys))
 
 	q.tasksMu.Lock()
@@ -185,13 +188,33 @@ func (q *Queue[K, T]) tryPop() (key K, ok bool) {
 	return
 }
 
+// Task represents the eventual result of a queued work item, which may produce
+// both a value and an error.
 type Task[T any] struct {
 	done  chan struct{}
 	value T
 	err   error
 }
 
+// Wait blocks until the task has completed, then returns its value and error.
 func (t *Task[T]) Wait() (T, error) {
 	<-t.done
 	return t.value, t.err
+}
+
+// TaskList represents a list of tasks.
+type TaskList[T any] []*Task[T]
+
+// WaitAll blocks until all of the tasks in the list have completed, then
+// returns their associated values. The returned error is the concatenation of
+// the errors from all tasks, following the semantics of [errors.Join]. To
+// associate errors with specific tasks, call Wait directly on each task in the
+// list.
+func (ts TaskList[T]) WaitAll() ([]T, error) {
+	values := make([]T, len(ts))
+	errs := make([]error, len(ts))
+	for i, task := range ts {
+		values[i], errs[i] = task.Wait()
+	}
+	return values, errors.Join(errs...)
 }
