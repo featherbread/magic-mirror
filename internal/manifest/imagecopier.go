@@ -48,7 +48,7 @@ func (c *ImageCopier) Close() {
 func (c *ImageCopier) handleRequest(req ImageRequest) error {
 	log.Printf("[image]\tstarting copy from %s to %s", req.From, req.To)
 
-	manifestResponse, err := c.manifestDownloader.RequestDownload(req.From.Repository, req.From.Tag).Wait()
+	manifestResponse, err := c.manifestDownloader.RequestDownload(req.From).Wait()
 	if err != nil {
 		return err
 	}
@@ -68,10 +68,11 @@ func (c *ImageCopier) handleRequest(req ImageRequest) error {
 	var tasks []PlatformCopyTask
 	if len(manifest.Manifests) > 0 {
 		for _, m := range manifest.Manifests {
-			tasks = append(tasks, c.platformCopier.RequestCopy(string(m.Digest), req.From.Repository, req.To.Repository))
+			img := image.Image{Repository: req.From.Repository, Digest: string(m.Digest)}
+			tasks = append(tasks, c.platformCopier.RequestCopy(img, req.To.Repository))
 		}
 	} else {
-		tasks = []PlatformCopyTask{c.platformCopier.RequestCopy(req.From.Tag, req.From.Repository, req.To.Repository)}
+		tasks = []PlatformCopyTask{c.platformCopier.RequestCopy(req.From, req.To.Repository)}
 	}
 	var taskErr error
 	for _, task := range tasks {
@@ -84,7 +85,7 @@ func (c *ImageCopier) handleRequest(req ImageRequest) error {
 	}
 
 	if len(manifest.Manifests) > 0 {
-		if err := uploadManifest(req.To.Repository, req.From.Tag, manifestResponse.ContentType, manifestResponse.Body); err != nil {
+		if err := uploadManifest(req.To, manifestResponse.ContentType, manifestResponse.Body); err != nil {
 			return err
 		}
 	}

@@ -11,6 +11,13 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/manifest"
 )
 
+func must[T any](x T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return x
+}
+
 func main() {
 	blobCopier := blob.NewCopier(10)
 	defer blobCopier.Close()
@@ -26,119 +33,39 @@ func main() {
 
 	var tasks []manifest.ImageCopyTask
 
-	hypcastImage := image.Image{
-		Repository: image.Repository{
-			Registry:  "ghcr.io",
-			Namespace: "ahamlinman/hypcast",
-		},
-		Tag: "latest",
-	}
-
 	tasks = append(tasks, imageCopier.RequestCopy(
-		hypcastImage,
-		image.Image{
-			Repository: image.Repository{
-				Registry:  "localhost:5000",
-				Namespace: "imported/hypcast",
-			},
-			Tag: "latest",
-		},
+		must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
+		must(image.Parse("localhost:5000/imported/hypcast:latest")),
 	))
 
 	tasks = append(tasks, imageCopier.RequestCopy(
-		image.Image{
-			Repository: image.Repository{
-				Registry:  "ghcr.io",
-				Namespace: "dexidp/dex",
-			},
-			Tag: "v2.35.3",
-		},
-		image.Image{
-			Repository: image.Repository{
-				Registry:  "localhost:5000",
-				Namespace: "imported/dex",
-			},
-			Tag: "v2.35.3",
-		},
+		must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
+		must(image.Parse("localhost:5000/alsoimported/hypcast:latest")),
 	))
 
 	tasks = append(tasks, imageCopier.RequestCopy(
-		hypcastImage,
-		image.Image{
-			Repository: image.Repository{
-				Registry:  "localhost:5000",
-				Namespace: "alsoimported/hypcast",
-			},
-			Tag: "latest",
-		},
+		must(image.Parse("ghcr.io/dexidp/dex:v2.35.3")),
+		must(image.Parse("localhost:5000/imported/dex:v2.35.3")),
 	))
 
 	// tasks = append(tasks, imageCopier.RequestCopy(
-	// 	image.Image{
-	// 		Repository: image.Repository{
-	// 			Registry:  "index.docker.io",
-	// 			Namespace: "minio/minio",
-	// 		},
-	// 		Tag: "RELEASE.2023-02-22T18-23-45Z",
-	// 	},
-	// 	image.Image{
-	// 		Repository: image.Repository{
-	// 			Registry:  "localhost:5000",
-	// 			Namespace: "imported/minio",
-	// 		},
-	// 		Tag: "RELEASE.2023-02-22T18-23-45Z",
-	// 	},
+	// 	must(image.Parse("alpine:3.17")),
+	// 	must(image.Parse("localhost:5000/imported/alpine:3.17")),
 	// ))
 
 	// tasks = append(tasks, imageCopier.RequestCopy(
-	// 	image.Image{
-	// 		Repository: image.Repository{
-	// 			Registry:  "index.docker.io",
-	// 			Namespace: "minio/minio",
-	// 		},
-	// 		Tag: "RELEASE.2023-02-27T18-10-45Z",
-	// 	},
-	// 	image.Image{
-	// 		Repository: image.Repository{
-	// 			Registry:  "localhost:5000",
-	// 			Namespace: "imported/minio",
-	// 		},
-	// 		Tag: "RELEASE.2023-02-27T18-10-45Z",
-	// 	},
+	// 	must(image.Parse("minio/minio:RELEASE.2023-02-22T18-23-45Z")),
+	// 	must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-22T18-23-45Z")),
 	// ))
 
 	// tasks = append(tasks, imageCopier.RequestCopy(
-	// 	image.Image{
-	// 		Repository: image.Repository{
-	// 			Registry:  "index.docker.io",
-	// 			Namespace: "minio/minio",
-	// 		},
-	// 		Tag: "RELEASE.2023-02-27T18-10-45Z.fips",
-	// 	},
-	// 	image.Image{
-	// 		Repository: image.Repository{
-	// 			Registry:  "localhost:5000",
-	// 			Namespace: "imported/minio",
-	// 		},
-	// 		Tag: "RELEASE.2023-02-27T18-10-45Z.fips",
-	// 	},
+	// 	must(image.Parse("minio/minio:RELEASE.2023-02-27T18-10-45Z")),
+	// 	must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-27T18-10-45Z")),
 	// ))
 
 	// tasks = append(tasks, imageCopier.RequestCopy(
-	// 	image.Image{
-	// 		Repository: image.Repository{
-	// 			Registry:  "index.docker.io",
-	// 			Namespace: "library/alpine",
-	// 		},
-	// 		Tag: "3.17",
-	// 	},
-	// 	image.Image{
-	// 		Repository: image.Repository{
-	// 			Registry:  "localhost:5000",
-	// 			Namespace: "imported/alpine",
-	// 		},
-	// 		Tag: "3.17",
-	// 	},
+	// 	must(image.Parse("minio/minio:RELEASE.2023-02-27T18-10-45Z.fips")),
+	// 	must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-27T18-10-45Z.fips")),
 	// ))
 
 	var hadError atomic.Bool

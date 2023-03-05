@@ -19,14 +19,19 @@ var supportedManifestMediaTypes = []string{
 	"application/vnd.docker.distribution.manifest.v2+json",
 }
 
-func uploadManifest(repo image.Repository, reference string, contentType string, body json.RawMessage) error {
-	client, err := registry.GetClient(repo.Registry, registry.PushScope)
+func uploadManifest(img image.Image, contentType string, body json.RawMessage) error {
+	client, err := registry.GetClient(img.Registry, registry.PushScope)
 	if err != nil {
 		return err
 	}
 
-	u := registry.GetBaseURL(repo.Registry)
-	u.Path = fmt.Sprintf("/v2/%s/manifests/%s", repo.Namespace, reference)
+	reference := img.Digest
+	if reference == "" {
+		reference = img.Tag
+	}
+
+	u := registry.GetBaseURL(img.Registry)
+	u.Path = fmt.Sprintf("/v2/%s/manifests/%s", img.Namespace, reference)
 	req, err := http.NewRequest(http.MethodPut, u.String(), bytes.NewReader(body))
 	if err != nil {
 		return err

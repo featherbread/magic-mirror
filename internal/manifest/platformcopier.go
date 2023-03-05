@@ -16,9 +16,8 @@ type PlatformCopier struct {
 }
 
 type PlatformRequest struct {
-	Reference string
-	From      image.Repository
-	To        image.Repository
+	From image.Image
+	To   image.Repository
 }
 
 func NewPlatformCopier(workers int, manifestDownloader *Downloader, blobCopier *blob.Copier) *PlatformCopier {
@@ -30,11 +29,10 @@ func NewPlatformCopier(workers int, manifestDownloader *Downloader, blobCopier *
 	return c
 }
 
-func (c *PlatformCopier) RequestCopy(reference string, from, to image.Repository) PlatformCopyTask {
+func (c *PlatformCopier) RequestCopy(from image.Image, to image.Repository) PlatformCopyTask {
 	return PlatformCopyTask{c.engine.GetOrSubmit(PlatformRequest{
-		Reference: reference,
-		From:      from,
-		To:        to,
+		From: from,
+		To:   to,
 	})}
 }
 
@@ -52,7 +50,7 @@ func (c *PlatformCopier) Close() {
 }
 
 func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
-	manifestResponse, err := c.manifestDownloader.RequestDownload(req.From, req.Reference).Wait()
+	manifestResponse, err := c.manifestDownloader.RequestDownload(req.From).Wait()
 	if err != nil {
 		return err
 	}
@@ -71,9 +69,9 @@ func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
 
 	tasks := make([]blob.CopyTask, len(manifest.Layers)+1)
 	for i, layer := range manifest.Layers {
-		tasks[i] = c.blobCopier.RequestCopy(layer.Digest, req.From, req.To)
+		tasks[i] = c.blobCopier.RequestCopy(layer.Digest, req.From.Repository, req.To)
 	}
-	tasks[len(tasks)-1] = c.blobCopier.RequestCopy(manifest.Config.Digest, req.From, req.To)
+	tasks[len(tasks)-1] = c.blobCopier.RequestCopy(manifest.Config.Digest, req.From.Repository, req.To)
 
 	var taskErr error
 	for _, task := range tasks {
@@ -85,11 +83,12 @@ func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
 		return taskErr
 	}
 
-	err = uploadManifest(req.To, req.Reference, manifestResponse.ContentType, manifestResponse.Body)
+	destImg := image.Image{Repository: req.To, Tag: req.From.Tag, Digest: req.From.Digest}
+	err = uploadManifest(destImg, manifestResponse.ContentType, manifestResponse.Body)
 	if err != nil {
 		return err
 	}
 
-	log.Printf("[platform]\tcopied %s to %s", req.Reference, req.To)
+	log.Printf("[platform]\tcopied %s to %s", req.From, destImg)
 	return nil
 }

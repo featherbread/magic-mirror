@@ -16,7 +16,7 @@ import (
 )
 
 type Downloader struct {
-	engine *engine.Engine[DownloadRequest, DownloadResponse]
+	engine *engine.Engine[image.Image, DownloadResponse]
 }
 
 type DownloadRequest struct {
@@ -35,11 +35,8 @@ func NewDownloader(workers int) *Downloader {
 	return d
 }
 
-func (d *Downloader) RequestDownload(repo image.Repository, reference string) DownloadTask {
-	return DownloadTask{d.engine.GetOrSubmit(DownloadRequest{
-		From:      repo,
-		Reference: reference,
-	})}
+func (d *Downloader) RequestDownload(img image.Image) DownloadTask {
+	return DownloadTask{d.engine.GetOrSubmit(img)}
 }
 
 type DownloadTask struct {
@@ -50,16 +47,21 @@ func (d *Downloader) Close() {
 	d.engine.Close()
 }
 
-func (d *Downloader) handleRequest(req DownloadRequest) (resp DownloadResponse, err error) {
-	log.Printf("[manifest]\tdownloading %s for %s", req.Reference, req.From)
+func (d *Downloader) handleRequest(img image.Image) (resp DownloadResponse, err error) {
+	reference := img.Digest
+	if reference == "" {
+		reference = img.Tag
+	}
 
-	client, err := registry.GetClient(req.From.Registry, registry.PullScope)
+	log.Printf("[manifest]\tdownloading %s", img)
+
+	client, err := registry.GetClient(img.Registry, registry.PullScope)
 	if err != nil {
 		return
 	}
 
-	u := registry.GetBaseURL(req.From.Registry)
-	u.Path = fmt.Sprintf("/v2/%s/manifests/%s", req.From.Namespace, req.Reference)
+	u := registry.GetBaseURL(img.Registry)
+	u.Path = fmt.Sprintf("/v2/%s/manifests/%s", img.Namespace, reference)
 	downloadReq, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
 		return
