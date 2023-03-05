@@ -31,7 +31,7 @@ func main() {
 	imageCopier := manifest.NewImageCopier(0, manifestDownloader, platformCopier)
 	defer imageCopier.Close()
 
-	tasks := imageCopier.RequestCopyAll(
+	tasks := imageCopier.SubmitAll(
 		manifest.ImageRequest{
 			From: must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
 			To:   must(image.Parse("localhost:5000/imported/hypcast:latest")),

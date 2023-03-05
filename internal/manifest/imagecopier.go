@@ -28,11 +28,7 @@ func NewImageCopier(workers int, manifestDownloader *Downloader, platformCopier 
 	return c
 }
 
-func (c *ImageCopier) RequestCopy(from, to image.Image) ImageCopyTask {
-	return ImageCopyTask{c.engine.GetOrSubmit(ImageRequest{From: from, To: to})}
-}
-
-func (c *ImageCopier) RequestCopyAll(reqs ...ImageRequest) []ImageCopyTask {
+func (c *ImageCopier) SubmitAll(reqs ...ImageRequest) []ImageCopyTask {
 	tasks := make([]ImageCopyTask, len(reqs))
 	for i, task := range c.engine.GetOrSubmitAll(reqs...) {
 		tasks[i] = ImageCopyTask{task}

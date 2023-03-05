@@ -69,23 +69,21 @@ func (e *Engine[K, T]) GetOrSubmit(key K) *Task[T] {
 
 func (e *Engine[K, T]) GetOrSubmitAll(keys ...K) []*Task[T] {
 	tasks, newKeys := e.getOrCreateTasks(keys...)
-
-	if e.queueReady != nil && len(newKeys) > 0 {
-		e.queueMu.Lock()
-		e.queue = append(e.queue, keys...)
-		e.queueMu.Unlock()
+	if len(newKeys) > 0 {
+		e.scheduleNewKeys(newKeys)
 	}
-
-queueLoop:
-	for range newKeys {
-		select {
-		case e.queueReady <- struct{}{}:
-		default:
-			break queueLoop
-		}
-	}
-
 	return tasks
+}
+
+// Close indicates that no more requests will be submitted to the Engine,
+// allowing it to eventually shut down.
+//
+// The behavior of all Engine methods (including Close) after a call to Close is
+// undefined.
+func (e *Engine[K, T]) Close() {
+	if e.queueReady != nil {
+		close(e.queueReady)
+	}
 }
 
 func (e *Engine[K, T]) getOrCreateTasks(keys ...K) (tasks []*Task[T], newKeys []K) {
@@ -106,28 +104,47 @@ func (e *Engine[K, T]) getOrCreateTasks(keys ...K) (tasks []*Task[T], newKeys []
 		task := &Task[T]{done: make(chan struct{})}
 		e.tasks[key] = task
 		tasks[i] = task
-
-		if e.queueReady == nil {
-			go func() {
-				task.value, task.err = e.handle(key)
-				close(task.done)
-			}()
-		} else {
-			newKeys = append(newKeys, key)
-		}
+		newKeys = append(newKeys, key)
 	}
 	return
 }
 
-// Close indicates that no more requests will be submitted to the Engine,
-// allowing it to eventually shut down.
-//
-// The behavior of all Engine methods (including Close) after a call to Close is
-// undefined.
-func (e *Engine[K, T]) Close() {
+func (e *Engine[K, T]) scheduleNewKeys(keys []K) {
 	if e.queueReady != nil {
-		close(e.queueReady)
+		e.scheduleQueued(keys)
+	} else {
+		e.scheduleUnqueued(keys)
 	}
+}
+
+func (e *Engine[K, T]) scheduleQueued(keys []K) {
+	e.queueMu.Lock()
+	e.queue = append(e.queue, keys...)
+	e.queueMu.Unlock()
+
+	for range keys {
+		select {
+		case e.queueReady <- struct{}{}:
+		default:
+			return
+		}
+	}
+}
+
+func (e *Engine[K, T]) scheduleUnqueued(keys []K) {
+	for _, key := range keys {
+		key := key
+		go e.completeTask(key)
+	}
+}
+
+func (e *Engine[K, T]) completeTask(key K) {
+	e.tasksMu.Lock()
+	task := e.tasks[key]
+	e.tasksMu.Unlock()
+
+	task.value, task.err = e.handle(key)
+	close(task.done)
 }
 
 func (e *Engine[K, V]) run() {
@@ -145,12 +162,7 @@ func (e *Engine[K, V]) run() {
 			}
 		}
 
-		e.tasksMu.Lock()
-		task := e.tasks[key]
-		e.tasksMu.Unlock()
-
-		task.value, task.err = e.handle(key)
-		close(task.done)
+		e.completeTask(key)
 
 		select {
 		case <-e.queueReady:
