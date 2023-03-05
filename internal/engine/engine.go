@@ -159,3 +159,62 @@ func (t *Task[T]) Wait() (T, error) {
 	<-t.done
 	return t.value, t.err
 }
+
+type queue[T any] struct {
+	items []T
+	in    chan T
+	out   chan T
+}
+
+func newQueue[T any]() *queue[T] {
+	q := &queue[T]{
+		in:  make(chan T, 1),
+		out: make(chan T),
+	}
+	go q.run()
+	return q
+}
+
+func (q *queue[T]) Push(value T) {
+	q.in <- value
+}
+
+func (q *queue[T]) Pop() (value T, ok bool) {
+	value, ok = <-q.out
+	return
+}
+
+func (q *queue[T]) Close() {
+	close(q.in)
+}
+
+func (q *queue[T]) run() {
+	in := q.in
+
+	for {
+		if in == nil && len(q.items) == 0 {
+			return
+		}
+
+		var (
+			next T
+			out  chan T
+		)
+		if len(q.items) > 0 {
+			next = q.items[0]
+			out = q.out
+		}
+
+		select {
+		case v, ok := <-in:
+			if ok {
+				q.items = append(q.items, v)
+			} else {
+				in = nil
+			}
+
+		case out <- next:
+			q.items = q.items[1:]
+		}
+	}
+}
