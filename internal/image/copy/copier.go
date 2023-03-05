@@ -2,7 +2,11 @@ package copy
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
+
+	mapset "github.com/deckarep/golang-set/v2"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/work"
@@ -41,7 +45,11 @@ func (c *Copier) Copy(from, to image.Image) error {
 }
 
 func (c *Copier) CopyAll(reqs ...Request) error {
-	_, err := c.Queue.GetOrSubmitAll(reqs...).WaitAll()
+	reqs, err := coalesceRequests(reqs)
+	if err != nil {
+		return err
+	}
+	_, err = c.Queue.GetOrSubmitAll(reqs...).WaitAll()
 	return err
 }
 
@@ -50,6 +58,36 @@ func (c *Copier) CloseSubmit() {
 	c.platforms.CloseSubmit()
 	c.manifests.CloseSubmit()
 	c.blobs.CloseSubmit()
+}
+
+func coalesceRequests(reqs []Request) ([]Request, error) {
+	var errs []error
+
+	sources := mapset.NewThreadUnsafeSet[image.Image]()
+	for _, req := range reqs {
+		sources.Add(req.From)
+	}
+	for _, req := range reqs {
+		if sources.Contains(req.To) {
+			errs = append(errs, fmt.Errorf("%s is both a source and a destination", req.To))
+		}
+	}
+
+	coalesced := make([]Request, 0, len(reqs))
+	requestsByDestination := make(map[image.Image]Request)
+	for _, current := range reqs {
+		previous, ok := requestsByDestination[current.To]
+		if !ok {
+			coalesced = append(coalesced, current)
+			requestsByDestination[current.To] = current
+			continue
+		}
+		if previous != current {
+			errs = append(errs, fmt.Errorf("%s requests inconsistent copies from %s and %s", current.To, current.From, previous.From))
+		}
+	}
+
+	return coalesced, errors.Join(errs...)
 }
 
 func (c *Copier) handleRequest(req Request) error {
