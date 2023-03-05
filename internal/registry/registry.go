@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"strings"
 	"sync"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -15,10 +14,9 @@ import (
 )
 
 func GetBaseURL(reg image.Registry) *url.URL {
-	// TODO: Use go-containerregistry logic for this.
 	scheme := "https"
-	if strings.HasPrefix(string(reg), "localhost:") {
-		scheme = "http"
+	if nr, err := name.NewRegistry(string(reg)); err == nil {
+		scheme = nr.Scheme()
 	}
 	return &url.URL{
 		Scheme: scheme,
