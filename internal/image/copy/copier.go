@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 
-	"go.alexhamlin.co/magic-mirror/internal/blob"
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
@@ -12,7 +11,7 @@ import (
 type Copier struct {
 	*work.Queue[Request, work.NoValue]
 
-	blobs     *blob.BlobCopier
+	blobs     *BlobCopier
 	manifests *manifestDownloader
 	platforms *platformCopier
 }
@@ -23,7 +22,7 @@ type Request struct {
 }
 
 func NewCopier(workers int) *Copier {
-	blobs := blob.NewBlobCopier(workers)
+	blobs := NewBlobCopier(workers)
 	manifests := newManifestDownloader(workers)
 	platforms := newPlatformCopier(0, manifests, blobs)
 
