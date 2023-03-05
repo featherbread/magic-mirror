@@ -1,4 +1,4 @@
-package manifest
+package copy
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ import (
 type ImageCopier struct {
 	*work.Queue[ImageRequest, work.NoValue]
 
-	manifestDownloader *Downloader
+	manifestDownloader *ManifestDownloader
 	platformCopier     *PlatformCopier
 }
 
@@ -20,7 +20,7 @@ type ImageRequest struct {
 	To   image.Image
 }
 
-func NewImageCopier(workers int, manifestDownloader *Downloader, platformCopier *PlatformCopier) *ImageCopier {
+func NewImageCopier(workers int, manifestDownloader *ManifestDownloader, platformCopier *PlatformCopier) *ImageCopier {
 	c := &ImageCopier{
 		manifestDownloader: manifestDownloader,
 		platformCopier:     platformCopier,

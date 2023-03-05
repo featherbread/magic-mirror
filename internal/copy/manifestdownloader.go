@@ -1,4 +1,4 @@
-package manifest
+package copy
 
 import (
 	"encoding/json"
@@ -15,7 +15,7 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
-type Downloader struct {
+type ManifestDownloader struct {
 	*work.Queue[image.Image, DownloadResponse]
 }
 
@@ -29,17 +29,17 @@ type DownloadResponse struct {
 	Body        json.RawMessage
 }
 
-func NewDownloader(workers int) *Downloader {
-	d := &Downloader{}
+func NewDownloader(workers int) *ManifestDownloader {
+	d := &ManifestDownloader{}
 	d.Queue = work.NewQueue(workers, d.handleRequest)
 	return d
 }
 
-func (d *Downloader) Get(img image.Image) (DownloadResponse, error) {
+func (d *ManifestDownloader) Get(img image.Image) (DownloadResponse, error) {
 	return d.Queue.GetOrSubmit(img).Wait()
 }
 
-func (d *Downloader) handleRequest(img image.Image) (resp DownloadResponse, err error) {
+func (d *ManifestDownloader) handleRequest(img image.Image) (resp DownloadResponse, err error) {
 	reference := img.Digest
 	if reference == "" {
 		reference = img.Tag

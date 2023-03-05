@@ -1,4 +1,4 @@
-package manifest
+package copy
 
 import (
 	"bytes"
