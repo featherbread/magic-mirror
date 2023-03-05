@@ -69,12 +69,18 @@ func (c *Copier) sources(dgst image.Digest) mapset.Set[image.Repository] {
 	return set
 }
 
-func (c *Copier) handleRequest(req Request) error {
+func (c *Copier) handleRequest(req Request) (err error) {
 	sourceSet := c.sources(req.Digest)
 	if sourceSet.Contains(req.To) {
 		log.Printf("[blob] %s known to contain %s", req.To, req.Digest)
 		return nil
 	}
+
+	defer func() {
+		if err == nil {
+			c.sources(req.Digest).Add(req.To)
+		}
+	}()
 
 	hasBlob, err := checkForExistingBlob(req.To, req.Digest)
 	if err != nil {
@@ -138,7 +144,6 @@ func (c *Copier) handleRequest(req Request) error {
 	}
 
 	log.Printf("[blob] %s successfully copied %s from %s", req.To, req.Digest, sources[0])
-	c.sources(req.Digest).Add(req.To)
 	return nil
 }
 
