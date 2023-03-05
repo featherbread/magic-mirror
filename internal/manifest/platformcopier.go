@@ -73,7 +73,7 @@ func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
 	}
 	blobDigests[len(blobDigests)-1] = manifest.Config.Digest
 
-	_, err = c.blobCopier.CopyAll(req.From.Repository, req.To, blobDigests...).WaitAll()
+	err = c.blobCopier.CopyAll(req.From.Repository, req.To, blobDigests...)
 	if err != nil {
 		return err
 	}

@@ -41,13 +41,14 @@ func (c *Copier) RegisterSource(dgst image.Digest, from image.Repository) {
 	c.sources(dgst).Add(from)
 }
 
-func (c *Copier) CopyAll(from, to image.Repository, dgsts ...image.Digest) work.TaskList[work.NoValue] {
+func (c *Copier) CopyAll(from, to image.Repository, dgsts ...image.Digest) error {
 	requests := make([]CopyRequest, len(dgsts))
 	for i, dgst := range dgsts {
 		c.RegisterSource(dgst, from)
 		requests[i] = CopyRequest{Digest: dgst, To: to}
 	}
-	return c.Queue.GetOrSubmitAll(requests...)
+	_, err := c.Queue.GetOrSubmitAll(requests...).WaitAll()
+	return err
 }
 
 func (c *Copier) sources(dgst image.Digest) mapset.Set[image.Repository] {
