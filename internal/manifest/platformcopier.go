@@ -46,7 +46,7 @@ func (t PlatformCopyTask) Wait() error {
 }
 
 func (c *PlatformCopier) Close() {
-	c.engine.Close()
+	c.engine.CloseSubmit()
 }
 
 func (c *PlatformCopier) handleRequest(req PlatformRequest) error {

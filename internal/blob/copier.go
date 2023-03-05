@@ -52,7 +52,7 @@ func (t CopyTask) Wait() error {
 }
 
 func (c *Copier) Close() {
-	c.engine.Close()
+	c.engine.CloseSubmit()
 }
 
 func (c *Copier) sources(dgst image.Digest) mapset.Set[image.Repository] {

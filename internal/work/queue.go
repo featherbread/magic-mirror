@@ -2,19 +2,18 @@ package work
 
 import "sync"
 
-// NoValue is the standard value type for queues whose tasks do not produce
-// values.
+// NoValue is the canonical empty value type for a queue.
 type NoValue = struct{}
 
-// Handler is a type for an queue's handler function.
+// Handler is the type for a queue's handler function.
 type Handler[K comparable, T any] func(K) (T, error)
 
-// Queue is a parallel and deduplicating task runner.
-//
-// Every unique value provided to GetOrSubmit is mapped to a single task, which
-// will eventually produce a value or an error. The Queue limits the number of
-// tasks that may be in progress at any one time, and does not retry failed
-// tasks.
+// Queue is a deduplicating work queue. It maps each unique key provided to
+// GetOrSubmit[All] to a single Task, which acts as a promise for the result of
+// running a handler function with that key. Tasks may return a value and an
+// error; when a task produces an error, the queue does not retry it. After all
+// keys have been submitted to a queue, CloseSubmit should be called to permit
+// the release of resources associated with it.
 type Queue[K comparable, T any] struct {
 	handle Handler[K, T]
 
@@ -31,13 +30,11 @@ type Queue[K comparable, T any] struct {
 	queueReady chan struct{}
 }
 
-// NewQueue creates a queue that uses handle to fulfill submitted requests.
+// NewQueue creates a queue that uses the provided handler function to complete
+// tasks.
 //
-// If workers <= 0, every submitted request will immediately spawn a new
-// goroutine to complete the requested task.
-//
-// If workers > 0, the concurrency of submitted requests will instead be limited
-// to the provided value.
+// If workers > 0, the queue will run up to that number of tasks concurrently.
+// If workers <= 0, the queue's concurrency is unbounded.
 func NewQueue[K comparable, T any](workers int, handle Handler[K, T]) *Queue[K, T] {
 	q := &Queue[K, T]{
 		handle: handle,
@@ -53,7 +50,7 @@ func NewQueue[K comparable, T any](workers int, handle Handler[K, T]) *Queue[K, 
 }
 
 // NoValueHandler wraps handlers for queues that produce NoValue, so that the
-// handler can be written without a return value type.
+// handler function can be written to only return an error.
 func NoValueHandler[K comparable](handle func(K) error) Handler[K, NoValue] {
 	return func(key K) (_ NoValue, err error) {
 		err = handle(key)
@@ -61,12 +58,17 @@ func NoValueHandler[K comparable](handle func(K) error) Handler[K, NoValue] {
 	}
 }
 
-// GetOrSubmit returns the unique task associated with the provided key, either
-// by returning an existing task or scheduling a new one.
+// GetOrSubmit returns the unique task for the provided key. If the key has not
+// previously been submitted, the new task will be scheduled for execution after
+// all existing tasks in the queue.
 func (q *Queue[K, T]) GetOrSubmit(key K) *Task[T] {
 	return q.GetOrSubmitAll(key)[0]
 }
 
+// GetOrSubmitAll returns the set of unique tasks for the provided keys. For all
+// keys not previously submitted, the new tasks will be scheduled for execution
+// after all existing tasks in the queue, in the order of their corresponding
+// keys, without interleaving tasks from any other call to GetOrSubmit[All].
 func (q *Queue[K, T]) GetOrSubmitAll(keys ...K) []*Task[T] {
 	tasks, newKeys := q.getOrCreateTasks(keys...)
 	if len(newKeys) > 0 {
@@ -75,12 +77,13 @@ func (q *Queue[K, T]) GetOrSubmitAll(keys ...K) []*Task[T] {
 	return tasks
 }
 
-// Close indicates that no more requests will be submitted to the Engine,
-// allowing it to eventually shut down.
+// CloseSubmit indicates that no more requests will be submitted to the queue,
+// permitting the eventual cleanup of the queue's resources after all
+// outstanding tasks have completed.
 //
-// The behavior of all Engine methods (including Close) after a call to Close is
-// undefined.
-func (q *Queue[K, T]) Close() {
+// The behavior of any method of the queue (including CloseSubmit) after a call
+// to CloseSubmit is undefined.
+func (q *Queue[K, T]) CloseSubmit() {
 	if q.queueReady != nil {
 		close(q.queueReady)
 	}

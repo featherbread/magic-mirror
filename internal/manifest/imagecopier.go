@@ -46,7 +46,7 @@ func (t ImageCopyTask) Wait() error {
 }
 
 func (c *ImageCopier) Close() {
-	c.engine.Close()
+	c.engine.CloseSubmit()
 }
 
 func (c *ImageCopier) handleRequest(req ImageRequest) error {

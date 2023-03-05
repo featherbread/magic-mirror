@@ -44,7 +44,7 @@ type DownloadTask struct {
 }
 
 func (d *Downloader) Close() {
-	d.engine.Close()
+	d.engine.CloseSubmit()
 }
 
 func (d *Downloader) handleRequest(img image.Image) (resp DownloadResponse, err error) {
