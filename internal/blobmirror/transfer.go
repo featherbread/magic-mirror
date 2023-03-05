@@ -5,12 +5,14 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
+	"go.alexhamlin.co/magic-mirror/internal/blobmirror/registry"
 	"go.alexhamlin.co/magic-mirror/internal/image"
-	"go.alexhamlin.co/magic-mirror/internal/registry"
 )
 
 func transfer(dgst image.Digest, from []image.Repository, to image.Repository) error {
@@ -34,8 +36,16 @@ func requestBlob(from image.Repository, dgst image.Digest) (r io.ReadCloser, siz
 		return nil, 0, err
 	}
 
-	u := fmt.Sprintf("%s/v2/%s/blobs/%s", client.BaseURL().String(), from.Path, dgst)
-	req, err := http.NewRequest(http.MethodGet, u, nil)
+	scheme := "https"
+	if strings.HasPrefix(string(from.Registry), "localhost:") {
+		scheme = "http"
+	}
+	u := &url.URL{
+		Scheme: scheme,
+		Host:   string(from.Registry),
+		Path:   fmt.Sprintf("/v2/%s/blobs/%s", from.Path, dgst),
+	}
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, 0, err
 	}

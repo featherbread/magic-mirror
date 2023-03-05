@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
@@ -96,7 +97,13 @@ func (p *pusher) getBlobUploadURL() (u *url.URL, err error) {
 }
 
 func (p *pusher) url(format string, v ...interface{}) *url.URL {
-	u := p.repository.BaseURL()
-	u.Path = "/v2/" + p.repository.Path + fmt.Sprintf(format, v...)
-	return u
+	scheme := "https"
+	if strings.HasPrefix(string(p.repository.Registry), "localhost:") {
+		scheme = "http"
+	}
+	return &url.URL{
+		Scheme: scheme,
+		Host:   string(p.repository.Registry),
+		Path:   "/v2/" + p.repository.Path + fmt.Sprintf(format, v...),
+	}
 }
