@@ -24,16 +24,23 @@ type Engine[K comparable, T any] struct {
 	pending chan K
 }
 
-// NewEngine creates an Engine that runs up to `workers` copies of `handle` at
-// once to fulfill submitted requests.
+// NewEngine creates an Engine that uses handle to fulfill submitted requests.
+//
+// If workers <= 0, every submitted request will immediately spawn a new
+// goroutine to complete the requested task.
+//
+// If workers > 0, the concurrency of submitted requests will instead be limited
+// to the provided value.
 func NewEngine[K comparable, T any](workers int, handle Handler[K, T]) *Engine[K, T] {
 	e := &Engine[K, T]{
-		handle:  handle,
-		tasks:   make(map[K]*Task[T]),
-		pending: make(chan K),
+		handle: handle,
+		tasks:  make(map[K]*Task[T]),
 	}
-	for i := 0; i < workers; i++ {
-		go e.run()
+	if workers > 0 {
+		e.pending = make(chan K, workers)
+		for i := 0; i < workers; i++ {
+			go e.run()
+		}
 	}
 	return e
 }
@@ -48,8 +55,8 @@ func NoValueHandler[K comparable](handle func(K) error) Handler[K, NoValue] {
 }
 
 // GetOrSubmit returns the unique Task associated with the provided key, either
-// by returning an existing Task or scheduling a new one. GetOrSubmit panics if
-// called on a closed Engine.
+// by returning an existing Task or scheduling a new one. It never blocks,
+// regardless of the Engine's worker count.
 func (e *Engine[K, T]) GetOrSubmit(key K) *Task[T] {
 	e.tasksMu.Lock()
 	defer e.tasksMu.Unlock()
@@ -60,15 +67,33 @@ func (e *Engine[K, T]) GetOrSubmit(key K) *Task[T] {
 
 	task := &Task[T]{done: make(chan struct{})}
 	e.tasks[key] = task
-	go func() { e.pending <- key }()
-	return task
+
+	if e.pending == nil {
+		go func() {
+			task.value, task.err = e.handle(key)
+			close(task.done)
+		}()
+		return task
+	}
+
+	select {
+	case e.pending <- key:
+		return task
+	default:
+		go func() { e.pending <- key }()
+		return task
+	}
 }
 
 // Close indicates that no more requests will be submitted to the Engine,
-// allowing it to eventually shut down. Close panics if called more than once on
-// a single Engine.
+// allowing it to eventually shut down.
+//
+// The behavior of all Engine methods (including Close) after a call to Close is
+// undefined.
 func (e *Engine[K, T]) Close() {
-	close(e.pending)
+	if e.pending != nil {
+		close(e.pending)
+	}
 }
 
 func (e *Engine[K, V]) run() {
