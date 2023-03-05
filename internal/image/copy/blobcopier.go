@@ -17,41 +17,41 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
-type BlobCopier struct {
-	*work.Queue[BlobCopyRequest, work.NoValue]
+type blobCopier struct {
+	*work.Queue[blobCopyRequest, work.NoValue]
 
 	sourcesMap map[image.Digest]mapset.Set[image.Repository]
 	sourcesMu  sync.Mutex
 }
 
-type BlobCopyRequest struct {
+type blobCopyRequest struct {
 	Digest image.Digest
 	To     image.Repository
 }
 
-func NewBlobCopier(workers int) *BlobCopier {
-	c := &BlobCopier{
+func newBlobCopier(workers int) *blobCopier {
+	c := &blobCopier{
 		sourcesMap: make(map[image.Digest]mapset.Set[image.Repository]),
 	}
 	c.Queue = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
 	return c
 }
 
-func (c *BlobCopier) RegisterSource(dgst image.Digest, from image.Repository) {
+func (c *blobCopier) RegisterSource(dgst image.Digest, from image.Repository) {
 	c.sources(dgst).Add(from)
 }
 
-func (c *BlobCopier) CopyAll(from, to image.Repository, dgsts ...image.Digest) error {
-	requests := make([]BlobCopyRequest, len(dgsts))
+func (c *blobCopier) CopyAll(from, to image.Repository, dgsts ...image.Digest) error {
+	requests := make([]blobCopyRequest, len(dgsts))
 	for i, dgst := range dgsts {
 		c.RegisterSource(dgst, from)
-		requests[i] = BlobCopyRequest{Digest: dgst, To: to}
+		requests[i] = blobCopyRequest{Digest: dgst, To: to}
 	}
 	_, err := c.Queue.GetOrSubmitAll(requests...).WaitAll()
 	return err
 }
 
-func (c *BlobCopier) sources(dgst image.Digest) mapset.Set[image.Repository] {
+func (c *blobCopier) sources(dgst image.Digest) mapset.Set[image.Repository] {
 	c.sourcesMu.Lock()
 	defer c.sourcesMu.Unlock()
 	if set, ok := c.sourcesMap[dgst]; ok {
@@ -62,7 +62,7 @@ func (c *BlobCopier) sources(dgst image.Digest) mapset.Set[image.Repository] {
 	return set
 }
 
-func (c *BlobCopier) handleRequest(req BlobCopyRequest) (err error) {
+func (c *blobCopier) handleRequest(req blobCopyRequest) (err error) {
 	sourceSet := c.sources(req.Digest)
 	if sourceSet.Contains(req.To) {
 		log.Printf("[blob]\tknown %s@%s", req.To, req.Digest)
