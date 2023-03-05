@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -32,9 +33,29 @@ const (
 	PushScope = Scope(transport.PushScope)
 )
 
+type clientKey struct {
+	registry image.Registry
+	scope    Scope
+}
+
+var (
+	clients   = make(map[clientKey]http.Client)
+	clientsMu sync.Mutex
+)
+
 func GetClient(registry image.Registry, scope Scope) (http.Client, error) {
+	clientsMu.Lock()
+	defer clientsMu.Unlock()
+
+	if client, ok := clients[clientKey{registry, scope}]; ok {
+		return client, nil
+	}
+
 	transport, err := getTransport(registry, string(scope))
 	client := http.Client{Transport: transport}
+	if err == nil {
+		clients[clientKey{registry, scope}] = client
+	}
 	return client, err
 }
 
