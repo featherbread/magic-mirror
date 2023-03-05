@@ -17,41 +17,41 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
-type Copier struct {
-	*work.Queue[CopyRequest, work.NoValue]
+type BlobCopier struct {
+	*work.Queue[BlobCopyRequest, work.NoValue]
 
 	sourcesMap map[image.Digest]mapset.Set[image.Repository]
 	sourcesMu  sync.Mutex
 }
 
-type CopyRequest struct {
+type BlobCopyRequest struct {
 	Digest image.Digest
 	To     image.Repository
 }
 
-func NewCopier(workers int) *Copier {
-	c := &Copier{
+func NewBlobCopier(workers int) *BlobCopier {
+	c := &BlobCopier{
 		sourcesMap: make(map[image.Digest]mapset.Set[image.Repository]),
 	}
 	c.Queue = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
 	return c
 }
 
-func (c *Copier) RegisterSource(dgst image.Digest, from image.Repository) {
+func (c *BlobCopier) RegisterSource(dgst image.Digest, from image.Repository) {
 	c.sources(dgst).Add(from)
 }
 
-func (c *Copier) CopyAll(from, to image.Repository, dgsts ...image.Digest) error {
-	requests := make([]CopyRequest, len(dgsts))
+func (c *BlobCopier) CopyAll(from, to image.Repository, dgsts ...image.Digest) error {
+	requests := make([]BlobCopyRequest, len(dgsts))
 	for i, dgst := range dgsts {
 		c.RegisterSource(dgst, from)
-		requests[i] = CopyRequest{Digest: dgst, To: to}
+		requests[i] = BlobCopyRequest{Digest: dgst, To: to}
 	}
 	_, err := c.Queue.GetOrSubmitAll(requests...).WaitAll()
 	return err
 }
 
-func (c *Copier) sources(dgst image.Digest) mapset.Set[image.Repository] {
+func (c *BlobCopier) sources(dgst image.Digest) mapset.Set[image.Repository] {
 	c.sourcesMu.Lock()
 	defer c.sourcesMu.Unlock()
 	if set, ok := c.sourcesMap[dgst]; ok {
@@ -62,7 +62,7 @@ func (c *Copier) sources(dgst image.Digest) mapset.Set[image.Repository] {
 	return set
 }
 
-func (c *Copier) handleRequest(req CopyRequest) (err error) {
+func (c *BlobCopier) handleRequest(req BlobCopyRequest) (err error) {
 	sourceSet := c.sources(req.Digest)
 	if sourceSet.Contains(req.To) {
 		log.Printf("[blob]\tknown %s@%s", req.To, req.Digest)
