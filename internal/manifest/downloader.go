@@ -16,7 +16,7 @@ import (
 )
 
 type Downloader struct {
-	engine *work.Queue[image.Image, DownloadResponse]
+	*work.Queue[image.Image, DownloadResponse]
 }
 
 type DownloadRequest struct {
@@ -31,20 +31,12 @@ type DownloadResponse struct {
 
 func NewDownloader(workers int) *Downloader {
 	d := &Downloader{}
-	d.engine = work.NewQueue(workers, d.handleRequest)
+	d.Queue = work.NewQueue(workers, d.handleRequest)
 	return d
 }
 
-func (d *Downloader) RequestDownload(img image.Image) DownloadTask {
-	return DownloadTask{d.engine.GetOrSubmit(img)}
-}
-
-type DownloadTask struct {
-	*work.Task[DownloadResponse]
-}
-
-func (d *Downloader) Close() {
-	d.engine.CloseSubmit()
+func (d *Downloader) Get(img image.Image) (DownloadResponse, error) {
+	return d.Queue.GetOrSubmit(img).Wait()
 }
 
 func (d *Downloader) handleRequest(img image.Image) (resp DownloadResponse, err error) {

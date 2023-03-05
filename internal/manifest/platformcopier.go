@@ -50,7 +50,7 @@ func (c *PlatformCopier) Close() {
 }
 
 func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
-	manifestResponse, err := c.manifestDownloader.RequestDownload(req.From).Wait()
+	manifestResponse, err := c.manifestDownloader.Get(req.From)
 	if err != nil {
 		return err
 	}

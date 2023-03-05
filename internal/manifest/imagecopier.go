@@ -52,7 +52,7 @@ func (c *ImageCopier) Close() {
 func (c *ImageCopier) handleRequest(req ImageRequest) error {
 	log.Printf("[image]\tstarting copy from %s to %s", req.From, req.To)
 
-	manifestResponse, err := c.manifestDownloader.RequestDownload(req.From).Wait()
+	manifestResponse, err := c.manifestDownloader.Get(req.From)
 	if err != nil {
 		return err
 	}
