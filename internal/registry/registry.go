@@ -31,31 +31,34 @@ const (
 	PushScope = Scope(transport.PushScope)
 )
 
-func GetClient(repo image.Repository, scope Scope) (http.Client, error) {
-	transport, err := getTransport(repo, string(scope))
-	client := http.Client{Transport: transport}
-	return client, err
-}
-
-type transportKey struct {
-	registry image.Repository
-	scope    string
+type clientKey struct {
+	repo  image.Repository
+	scope Scope
 }
 
 var (
-	transports   = make(map[transportKey]*lockedTransport)
-	transportsMu sync.Mutex
+	clients   = make(map[clientKey]http.Client)
+	clientsMu sync.Mutex
 )
 
-func getTransport(repo image.Repository, scope string) (http.RoundTripper, error) {
-	transportsMu.Lock()
-	defer transportsMu.Unlock()
+func GetClient(repo image.Repository, scope Scope) (http.Client, error) {
+	clientsMu.Lock()
+	defer clientsMu.Unlock()
 
-	key := transportKey{repo, scope}
-	if transport, ok := transports[key]; ok {
-		return transport, nil
+	key := clientKey{repo, scope}
+	if client, ok := clients[key]; ok {
+		return client, nil
 	}
 
+	transport, err := getTransport(repo, string(scope))
+	client := http.Client{Transport: transport}
+	if err == nil {
+		clients[key] = client
+	}
+	return client, err
+}
+
+func getTransport(repo image.Repository, scope string) (http.RoundTripper, error) {
 	gRepo, err := name.NewRepository(repo.String())
 	if err != nil {
 		return nil, err
@@ -71,13 +74,7 @@ func getTransport(repo image.Repository, scope string) (http.RoundTripper, error
 		http.DefaultTransport,
 		[]string{gRepo.Scope(scope)},
 	)
-	if err != nil {
-		return nil, err
-	}
-
-	transport := &lockedTransport{RoundTripper: gTransport}
-	transports[key] = transport
-	return transport, err
+	return &lockedTransport{RoundTripper: gTransport}, err
 }
 
 type lockedTransport struct {
