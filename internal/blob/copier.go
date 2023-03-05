@@ -69,7 +69,7 @@ func (c *Copier) sources(dgst image.Digest) mapset.Set[image.Repository] {
 func (c *Copier) handleRequest(req Request) (err error) {
 	sourceSet := c.sources(req.Digest)
 	if sourceSet.Contains(req.To) {
-		log.Printf("[blob]\tknown %s in %s", req.Digest, req.To)
+		log.Printf("[blob]\tknown %s@%s", req.To, req.Digest)
 		return nil
 	}
 
@@ -84,7 +84,7 @@ func (c *Copier) handleRequest(req Request) (err error) {
 		return err
 	}
 	if hasBlob {
-		log.Printf("[blob]\tfound %s in %s", req.Digest, req.To)
+		log.Printf("[blob]\tfound %s@%s", req.To, req.Digest)
 		return nil
 	}
 
@@ -102,7 +102,7 @@ func (c *Copier) handleRequest(req Request) (err error) {
 		return err
 	}
 	if mounted {
-		log.Printf("[blob]\tmounted %s to %s from %s", req.Digest, req.To, mountSource)
+		log.Printf("[blob]\tmounted %s@%s to %s", mountSource, req.Digest, req.To)
 		return nil
 	}
 
@@ -139,7 +139,7 @@ func (c *Copier) handleRequest(req Request) (err error) {
 		return err
 	}
 
-	log.Printf("[blob]\tcopied %s to %s from %s", req.Digest, req.To, sources[0])
+	log.Printf("[blob]\tcopied %s@%s to %s", sources[0], req.Digest, req.To)
 	return nil
 }
 

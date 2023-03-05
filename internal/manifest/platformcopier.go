@@ -89,6 +89,6 @@ func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
 		return err
 	}
 
-	log.Printf("[platform]\tcopied %s to %s", req.From, destImg)
+	log.Printf("[platform]\tcopied %s to %s", req.From, destImg.Repository)
 	return nil
 }
