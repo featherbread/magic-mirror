@@ -25,7 +25,7 @@ func NewPlatformCopier(workers int, manifestDownloader *Downloader, blobCopier *
 		manifestDownloader: manifestDownloader,
 		blobCopier:         blobCopier,
 	}
-	c.engine = engine.NewEngine(workers, engine.NoValueFunc(c.handleRequest))
+	c.engine = engine.NewEngine(workers, engine.NoValueHandler(c.handleRequest))
 	return c
 }
 

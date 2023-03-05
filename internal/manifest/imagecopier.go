@@ -24,7 +24,7 @@ func NewImageCopier(workers int, manifestDownloader *Downloader, platformCopier 
 		manifestDownloader: manifestDownloader,
 		platformCopier:     platformCopier,
 	}
-	c.engine = engine.NewEngine(workers, engine.NoValueFunc(c.handleRequest))
+	c.engine = engine.NewEngine(workers, engine.NoValueHandler(c.handleRequest))
 	return c
 }
 

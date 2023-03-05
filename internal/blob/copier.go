@@ -33,7 +33,7 @@ func NewCopier(workers int) *Copier {
 	c := &Copier{
 		sourcesMap: make(map[image.Digest]mapset.Set[image.Repository]),
 	}
-	c.engine = engine.NewEngine(workers, engine.NoValueFunc(c.handleRequest))
+	c.engine = engine.NewEngine(workers, engine.NoValueHandler(c.handleRequest))
 	return c
 }
 

@@ -4,8 +4,10 @@ import "sync"
 
 type NoValue = struct{}
 
+type Handler[K comparable, T any] func(K) (T, error)
+
 type Engine[K comparable, T any] struct {
-	work func(K) (T, error)
+	handle Handler[K, T]
 
 	tasks   map[K]*Task[T]
 	tasksMu sync.Mutex
@@ -13,9 +15,9 @@ type Engine[K comparable, T any] struct {
 	pending chan K
 }
 
-func NewEngine[K comparable, T any](workers int, work func(K) (T, error)) *Engine[K, T] {
+func NewEngine[K comparable, T any](workers int, handle Handler[K, T]) *Engine[K, T] {
 	e := &Engine[K, T]{
-		work:    work,
+		handle:  handle,
 		tasks:   make(map[K]*Task[T]),
 		pending: make(chan K),
 	}
@@ -25,9 +27,9 @@ func NewEngine[K comparable, T any](workers int, work func(K) (T, error)) *Engin
 	return e
 }
 
-func NoValueFunc[K comparable](work func(K) error) func(K) (NoValue, error) {
+func NoValueHandler[K comparable](handle func(K) error) Handler[K, NoValue] {
 	return func(key K) (_ NoValue, err error) {
-		err = work(key)
+		err = handle(key)
 		return
 	}
 }
@@ -56,7 +58,7 @@ func (e *Engine[K, V]) run() {
 		task := e.tasks[key]
 		e.tasksMu.Unlock()
 
-		task.value, task.err = e.work(key)
+		task.value, task.err = e.handle(key)
 		close(task.done)
 	}
 }
