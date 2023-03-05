@@ -1,23 +1,20 @@
 package blob
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"sync"
 
 	mapset "github.com/deckarep/golang-set/v2"
-	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
 	"go.alexhamlin.co/magic-mirror/internal/engine"
 	"go.alexhamlin.co/magic-mirror/internal/image"
+	"go.alexhamlin.co/magic-mirror/internal/registry"
 )
 
 type Copier struct {
@@ -128,7 +125,7 @@ func (c *Copier) handleRequest(req Request) (err error) {
 	uploadReq.Header.Add("Content-Type", "application/octet-stream")
 	uploadReq.Header.Add("Content-Length", strconv.FormatInt(size, 10))
 
-	client, err := getRegistryClient(req.To.Registry, transport.PushScope)
+	client, err := registry.GetClient(req.To.Registry, registry.PushScope)
 	if err != nil {
 		return err
 	}
@@ -147,12 +144,12 @@ func (c *Copier) handleRequest(req Request) (err error) {
 }
 
 func checkForExistingBlob(repo image.Repository, dgst image.Digest) (bool, error) {
-	client, err := getRegistryClient(repo.Registry, transport.PullScope)
+	client, err := registry.GetClient(repo.Registry, registry.PullScope)
 	if err != nil {
 		return false, err
 	}
 
-	u := getBaseURL(repo.Registry)
+	u := registry.GetBaseURL(repo.Registry)
 	u.Path = fmt.Sprintf("/v2/%s/blobs/%s", repo.Namespace, dgst)
 	req, err := http.NewRequest(http.MethodHead, u.String(), nil)
 	if err != nil {
@@ -168,12 +165,12 @@ func checkForExistingBlob(repo image.Repository, dgst image.Digest) (bool, error
 }
 
 func downloadBlob(repo image.Repository, dgst image.Digest) (r io.ReadCloser, size int64, err error) {
-	client, err := getRegistryClient(repo.Registry, transport.PullScope)
+	client, err := registry.GetClient(repo.Registry, registry.PullScope)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	u := getBaseURL(repo.Registry)
+	u := registry.GetBaseURL(repo.Registry)
 	u.Path = fmt.Sprintf("/v2/%s/blobs/%s", repo.Namespace, dgst)
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -195,7 +192,7 @@ func downloadBlob(repo image.Repository, dgst image.Digest) (r io.ReadCloser, si
 }
 
 func requestBlobUploadURL(repo image.Repository, dgst image.Digest, mountNamespace string) (upload *url.URL, mounted bool, err error) {
-	client, err := getRegistryClient(repo.Registry, transport.PushScope)
+	client, err := registry.GetClient(repo.Registry, registry.PushScope)
 	if err != nil {
 		return nil, false, err
 	}
@@ -208,7 +205,7 @@ func requestBlobUploadURL(repo image.Repository, dgst image.Digest, mountNamespa
 		query.Add("digest", string(dgst))
 	}
 
-	u := getBaseURL(repo.Registry)
+	u := registry.GetBaseURL(repo.Registry)
 	u.Path = fmt.Sprintf("/v2/%s/blobs/uploads/", repo.Namespace)
 	u.RawQuery = query.Encode()
 	req, err := http.NewRequest(http.MethodPost, u.String(), nil)
@@ -233,40 +230,4 @@ func requestBlobUploadURL(repo image.Repository, dgst image.Digest, mountNamespa
 	// The mount was not successful, and we need to provide a regular upload URL.
 	upload, err = u.Parse(resp.Header.Get("Location"))
 	return
-}
-
-func getBaseURL(reg image.Registry) *url.URL {
-	// TODO: Use go-containerregistry logic for this.
-	scheme := "https"
-	if strings.HasPrefix(string(reg), "localhost:") {
-		scheme = "http"
-	}
-	return &url.URL{
-		Scheme: scheme,
-		Host:   string(reg),
-	}
-}
-
-func getRegistryClient(registry image.Registry, scope string) (http.Client, error) {
-	transport, err := getRegistryTransport(registry, scope)
-	client := http.Client{Transport: transport}
-	return client, err
-}
-
-func getRegistryTransport(registry image.Registry, scope string) (http.RoundTripper, error) {
-	gRegistry, err := name.NewRegistry(string(registry))
-	if err != nil {
-		return nil, err
-	}
-	authenticator, err := authn.DefaultKeychain.Resolve(gRegistry)
-	if err != nil {
-		authenticator = authn.Anonymous
-	}
-	return transport.NewWithContext(
-		context.TODO(),
-		gRegistry,
-		authenticator,
-		http.DefaultTransport,
-		[]string{gRegistry.Scope(scope)},
-	)
 }
