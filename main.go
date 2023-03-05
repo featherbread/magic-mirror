@@ -36,11 +36,11 @@ func main() {
 	blobTasks := make([]blob.CopyTask, 0, 2*len(digests))
 	for _, dgst := range digests {
 		blobTasks = append(blobTasks, copier.RequestCopy(dgst, from, to1))
-		log.Printf("[main] requested to copy %s from %s to %s", dgst, from, to1)
+		log.Printf("[main] queued copy of %s from %s to %s", dgst, from, to1)
 	}
 	for _, dgst := range digests {
 		blobTasks = append(blobTasks, copier.RequestCopy(dgst, from, to2))
-		log.Printf("[main] requested to copy %s from %s to %s", dgst, from, to2)
+		log.Printf("[main] queued copy of %s from %s to %s", dgst, from, to2)
 	}
 
 	var wg sync.WaitGroup
