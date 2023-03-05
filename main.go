@@ -31,42 +31,32 @@ func main() {
 	imageCopier := manifest.NewImageCopier(0, manifestDownloader, platformCopier)
 	defer imageCopier.Close()
 
-	var tasks []manifest.ImageCopyTask
-
-	// tasks = append(tasks, imageCopier.RequestCopy(
-	// 	must(image.Parse("alpine:3.17")),
-	// 	must(image.Parse("localhost:5000/imported/alpine:3.17")),
-	// ))
-
-	tasks = append(tasks, imageCopier.RequestCopy(
-		must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
-		must(image.Parse("localhost:5000/imported/hypcast:latest")),
-	))
-
-	tasks = append(tasks, imageCopier.RequestCopy(
-		must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
-		must(image.Parse("localhost:5000/alsoimported/hypcast:latest")),
-	))
-
-	tasks = append(tasks, imageCopier.RequestCopy(
-		must(image.Parse("ghcr.io/dexidp/dex:v2.35.3")),
-		must(image.Parse("localhost:5000/imported/dex:v2.35.3")),
-	))
-
-	tasks = append(tasks, imageCopier.RequestCopy(
-		must(image.Parse("quay.io/minio/minio:RELEASE.2023-02-22T18-23-45Z")),
-		must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-22T18-23-45Z")),
-	))
-
-	tasks = append(tasks, imageCopier.RequestCopy(
-		must(image.Parse("quay.io/minio/minio:RELEASE.2023-02-27T18-10-45Z")),
-		must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-27T18-10-45Z")),
-	))
-
-	tasks = append(tasks, imageCopier.RequestCopy(
-		must(image.Parse("quay.io/minio/minio:release.2023-02-27t18-10-45z.fips")),
-		must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-27T18-10-45Z.fips")),
-	))
+	tasks := imageCopier.RequestCopyAll(
+		manifest.ImageRequest{
+			From: must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
+			To:   must(image.Parse("localhost:5000/imported/hypcast:latest")),
+		},
+		manifest.ImageRequest{
+			From: must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
+			To:   must(image.Parse("localhost:5000/alsoimported/hypcast:latest")),
+		},
+		manifest.ImageRequest{
+			From: must(image.Parse("ghcr.io/dexidp/dex:v2.35.3")),
+			To:   must(image.Parse("localhost:5000/imported/dex:v2.35.3")),
+		},
+		manifest.ImageRequest{
+			From: must(image.Parse("quay.io/minio/minio:RELEASE.2023-02-22T18-23-45Z")),
+			To:   must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-22T18-23-45Z")),
+		},
+		manifest.ImageRequest{
+			From: must(image.Parse("quay.io/minio/minio:RELEASE.2023-02-27T18-10-45Z")),
+			To:   must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-27T18-10-45Z")),
+		},
+		manifest.ImageRequest{
+			From: must(image.Parse("quay.io/minio/minio:release.2023-02-27t18-10-45z.fips")),
+			To:   must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-27T18-10-45Z.fips")),
+		},
+	)
 
 	var hadError atomic.Bool
 	var wg sync.WaitGroup

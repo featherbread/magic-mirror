@@ -64,26 +64,59 @@ func NoValueHandler[K comparable](handle func(K) error) Handler[K, NoValue] {
 // GetOrSubmit returns the unique Task associated with the provided key, either
 // by returning an existing Task or scheduling a new one.
 func (e *Engine[K, T]) GetOrSubmit(key K) *Task[T] {
+	return e.GetOrSubmitAll(key)[0]
+}
+
+func (e *Engine[K, T]) GetOrSubmitAll(keys ...K) []*Task[T] {
+	tasks, newKeys := e.getOrCreateTasks(keys...)
+
+	if e.queueReady != nil && len(newKeys) > 0 {
+		e.queueMu.Lock()
+		e.queue = append(e.queue, keys...)
+		e.queueMu.Unlock()
+	}
+
+queueLoop:
+	for range newKeys {
+		select {
+		case e.queueReady <- struct{}{}:
+		default:
+			break queueLoop
+		}
+	}
+
+	return tasks
+}
+
+func (e *Engine[K, T]) getOrCreateTasks(keys ...K) (tasks []*Task[T], newKeys []K) {
+	tasks = make([]*Task[T], len(keys))
+	newKeys = make([]K, 0, len(keys))
+
 	e.tasksMu.Lock()
 	defer e.tasksMu.Unlock()
 
-	if task, ok := e.tasks[key]; ok {
-		return task
+	for i, key := range keys {
+		key := key
+
+		if task, ok := e.tasks[key]; ok {
+			tasks[i] = task
+			continue
+		}
+
+		task := &Task[T]{done: make(chan struct{})}
+		e.tasks[key] = task
+		tasks[i] = task
+
+		if e.queueReady == nil {
+			go func() {
+				task.value, task.err = e.handle(key)
+				close(task.done)
+			}()
+		} else {
+			newKeys = append(newKeys, key)
+		}
 	}
-
-	task := &Task[T]{done: make(chan struct{})}
-	e.tasks[key] = task
-
-	if e.queueReady == nil {
-		go func() {
-			task.value, task.err = e.handle(key)
-			close(task.done)
-		}()
-		return task
-	}
-
-	e.push(key)
-	return task
+	return
 }
 
 // Close indicates that no more requests will be submitted to the Engine,
@@ -123,17 +156,6 @@ func (e *Engine[K, V]) run() {
 		case <-e.queueReady:
 		default:
 		}
-	}
-}
-
-func (e *Engine[K, T]) push(key K) {
-	e.queueMu.Lock()
-	e.queue = append(e.queue, key)
-	e.queueMu.Unlock()
-
-	select {
-	case e.queueReady <- struct{}{}:
-	default:
 	}
 }
 
