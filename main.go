@@ -29,8 +29,9 @@ func main() {
 		"sha256:daa2a7aaa8b3aceea6d0a40f07b3c74bcc31b5df580fd7a6171957e20a0d3ca3",
 	}
 
-	to1 := image.Repository{Registry: image.Registry("localhost:5000"), Namespace: "imported/hypcast"}
-	to2 := image.Repository{Registry: image.Registry("localhost:5000"), Namespace: "alsoimported/hypcast"}
+	toRegistry := image.Registry("localhost:5000")
+	to1 := image.Repository{Registry: toRegistry, Namespace: "imported/hypcast"}
+	to2 := image.Repository{Registry: toRegistry, Namespace: "alsoimported/hypcast"}
 
 	blobTasks := make([]blob.CopyTask, 0, 2*len(digests))
 	for _, dgst := range digests {
@@ -48,8 +49,9 @@ func main() {
 		task := task
 		go func() {
 			defer wg.Done()
-			err := task.Wait()
-			log.Printf("[main] copy result: %v", err)
+			if err := task.Wait(); err != nil {
+				log.Printf("[main] copy error: %v", err)
+			}
 		}()
 	}
 	wg.Wait()
