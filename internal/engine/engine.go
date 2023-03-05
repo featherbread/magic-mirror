@@ -21,7 +21,9 @@ type Engine[K comparable, T any] struct {
 	tasks   map[K]*Task[T]
 	tasksMu sync.Mutex
 
-	pending chan K
+	queue      []K
+	queueMu    sync.Mutex
+	queueReady chan struct{}
 }
 
 // NewEngine creates an Engine that uses handle to fulfill submitted requests.
@@ -37,7 +39,7 @@ func NewEngine[K comparable, T any](workers int, handle Handler[K, T]) *Engine[K
 		tasks:  make(map[K]*Task[T]),
 	}
 	if workers > 0 {
-		e.pending = make(chan K, workers)
+		e.queueReady = make(chan struct{}, workers)
 		for i := 0; i < workers; i++ {
 			go e.run()
 		}
@@ -55,8 +57,7 @@ func NoValueHandler[K comparable](handle func(K) error) Handler[K, NoValue] {
 }
 
 // GetOrSubmit returns the unique Task associated with the provided key, either
-// by returning an existing Task or scheduling a new one. It never blocks,
-// regardless of the Engine's worker count.
+// by returning an existing Task or scheduling a new one.
 func (e *Engine[K, T]) GetOrSubmit(key K) *Task[T] {
 	e.tasksMu.Lock()
 	defer e.tasksMu.Unlock()
@@ -68,7 +69,7 @@ func (e *Engine[K, T]) GetOrSubmit(key K) *Task[T] {
 	task := &Task[T]{done: make(chan struct{})}
 	e.tasks[key] = task
 
-	if e.pending == nil {
+	if e.queueReady == nil {
 		go func() {
 			task.value, task.err = e.handle(key)
 			close(task.done)
@@ -76,13 +77,8 @@ func (e *Engine[K, T]) GetOrSubmit(key K) *Task[T] {
 		return task
 	}
 
-	select {
-	case e.pending <- key:
-		return task
-	default:
-		go func() { e.pending <- key }()
-		return task
-	}
+	e.push(key)
+	return task
 }
 
 // Close indicates that no more requests will be submitted to the Engine,
@@ -91,13 +87,27 @@ func (e *Engine[K, T]) GetOrSubmit(key K) *Task[T] {
 // The behavior of all Engine methods (including Close) after a call to Close is
 // undefined.
 func (e *Engine[K, T]) Close() {
-	if e.pending != nil {
-		close(e.pending)
+	if e.queueReady != nil {
+		close(e.queueReady)
 	}
 }
 
 func (e *Engine[K, V]) run() {
-	for key := range e.pending {
+	for {
+		select {
+		case <-e.queueReady:
+		default:
+		}
+
+		key, ok := e.tryPop()
+		if !ok {
+			if _, ready := <-e.queueReady; ready {
+				continue
+			} else {
+				return
+			}
+		}
+
 		e.tasksMu.Lock()
 		task := e.tasks[key]
 		e.tasksMu.Unlock()
@@ -105,6 +115,29 @@ func (e *Engine[K, V]) run() {
 		task.value, task.err = e.handle(key)
 		close(task.done)
 	}
+}
+
+func (e *Engine[K, T]) push(key K) {
+	e.queueMu.Lock()
+	e.queue = append(e.queue, key)
+	e.queueMu.Unlock()
+
+	select {
+	case e.queueReady <- struct{}{}:
+	default:
+	}
+}
+
+func (e *Engine[K, T]) tryPop() (key K, ok bool) {
+	e.queueMu.Lock()
+	defer e.queueMu.Unlock()
+
+	if len(e.queue) > 0 {
+		key = e.queue[0]
+		ok = true
+		e.queue = e.queue[1:]
+	}
+	return
 }
 
 type Task[T any] struct {
