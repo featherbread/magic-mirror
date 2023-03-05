@@ -67,8 +67,10 @@ func Parse(s string) (Image, error) {
 		tag = "latest"
 	}
 
-	if err := digest.Digest(rawDigest).Validate(); err != nil {
-		return Image{}, fmt.Errorf("invalid digest in %q: %w", s, err)
+	if rawDigest != "" {
+		if err := digest.Digest(rawDigest).Validate(); err != nil {
+			return Image{}, fmt.Errorf("invalid digest in %q: %w", s, err)
+		}
 	}
 
 	return Image{
