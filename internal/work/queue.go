@@ -12,8 +12,8 @@ type NoValue = struct{}
 type Handler[K comparable, T any] func(K) (T, error)
 
 // Queue is a deduplicating work queue. It maps each unique key provided to
-// GetOrSubmit[All] to a single Task, which acts as a promise for the result of
-// running a handler function with that key. Tasks may return a value and an
+// GetOrSubmit[All] to a single [Task], which acts as a promise for the result
+// of running a handler function with that key. Tasks may return a value and an
 // error; when a task produces an error, the queue does not retry it. After all
 // keys have been submitted to a queue, CloseSubmit should be called to permit
 // the release of resources associated with it.
@@ -52,7 +52,7 @@ func NewQueue[K comparable, T any](workers int, handle Handler[K, T]) *Queue[K, 
 	return q
 }
 
-// NoValueHandler wraps handlers for queues that produce NoValue, so that the
+// NoValueHandler wraps handlers for queues that produce [NoValue], so the
 // handler function can be written to only return an error.
 func NoValueHandler[K comparable](handle func(K) error) Handler[K, NoValue] {
 	return func(key K) (_ NoValue, err error) {
