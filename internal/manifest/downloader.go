@@ -10,13 +10,13 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
-	"go.alexhamlin.co/magic-mirror/internal/engine"
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/registry"
+	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
 type Downloader struct {
-	engine *engine.Queue[image.Image, DownloadResponse]
+	engine *work.Queue[image.Image, DownloadResponse]
 }
 
 type DownloadRequest struct {
@@ -31,7 +31,7 @@ type DownloadResponse struct {
 
 func NewDownloader(workers int) *Downloader {
 	d := &Downloader{}
-	d.engine = engine.NewQueue(workers, d.handleRequest)
+	d.engine = work.NewQueue(workers, d.handleRequest)
 	return d
 }
 
@@ -40,7 +40,7 @@ func (d *Downloader) RequestDownload(img image.Image) DownloadTask {
 }
 
 type DownloadTask struct {
-	*engine.Task[DownloadResponse]
+	*work.Task[DownloadResponse]
 }
 
 func (d *Downloader) Close() {

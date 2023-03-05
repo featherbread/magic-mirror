@@ -12,13 +12,13 @@ import (
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
-	"go.alexhamlin.co/magic-mirror/internal/engine"
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/registry"
+	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
 type Copier struct {
-	engine *engine.Queue[Request, engine.NoValue]
+	engine *work.Queue[Request, work.NoValue]
 
 	sourcesMap map[image.Digest]mapset.Set[image.Repository]
 	sourcesMu  sync.Mutex
@@ -33,7 +33,7 @@ func NewCopier(workers int) *Copier {
 	c := &Copier{
 		sourcesMap: make(map[image.Digest]mapset.Set[image.Repository]),
 	}
-	c.engine = engine.NewQueue(workers, engine.NoValueHandler(c.handleRequest))
+	c.engine = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
 	return c
 }
 
@@ -43,7 +43,7 @@ func (c *Copier) RequestCopy(dgst image.Digest, from, to image.Repository) CopyT
 }
 
 type CopyTask struct {
-	*engine.Task[engine.NoValue]
+	*work.Task[work.NoValue]
 }
 
 func (t CopyTask) Wait() error {

@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"log"
 
-	"go.alexhamlin.co/magic-mirror/internal/engine"
 	"go.alexhamlin.co/magic-mirror/internal/image"
+	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
 type ImageCopier struct {
-	engine             *engine.Queue[ImageRequest, engine.NoValue]
+	engine             *work.Queue[ImageRequest, work.NoValue]
 	manifestDownloader *Downloader
 	platformCopier     *PlatformCopier
 }
@@ -24,7 +24,7 @@ func NewImageCopier(workers int, manifestDownloader *Downloader, platformCopier 
 		manifestDownloader: manifestDownloader,
 		platformCopier:     platformCopier,
 	}
-	c.engine = engine.NewQueue(workers, engine.NoValueHandler(c.handleRequest))
+	c.engine = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
 	return c
 }
 
@@ -37,7 +37,7 @@ func (c *ImageCopier) SubmitAll(reqs ...ImageRequest) []ImageCopyTask {
 }
 
 type ImageCopyTask struct {
-	*engine.Task[engine.NoValue]
+	*work.Task[work.NoValue]
 }
 
 func (t ImageCopyTask) Wait() error {

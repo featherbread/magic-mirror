@@ -5,12 +5,12 @@ import (
 	"log"
 
 	"go.alexhamlin.co/magic-mirror/internal/blob"
-	"go.alexhamlin.co/magic-mirror/internal/engine"
 	"go.alexhamlin.co/magic-mirror/internal/image"
+	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
 type PlatformCopier struct {
-	engine             *engine.Queue[PlatformRequest, engine.NoValue]
+	engine             *work.Queue[PlatformRequest, work.NoValue]
 	manifestDownloader *Downloader
 	blobCopier         *blob.Copier
 }
@@ -25,7 +25,7 @@ func NewPlatformCopier(workers int, manifestDownloader *Downloader, blobCopier *
 		manifestDownloader: manifestDownloader,
 		blobCopier:         blobCopier,
 	}
-	c.engine = engine.NewQueue(workers, engine.NoValueHandler(c.handleRequest))
+	c.engine = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
 	return c
 }
 
@@ -37,7 +37,7 @@ func (c *PlatformCopier) RequestCopy(from image.Image, to image.Repository) Plat
 }
 
 type PlatformCopyTask struct {
-	*engine.Task[engine.NoValue]
+	*work.Task[work.NoValue]
 }
 
 func (t PlatformCopyTask) Wait() error {
