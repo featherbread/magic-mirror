@@ -42,7 +42,7 @@ func (c *ImageCopier) Close() {
 }
 
 func (c *ImageCopier) handleRequest(req ImageRequest) error {
-	log.Printf("[image] downloading manifest for %s", req.From)
+	log.Printf("[image] downloading root manifest for %s", req.From)
 	contentType, body, err := downloadManifest(req.From.Repository, req.From.Tag)
 	if err != nil {
 		return err
@@ -63,11 +63,9 @@ func (c *ImageCopier) handleRequest(req ImageRequest) error {
 	var tasks []PlatformCopyTask
 	if len(manifest.Manifests) > 0 {
 		for _, m := range manifest.Manifests {
-			log.Printf("[image] requesting copy of manifest %s to %s", m.Digest, req.To.Repository)
 			tasks = append(tasks, c.platformCopier.RequestCopy(string(m.Digest), req.From.Repository, req.To.Repository))
 		}
 	} else {
-		log.Printf("[image] requesting copy of manifest %s to %s", req.From.Tag, req.To.Repository)
 		tasks = []PlatformCopyTask{c.platformCopier.RequestCopy(req.From.Tag, req.From.Repository, req.To.Repository)}
 	}
 	var taskErr error
@@ -81,8 +79,10 @@ func (c *ImageCopier) handleRequest(req ImageRequest) error {
 	}
 
 	if len(manifest.Manifests) > 0 {
-		log.Printf("[image] requesting copy of manifest %s to %s", req.From.Tag, req.To.Repository)
-		return uploadManifest(req.To.Repository, req.From.Tag, contentType, body)
+		if err := uploadManifest(req.To.Repository, req.From.Tag, contentType, body); err != nil {
+			return err
+		}
 	}
+	log.Printf("[image] fully copied %s to %s", req.From, req.To)
 	return nil
 }

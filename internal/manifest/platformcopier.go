@@ -48,7 +48,7 @@ func (c *PlatformCopier) Close() {
 }
 
 func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
-	log.Printf("[platform] downloading manifest %s from %s", req.Reference, req.From)
+	log.Printf("[platform] downloading manifest %s for %s", req.Reference, req.From)
 	contentType, body, err := downloadManifest(req.From, req.Reference)
 	if err != nil {
 		return err
@@ -68,10 +68,8 @@ func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
 
 	tasks := make([]blob.CopyTask, len(manifest.Layers)+1)
 	for i, layer := range manifest.Layers {
-		log.Printf("[platform] requesting copy of layer blob %s to %s", layer.Digest, req.To)
 		tasks[i] = c.blobCopier.RequestCopy(layer.Digest, req.From, req.To)
 	}
-	log.Printf("[platform] requesting copy of config blob %s to %s", manifest.Config.Digest, req.To)
 	tasks[len(tasks)-1] = c.blobCopier.RequestCopy(manifest.Config.Digest, req.From, req.To)
 
 	var taskErr error
@@ -84,6 +82,5 @@ func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
 		return taskErr
 	}
 
-	log.Printf("[platform] uploading manifest %s to %s", req.Reference, req.To)
 	return uploadManifest(req.To, req.Reference, contentType, body)
 }
