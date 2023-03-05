@@ -12,13 +12,6 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/registry"
 )
 
-var supportedManifestMediaTypes = []string{
-	"application/vnd.oci.image.index.v1+json",
-	"application/vnd.docker.distribution.manifest.list.v2+json",
-	"application/vnd.oci.image.manifest.v1+json",
-	"application/vnd.docker.distribution.manifest.v2+json",
-}
-
 func uploadManifest(img image.Image, contentType string, body json.RawMessage) error {
 	client, err := registry.GetClient(img.Repository, registry.PushScope)
 	if err != nil {

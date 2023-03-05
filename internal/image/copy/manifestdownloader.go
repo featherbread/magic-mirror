@@ -34,6 +34,13 @@ func (d *manifestDownloader) Get(img image.Image) (manifest, error) {
 	return d.Queue.GetOrSubmit(img).Wait()
 }
 
+var supportedManifestMediaTypes = []string{
+	"application/vnd.oci.image.index.v1+json",
+	"application/vnd.docker.distribution.manifest.list.v2+json",
+	"application/vnd.oci.image.manifest.v1+json",
+	"application/vnd.docker.distribution.manifest.v2+json",
+}
+
 func (d *manifestDownloader) handleRequest(img image.Image) (resp manifest, err error) {
 	reference := string(img.Digest)
 	if reference == "" {
