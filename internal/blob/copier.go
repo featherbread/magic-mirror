@@ -18,13 +18,13 @@ import (
 )
 
 type Copier struct {
-	engine *work.Queue[Request, work.NoValue]
+	*work.Queue[CopyRequest, work.NoValue]
 
 	sourcesMap map[image.Digest]mapset.Set[image.Repository]
 	sourcesMu  sync.Mutex
 }
 
-type Request struct {
+type CopyRequest struct {
 	Digest image.Digest
 	To     image.Repository
 }
@@ -33,26 +33,12 @@ func NewCopier(workers int) *Copier {
 	c := &Copier{
 		sourcesMap: make(map[image.Digest]mapset.Set[image.Repository]),
 	}
-	c.engine = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
+	c.Queue = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
 	return c
 }
 
-func (c *Copier) RequestCopy(dgst image.Digest, from, to image.Repository) CopyTask {
+func (c *Copier) RegisterSource(dgst image.Digest, from image.Repository) {
 	c.sources(dgst).Add(from)
-	return CopyTask{c.engine.GetOrSubmit(Request{Digest: dgst, To: to})}
-}
-
-type CopyTask struct {
-	*work.Task[work.NoValue]
-}
-
-func (t CopyTask) Wait() error {
-	_, err := t.Task.Wait()
-	return err
-}
-
-func (c *Copier) Close() {
-	c.engine.CloseSubmit()
 }
 
 func (c *Copier) sources(dgst image.Digest) mapset.Set[image.Repository] {
@@ -66,7 +52,7 @@ func (c *Copier) sources(dgst image.Digest) mapset.Set[image.Repository] {
 	return set
 }
 
-func (c *Copier) handleRequest(req Request) (err error) {
+func (c *Copier) handleRequest(req CopyRequest) (err error) {
 	sourceSet := c.sources(req.Digest)
 	if sourceSet.Contains(req.To) {
 		log.Printf("[blob]\tknown %s@%s", req.To, req.Digest)
@@ -75,7 +61,7 @@ func (c *Copier) handleRequest(req Request) (err error) {
 
 	defer func() {
 		if err == nil {
-			c.sources(req.Digest).Add(req.To)
+			c.RegisterSource(req.Digest, req.To)
 		}
 	}()
 

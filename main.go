@@ -20,7 +20,7 @@ func must[T any](x T, err error) T {
 
 func main() {
 	blobCopier := blob.NewCopier(10)
-	defer blobCopier.Close()
+	defer blobCopier.CloseSubmit()
 
 	manifestDownloader := manifest.NewDownloader(10)
 	defer manifestDownloader.Close()

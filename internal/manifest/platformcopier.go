@@ -67,20 +67,17 @@ func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
 		return err
 	}
 
-	tasks := make([]blob.CopyTask, len(manifest.Layers)+1)
+	copyRequests := make([]blob.CopyRequest, len(manifest.Layers)+1)
 	for i, layer := range manifest.Layers {
-		tasks[i] = c.blobCopier.RequestCopy(layer.Digest, req.From.Repository, req.To)
+		c.blobCopier.RegisterSource(layer.Digest, req.From.Repository)
+		copyRequests[i] = blob.CopyRequest{Digest: layer.Digest, To: req.To}
 	}
-	tasks[len(tasks)-1] = c.blobCopier.RequestCopy(manifest.Config.Digest, req.From.Repository, req.To)
+	c.blobCopier.RegisterSource(manifest.Config.Digest, req.From.Repository)
+	copyRequests[len(copyRequests)-1] = blob.CopyRequest{Digest: manifest.Config.Digest, To: req.To}
 
-	var taskErr error
-	for _, task := range tasks {
-		if err := task.Wait(); err != nil && taskErr == nil {
-			taskErr = err
-		}
-	}
-	if taskErr != nil {
-		return taskErr
+	_, err = c.blobCopier.GetOrSubmitAll(copyRequests...).WaitAll()
+	if err != nil {
+		return err
 	}
 
 	destImg := image.Image{Repository: req.To, Tag: req.From.Tag, Digest: req.From.Digest}
