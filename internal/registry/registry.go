@@ -69,7 +69,7 @@ func getTransport(repo image.Repository, scope string) (http.RoundTripper, error
 // RoundTripper from go-containerregistry.
 type lockedTransport struct {
 	http.RoundTripper
-	mu sync.Mutex
+	mu ctxLock
 }
 
 func newLockedTransport(rt http.RoundTripper) *lockedTransport {
@@ -79,7 +79,50 @@ func newLockedTransport(rt http.RoundTripper) *lockedTransport {
 }
 
 func (t *lockedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	t.mu.Lock()
+	if err := t.mu.LockWithContext(req.Context()); err != nil {
+		return nil, err
+	}
 	defer t.mu.Unlock()
 	return t.RoundTripper.RoundTrip(req)
+}
+
+// ctxLock is a mutex that supports canceling a lock attempt with a
+// [context.Context]. The zero value for a ctxLock is an unlocked mutex.
+type ctxLock struct {
+	ch   chan struct{}
+	init sync.Once
+}
+
+func (l *ctxLock) ensureInit() {
+	l.init.Do(func() {
+		l.ch = make(chan struct{}, 1)
+		l.ch <- struct{}{}
+	})
+}
+
+// LockWithContext blocks the calling goroutine until the mutex is available, in
+// which case it returns a nil error, or until ctx is canceled, in which case it
+// returns ctx.Err().
+//
+// When LockWithContext returns a non-nil error, the caller must not attempt to
+// unlock the mutex or violate any invariant that it protects.
+func (l *ctxLock) LockWithContext(ctx context.Context) error {
+	l.ensureInit()
+	select {
+	case <-l.ch:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Unlock unlocks the locked mutex, or panics if the mutex is already unlocked.
+func (l *ctxLock) Unlock() {
+	l.ensureInit()
+	select {
+	case l.ch <- struct{}{}:
+		return
+	default:
+		panic("unlock of unlocked ctxLock")
+	}
 }
