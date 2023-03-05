@@ -1,6 +1,7 @@
 package copy
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,13 +16,40 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
-type manifestDownloader struct {
-	*work.Queue[image.Image, manifest]
-}
-
 type manifest struct {
 	ContentType string
 	Body        json.RawMessage
+}
+
+func uploadManifest(img image.Image, manifest manifest) error {
+	client, err := registry.GetClient(img.Repository, registry.PushScope)
+	if err != nil {
+		return err
+	}
+
+	reference := string(img.Digest)
+	if reference == "" {
+		reference = img.Tag
+	}
+
+	u := registry.GetBaseURL(img.Registry)
+	u.Path = fmt.Sprintf("/v2/%s/manifests/%s", img.Namespace, reference)
+	req, err := http.NewRequest(http.MethodPut, u.String(), bytes.NewReader(manifest.Body))
+	if err != nil {
+		return err
+	}
+	req.Header.Add("Content-Type", manifest.ContentType)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return transport.CheckError(resp, http.StatusCreated)
+}
+
+type manifestDownloader struct {
+	*work.Queue[image.Image, manifest]
 }
 
 func newManifestDownloader(workers int) *manifestDownloader {

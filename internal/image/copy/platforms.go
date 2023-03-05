@@ -44,12 +44,12 @@ func (c *platformCopier) CopyAll(to image.Repository, from ...image.Image) error
 }
 
 func (c *platformCopier) handleRequest(req platformCopyRequest) error {
-	manifestResponse, err := c.manifests.Get(req.From)
+	manifest, err := c.manifests.Get(req.From)
 	if err != nil {
 		return err
 	}
 
-	var manifest struct {
+	var parsedManifest struct {
 		Config struct {
 			Digest image.Digest `json:"digest"`
 		} `json:"config"`
@@ -57,15 +57,15 @@ func (c *platformCopier) handleRequest(req platformCopyRequest) error {
 			Digest image.Digest `json:"digest"`
 		} `json:"layers"`
 	}
-	if err := json.Unmarshal([]byte(manifestResponse.Body), &manifest); err != nil {
+	if err := json.Unmarshal([]byte(manifest.Body), &parsedManifest); err != nil {
 		return err
 	}
 
-	blobDigests := make([]image.Digest, len(manifest.Layers)+1)
-	for i, layer := range manifest.Layers {
+	blobDigests := make([]image.Digest, len(parsedManifest.Layers)+1)
+	for i, layer := range parsedManifest.Layers {
 		blobDigests[i] = layer.Digest
 	}
-	blobDigests[len(blobDigests)-1] = manifest.Config.Digest
+	blobDigests[len(blobDigests)-1] = parsedManifest.Config.Digest
 
 	err = c.blobs.CopyAll(req.From.Repository, req.To, blobDigests...)
 	if err != nil {
@@ -73,7 +73,7 @@ func (c *platformCopier) handleRequest(req platformCopyRequest) error {
 	}
 
 	destImg := image.Image{Repository: req.To, Tag: req.From.Tag, Digest: req.From.Digest}
-	err = uploadManifest(destImg, manifestResponse.ContentType, manifestResponse.Body)
+	err = uploadManifest(destImg, manifest)
 	if err != nil {
 		return err
 	}

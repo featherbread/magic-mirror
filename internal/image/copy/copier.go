@@ -55,12 +55,12 @@ func (c *Copier) CloseSubmit() {
 func (c *Copier) handleRequest(req Request) error {
 	log.Printf("[image]\tstarting copy from %s to %s", req.From, req.To)
 
-	manifestResponse, err := c.manifests.Get(req.From)
+	manifest, err := c.manifests.Get(req.From)
 	if err != nil {
 		return err
 	}
 
-	var manifest struct {
+	var parsedManifest struct {
 		Manifests []struct {
 			Digest image.Digest `json:"digest"`
 		} `json:"manifests"`
@@ -68,15 +68,15 @@ func (c *Copier) handleRequest(req Request) error {
 			Digest image.Digest `json:"digest"`
 		} `json:"layers"`
 	}
-	if err := json.Unmarshal([]byte(manifestResponse.Body), &manifest); err != nil {
+	if err := json.Unmarshal([]byte(manifest.Body), &parsedManifest); err != nil {
 		return err
 	}
 
-	if len(manifest.Manifests) == 0 {
+	if len(parsedManifest.Manifests) == 0 {
 		err = c.platforms.Copy(req.From, req.To.Repository)
 	} else {
-		imgs := make([]image.Image, len(manifest.Manifests))
-		for i, m := range manifest.Manifests {
+		imgs := make([]image.Image, len(parsedManifest.Manifests))
+		for i, m := range parsedManifest.Manifests {
 			imgs[i] = image.Image{Repository: req.From.Repository, Digest: m.Digest}
 		}
 		err = c.platforms.CopyAll(req.To.Repository, imgs...)
@@ -85,8 +85,8 @@ func (c *Copier) handleRequest(req Request) error {
 		return err
 	}
 
-	if len(manifest.Manifests) > 0 {
-		if err := uploadManifest(req.To, manifestResponse.ContentType, manifestResponse.Body); err != nil {
+	if len(parsedManifest.Manifests) > 0 {
+		if err := uploadManifest(req.To, manifest); err != nil {
 			return err
 		}
 	}
