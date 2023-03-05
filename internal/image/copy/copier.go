@@ -12,9 +12,9 @@ import (
 type Copier struct {
 	*work.Queue[Request, work.NoValue]
 
-	blobCopier         *blob.Copier
-	manifestDownloader *ManifestDownloader
-	platformCopier     *PlatformCopier
+	blobs     *blob.Copier
+	manifests *manifestDownloader
+	platforms *platformCopier
 }
 
 type Request struct {
@@ -23,14 +23,14 @@ type Request struct {
 }
 
 func NewCopier(workers int) *Copier {
-	blobCopier := blob.NewCopier(workers)
-	manifestDownloader := NewDownloader(workers)
-	platformCopier := NewPlatformCopier(0, manifestDownloader, blobCopier)
+	blobs := blob.NewCopier(workers)
+	manifests := newManifestDownloader(workers)
+	platforms := newPlatformCopier(0, manifests, blobs)
 
 	c := &Copier{
-		blobCopier:         blobCopier,
-		manifestDownloader: manifestDownloader,
-		platformCopier:     platformCopier,
+		blobs:     blobs,
+		manifests: manifests,
+		platforms: platforms,
 	}
 	c.Queue = work.NewQueue(0, work.NoValueHandler(c.handleRequest))
 	return c
@@ -48,15 +48,15 @@ func (c *Copier) CopyAll(reqs ...Request) error {
 
 func (c *Copier) CloseSubmit() {
 	c.Queue.CloseSubmit()
-	c.platformCopier.CloseSubmit()
-	c.manifestDownloader.CloseSubmit()
-	c.blobCopier.CloseSubmit()
+	c.platforms.CloseSubmit()
+	c.manifests.CloseSubmit()
+	c.blobs.CloseSubmit()
 }
 
 func (c *Copier) handleRequest(req Request) error {
 	log.Printf("[image]\tstarting copy from %s to %s", req.From, req.To)
 
-	manifestResponse, err := c.manifestDownloader.Get(req.From)
+	manifestResponse, err := c.manifests.Get(req.From)
 	if err != nil {
 		return err
 	}
@@ -74,13 +74,13 @@ func (c *Copier) handleRequest(req Request) error {
 	}
 
 	if len(manifest.Manifests) == 0 {
-		err = c.platformCopier.Copy(req.From, req.To.Repository)
+		err = c.platforms.Copy(req.From, req.To.Repository)
 	} else {
 		imgs := make([]image.Image, len(manifest.Manifests))
 		for i, m := range manifest.Manifests {
 			imgs[i] = image.Image{Repository: req.From.Repository, Digest: string(m.Digest)}
 		}
-		err = c.platformCopier.CopyAll(req.To.Repository, imgs...)
+		err = c.platforms.CopyAll(req.To.Repository, imgs...)
 	}
 	if err != nil {
 		return err

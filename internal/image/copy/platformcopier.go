@@ -9,43 +9,43 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
-type PlatformCopier struct {
-	*work.Queue[PlatformRequest, work.NoValue]
+type platformCopier struct {
+	*work.Queue[platformCopyRequest, work.NoValue]
 
-	manifestDownloader *ManifestDownloader
-	blobCopier         *blob.Copier
+	manifests *manifestDownloader
+	blobs     *blob.Copier
 }
 
-type PlatformRequest struct {
+type platformCopyRequest struct {
 	From image.Image
 	To   image.Repository
 }
 
-func NewPlatformCopier(workers int, manifestDownloader *ManifestDownloader, blobCopier *blob.Copier) *PlatformCopier {
-	c := &PlatformCopier{
-		manifestDownloader: manifestDownloader,
-		blobCopier:         blobCopier,
+func newPlatformCopier(workers int, manifests *manifestDownloader, blobs *blob.Copier) *platformCopier {
+	c := &platformCopier{
+		manifests: manifests,
+		blobs:     blobs,
 	}
 	c.Queue = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
 	return c
 }
 
-func (c *PlatformCopier) Copy(from image.Image, to image.Repository) error {
-	_, err := c.Queue.GetOrSubmit(PlatformRequest{From: from, To: to}).Wait()
+func (c *platformCopier) Copy(from image.Image, to image.Repository) error {
+	_, err := c.Queue.GetOrSubmit(platformCopyRequest{From: from, To: to}).Wait()
 	return err
 }
 
-func (c *PlatformCopier) CopyAll(to image.Repository, from ...image.Image) error {
-	reqs := make([]PlatformRequest, len(from))
+func (c *platformCopier) CopyAll(to image.Repository, from ...image.Image) error {
+	reqs := make([]platformCopyRequest, len(from))
 	for i, img := range from {
-		reqs[i] = PlatformRequest{From: img, To: to}
+		reqs[i] = platformCopyRequest{From: img, To: to}
 	}
 	_, err := c.Queue.GetOrSubmitAll(reqs...).WaitAll()
 	return err
 }
 
-func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
-	manifestResponse, err := c.manifestDownloader.Get(req.From)
+func (c *platformCopier) handleRequest(req platformCopyRequest) error {
+	manifestResponse, err := c.manifests.Get(req.From)
 	if err != nil {
 		return err
 	}
@@ -68,7 +68,7 @@ func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
 	}
 	blobDigests[len(blobDigests)-1] = manifest.Config.Digest
 
-	err = c.blobCopier.CopyAll(req.From.Repository, req.To, blobDigests...)
+	err = c.blobs.CopyAll(req.From.Repository, req.To, blobDigests...)
 	if err != nil {
 		return err
 	}

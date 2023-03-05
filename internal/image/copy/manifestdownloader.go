@@ -15,31 +15,26 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
-type ManifestDownloader struct {
-	*work.Queue[image.Image, DownloadResponse]
+type manifestDownloader struct {
+	*work.Queue[image.Image, manifest]
 }
 
-type DownloadRequest struct {
-	From      image.Repository
-	Reference string
-}
-
-type DownloadResponse struct {
+type manifest struct {
 	ContentType string
 	Body        json.RawMessage
 }
 
-func NewDownloader(workers int) *ManifestDownloader {
-	d := &ManifestDownloader{}
+func newManifestDownloader(workers int) *manifestDownloader {
+	d := &manifestDownloader{}
 	d.Queue = work.NewQueue(workers, d.handleRequest)
 	return d
 }
 
-func (d *ManifestDownloader) Get(img image.Image) (DownloadResponse, error) {
+func (d *manifestDownloader) Get(img image.Image) (manifest, error) {
 	return d.Queue.GetOrSubmit(img).Wait()
 }
 
-func (d *ManifestDownloader) handleRequest(img image.Image) (resp DownloadResponse, err error) {
+func (d *manifestDownloader) handleRequest(img image.Image) (resp manifest, err error) {
 	reference := img.Digest
 	if reference == "" {
 		reference = img.Tag
@@ -72,5 +67,5 @@ func (d *ManifestDownloader) handleRequest(img image.Image) (resp DownloadRespon
 
 	contentType := downloadResp.Header.Get("Content-Type")
 	body, err := io.ReadAll(downloadResp.Body)
-	return DownloadResponse{ContentType: contentType, Body: body}, err
+	return manifest{ContentType: contentType, Body: body}, err
 }
