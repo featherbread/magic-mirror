@@ -3,6 +3,7 @@ package blobmirror
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"time"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
@@ -14,6 +15,8 @@ func transfer(dgst image.Digest, from []image.Repository, to image.Repository) e
 	}
 
 	log.Printf("[blobmirror] Transferring %s from %s to %s", dgst, from[0], to)
-	time.Sleep(2 * time.Second)
+
+	duration := time.Duration(rand.Uint64() % uint64(5*time.Second))
+	time.Sleep(duration)
 	return nil
 }
