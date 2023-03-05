@@ -145,7 +145,7 @@ func checkForExistingBlob(repo image.Repository, dgst image.Digest) (bool, error
 		return false, err
 	}
 
-	u := registry.GetBaseURL(repo.Registry)
+	u := repo.Registry.APIBaseURL()
 	u.Path = fmt.Sprintf("/v2/%s/blobs/%s", repo.Namespace, dgst)
 	req, err := http.NewRequest(http.MethodHead, u.String(), nil)
 	if err != nil {
@@ -166,7 +166,7 @@ func downloadBlob(repo image.Repository, dgst image.Digest) (r io.ReadCloser, si
 		return nil, 0, err
 	}
 
-	u := registry.GetBaseURL(repo.Registry)
+	u := repo.Registry.APIBaseURL()
 	u.Path = fmt.Sprintf("/v2/%s/blobs/%s", repo.Namespace, dgst)
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -201,7 +201,7 @@ func requestBlobUploadURL(repo image.Repository, dgst image.Digest, mountNamespa
 		query.Add("digest", string(dgst))
 	}
 
-	u := registry.GetBaseURL(repo.Registry)
+	u := repo.Registry.APIBaseURL()
 	u.Path = fmt.Sprintf("/v2/%s/blobs/uploads/", repo.Namespace)
 	u.RawQuery = query.Encode()
 	req, err := http.NewRequest(http.MethodPost, u.String(), nil)

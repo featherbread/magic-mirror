@@ -3,7 +3,6 @@ package registry
 import (
 	"context"
 	"net/http"
-	"net/url"
 	"sync"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -12,17 +11,6 @@ import (
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
 )
-
-func GetBaseURL(reg image.Registry) *url.URL {
-	scheme := "https"
-	if nr, err := name.NewRegistry(string(reg)); err == nil {
-		scheme = nr.Scheme()
-	}
-	return &url.URL{
-		Scheme: scheme,
-		Host:   string(reg),
-	}
-}
 
 type Scope string
 

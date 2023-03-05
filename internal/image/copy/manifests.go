@@ -32,7 +32,7 @@ func uploadManifest(img image.Image, manifest manifest) error {
 		reference = img.Tag
 	}
 
-	u := registry.GetBaseURL(img.Registry)
+	u := img.Registry.APIBaseURL()
 	u.Path = fmt.Sprintf("/v2/%s/manifests/%s", img.Namespace, reference)
 	req, err := http.NewRequest(http.MethodPut, u.String(), bytes.NewReader(manifest.Body))
 	if err != nil {
@@ -82,7 +82,7 @@ func (d *manifestCache) handleRequest(img image.Image) (resp manifest, err error
 		return
 	}
 
-	u := registry.GetBaseURL(img.Registry)
+	u := img.Registry.APIBaseURL()
 	u.Path = fmt.Sprintf("/v2/%s/manifests/%s", img.Namespace, reference)
 	downloadReq, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
