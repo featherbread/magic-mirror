@@ -5,8 +5,8 @@ import (
 	"os"
 
 	"go.alexhamlin.co/magic-mirror/internal/blob"
-	"go.alexhamlin.co/magic-mirror/internal/copy"
 	"go.alexhamlin.co/magic-mirror/internal/image"
+	"go.alexhamlin.co/magic-mirror/internal/image/copy"
 )
 
 func must[T any](x T, err error) T {
