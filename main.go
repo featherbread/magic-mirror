@@ -1,76 +1,36 @@
 package main
 
-import "context"
+import (
+	"log"
 
-func main() {}
+	"go.alexhamlin.co/magic-mirror/internal/blobmirror"
+	"go.alexhamlin.co/magic-mirror/internal/image"
+)
 
-type Digest string
+func main() {
+	engine := blobmirror.NewEngine()
+	defer engine.Close()
 
-type Repository struct {
-	Registry string
-	Path     string
-}
+	from := image.Repository{
+		Registry: image.Registry("docker.io"),
+		Path:     "library/alpine",
+	}
+	to := image.Repository{
+		Registry: image.Registry("localhost:5000"),
+		Path:     "imported/alpine",
+	}
 
-type Image struct {
-	Repository
-	Tag string
-}
-
-type MirrorRequest struct {
-	From      Image
-	To        Image
-	Platforms []string
-}
-
-func Mirror(req MirrorRequest) {
-	var bmc BlobMirrorController
-
-	// Get the source manifest.
-	// Find all the blobs.
-
-	var digests []Digest
-	var statuses []*BlobMirrorStatus
-	for _, d := range digests {
-		statuses = append(statuses, bmc.RequestTransfer(d, req.From.Repository, req.To.Repository))
+	digests := []image.Digest{
+		"sha256:af6eaf76a39c2d3e7e0b8a0420486e3df33c4027d696c076a99a3d0ac09026af",
+		"sha256:d74e625d91152966d38fe8a62c60daadb96d4b94c1a366de01fab5f334806239",
+	}
+	statuses := make([]*blobmirror.Status, len(digests))
+	for i, dgst := range digests {
+		statuses[i] = engine.Register(dgst, from, to)
 	}
 
 	for _, status := range statuses {
-		<-status.Ctx.Done()
+		<-status.Done
+		log.Printf("[main]: Transfer done: %v", status.Err)
 	}
-
-	// Write the destination manifest.
-}
-
-type BlobMirrorRequest struct {
-	Digest Digest
-	To     Repository
-}
-
-type BlobMirrorStatus struct {
-	Ctx  context.Context
-	done context.CancelCauseFunc
-}
-
-type BlobMirrorController struct {
-	sources  map[Digest][]Repository
-	statuses map[BlobMirrorRequest]*BlobMirrorStatus
-}
-
-func (bmc *BlobMirrorController) RequestTransfer(d Digest, from, to Repository) *BlobMirrorStatus {
-	bmc.RegisterSource(d, from)
-	return bmc.RegisterMirrorRequest(BlobMirrorRequest{d, to})
-}
-
-func (bmc *BlobMirrorController) RegisterSource(d Digest, r Repository) {
-	bmc.sources[d] = append(bmc.sources[d], r)
-}
-
-func (bmc *BlobMirrorController) RegisterMirrorRequest(req BlobMirrorRequest) *BlobMirrorStatus {
-	sources := bmc.sources[req.Digest]
-	for range sources {
-		// Identify sources within the same registry.
-		// If there is one, attempt a mount operation.
-		// Otherwise, select a source and transfer via the network.
-	}
-	return nil
 }
