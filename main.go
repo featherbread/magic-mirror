@@ -5,12 +5,13 @@ import (
 	"sync"
 
 	"go.alexhamlin.co/magic-mirror/internal/blobmirror"
+	"go.alexhamlin.co/magic-mirror/internal/engine"
 	"go.alexhamlin.co/magic-mirror/internal/image"
 )
 
 func main() {
-	engine := blobmirror.NewEngine()
-	defer engine.Close()
+	blobEngine := blobmirror.NewEngine()
+	defer blobEngine.Close()
 
 	from := image.Repository{
 		Registry: image.Registry("ghcr.io"),
@@ -33,19 +34,19 @@ func main() {
 		"sha256:daa2a7aaa8b3aceea6d0a40f07b3c74bcc31b5df580fd7a6171957e20a0d3ca3",
 	}
 
-	statuses := make([]*blobmirror.Status, len(digests))
+	blobTasks := make([]*engine.Task[struct{}], len(digests))
 	for i, dgst := range digests {
-		statuses[i] = engine.Register(dgst, from, to)
+		blobTasks[i] = blobEngine.Register(dgst, from, to)
 	}
 
 	var wg sync.WaitGroup
-	wg.Add(len(statuses))
-	for i, status := range statuses {
-		i, status := i, status
+	wg.Add(len(blobTasks))
+	for i, task := range blobTasks {
+		i, task := i, task
 		go func() {
 			defer wg.Done()
-			<-status.Done
-			log.Printf("[main] Finished transferring %s: %v", digests[i], status.Err)
+			_, err := task.Wait()
+			log.Printf("[main] Finished transferring %s: %v", digests[i], err)
 		}()
 	}
 	wg.Wait()

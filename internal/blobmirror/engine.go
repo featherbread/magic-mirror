@@ -3,19 +3,17 @@ package blobmirror
 import (
 	"sync"
 
+	"go.alexhamlin.co/magic-mirror/internal/engine"
 	"go.alexhamlin.co/magic-mirror/internal/image"
 )
 
 const Workers = 10
 
 type Engine struct {
+	engine *engine.Engine[Request, struct{}]
+
 	sources   map[image.Digest]*SourceList
 	sourcesMu sync.Mutex
-
-	statuses   map[Request]*Status
-	statusesMu sync.Mutex
-
-	pending chan Request
 }
 
 type Request struct {
@@ -23,57 +21,27 @@ type Request struct {
 	To     image.Repository
 }
 
-type Status struct {
-	Done chan struct{}
-	Err  error
-}
-
 func NewEngine() *Engine {
-	e := &Engine{
-		sources:  make(map[image.Digest]*SourceList),
-		statuses: make(map[Request]*Status),
-		pending:  make(chan Request),
-	}
-	for i := 0; i < Workers; i++ {
-		go e.work()
-	}
+	e := &Engine{sources: make(map[image.Digest]*SourceList)}
+	e.engine = engine.NewEngine(Workers, e.do)
 	return e
 }
 
-func (e *Engine) Register(dgst image.Digest, from, to image.Repository) *Status {
-	e.registerSource(dgst, from)
-
-	req := Request{Digest: dgst, To: to}
-
-	e.statusesMu.Lock()
-	defer e.statusesMu.Unlock()
-
-	status, ok := e.statuses[req]
-	if ok {
-		return status
+func (e *Engine) do(req Request) (struct{}, error) {
+	err := transfer(req.Digest, e.getSourceList(req.Digest).Copy(), req.To)
+	if err != nil {
+		e.registerSource(req.Digest, req.To)
 	}
+	return struct{}{}, err
+}
 
-	status = &Status{Done: make(chan struct{}), Err: nil}
-	e.statuses[req] = status
-	go func() { e.pending <- req }()
-	return status
+func (e *Engine) Register(dgst image.Digest, from, to image.Repository) *engine.Task[struct{}] {
+	e.registerSource(dgst, from)
+	return e.engine.GetOrSubmit(Request{Digest: dgst, To: to})
 }
 
 func (e *Engine) Close() {
-	close(e.pending)
-}
-
-func (e *Engine) work() {
-	for req := range e.pending {
-		e.statusesMu.Lock()
-		status := e.statuses[req]
-		e.statusesMu.Unlock()
-		status.Err = transfer(req.Digest, e.getSourceList(req.Digest).Copy(), req.To)
-		if status.Err != nil {
-			e.registerSource(req.Digest, req.To)
-		}
-		close(status.Done)
-	}
+	e.engine.Close()
 }
 
 func (e *Engine) registerSource(dgst image.Digest, repo image.Repository) {
