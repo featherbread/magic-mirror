@@ -18,7 +18,7 @@ import (
 )
 
 type Copier struct {
-	engine *engine.Engine[Request, engine.NoValue]
+	engine *engine.Queue[Request, engine.NoValue]
 
 	sourcesMap map[image.Digest]mapset.Set[image.Repository]
 	sourcesMu  sync.Mutex
@@ -33,7 +33,7 @@ func NewCopier(workers int) *Copier {
 	c := &Copier{
 		sourcesMap: make(map[image.Digest]mapset.Set[image.Repository]),
 	}
-	c.engine = engine.NewEngine(workers, engine.NoValueHandler(c.handleRequest))
+	c.engine = engine.NewQueue(workers, engine.NoValueHandler(c.handleRequest))
 	return c
 }
 

@@ -10,7 +10,7 @@ import (
 )
 
 type PlatformCopier struct {
-	engine             *engine.Engine[PlatformRequest, engine.NoValue]
+	engine             *engine.Queue[PlatformRequest, engine.NoValue]
 	manifestDownloader *Downloader
 	blobCopier         *blob.Copier
 }
@@ -25,7 +25,7 @@ func NewPlatformCopier(workers int, manifestDownloader *Downloader, blobCopier *
 		manifestDownloader: manifestDownloader,
 		blobCopier:         blobCopier,
 	}
-	c.engine = engine.NewEngine(workers, engine.NoValueHandler(c.handleRequest))
+	c.engine = engine.NewQueue(workers, engine.NoValueHandler(c.handleRequest))
 	return c
 }
 

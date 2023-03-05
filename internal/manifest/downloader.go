@@ -16,7 +16,7 @@ import (
 )
 
 type Downloader struct {
-	engine *engine.Engine[image.Image, DownloadResponse]
+	engine *engine.Queue[image.Image, DownloadResponse]
 }
 
 type DownloadRequest struct {
@@ -31,7 +31,7 @@ type DownloadResponse struct {
 
 func NewDownloader(workers int) *Downloader {
 	d := &Downloader{}
-	d.engine = engine.NewEngine(workers, d.handleRequest)
+	d.engine = engine.NewQueue(workers, d.handleRequest)
 	return d
 }
 

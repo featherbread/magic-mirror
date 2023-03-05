@@ -9,7 +9,7 @@ import (
 )
 
 type ImageCopier struct {
-	engine             *engine.Engine[ImageRequest, engine.NoValue]
+	engine             *engine.Queue[ImageRequest, engine.NoValue]
 	manifestDownloader *Downloader
 	platformCopier     *PlatformCopier
 }
@@ -24,7 +24,7 @@ func NewImageCopier(workers int, manifestDownloader *Downloader, platformCopier 
 		manifestDownloader: manifestDownloader,
 		platformCopier:     platformCopier,
 	}
-	c.engine = engine.NewEngine(workers, engine.NoValueHandler(c.handleRequest))
+	c.engine = engine.NewQueue(workers, engine.NoValueHandler(c.handleRequest))
 	return c
 }
 
