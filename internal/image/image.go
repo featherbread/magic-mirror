@@ -7,9 +7,10 @@ import (
 	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/opencontainers/go-digest"
 )
 
-type Digest string
+type Digest digest.Digest
 
 type Registry string
 
@@ -45,16 +46,16 @@ const defaultRegistry = "docker.io"
 var imageRegexp = regexp.MustCompile(`^(?:(?P<registry>[^/]+[.:][^/]+)/)?(?P<namespace>[^:@]+)(?::(?P<tag>[a-zA-Z0-9-_.]{1,128}))?(?:@(?P<digest>.+))?$`)
 
 func Parse(s string) (Image, error) {
-	m := imageRegexp.FindStringSubmatch(s)
-	if len(m) == 0 {
-		return Image{}, fmt.Errorf("cannot parse image reference: %s", s)
+	match := imageRegexp.FindStringSubmatch(s)
+	if len(match) == 0 {
+		return Image{}, fmt.Errorf("image reference %q does not match expected format", s)
 	}
 
 	var (
-		registry  = m[1]
-		namespace = m[2]
-		tag       = m[3]
-		digest    = Digest(m[4])
+		registry  = match[1]
+		namespace = match[2]
+		tag       = match[3]
+		rawDigest = match[4]
 	)
 	if registry == "" {
 		registry = defaultRegistry
@@ -62,8 +63,12 @@ func Parse(s string) (Image, error) {
 	if registry == defaultRegistry && !strings.Contains(namespace, "/") {
 		namespace = "library/" + namespace
 	}
-	if tag == "" && digest == "" {
+	if tag == "" && rawDigest == "" {
 		tag = "latest"
+	}
+
+	if err := digest.Digest(rawDigest).Validate(); err != nil {
+		return Image{}, fmt.Errorf("invalid digest in %q: %w", s, err)
 	}
 
 	return Image{
@@ -72,7 +77,7 @@ func Parse(s string) (Image, error) {
 			Namespace: namespace,
 		},
 		Tag:    tag,
-		Digest: digest,
+		Digest: Digest(rawDigest),
 	}, nil
 }
 
