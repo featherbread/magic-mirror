@@ -62,12 +62,20 @@ func getTransport(repo image.Repository, scope string) (http.RoundTripper, error
 		http.DefaultTransport,
 		[]string{gRepo.Scope(scope)},
 	)
-	return &lockedTransport{RoundTripper: gTransport}, err
+	return newLockedTransport(gTransport), err
 }
 
+// lockedTransport works around the non-thread-safety of the underlying
+// RoundTripper from go-containerregistry.
 type lockedTransport struct {
 	http.RoundTripper
 	mu sync.Mutex
+}
+
+func newLockedTransport(rt http.RoundTripper) *lockedTransport {
+	return &lockedTransport{
+		RoundTripper: rt,
+	}
 }
 
 func (t *lockedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
