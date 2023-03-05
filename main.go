@@ -35,12 +35,12 @@ func main() {
 			To:   must(image.Parse("localhost:5000/imported/hypcast:latest")),
 		},
 		manifest.ImageRequest{
-			From: must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
-			To:   must(image.Parse("localhost:5000/alsoimported/hypcast:latest")),
-		},
-		manifest.ImageRequest{
 			From: must(image.Parse("ghcr.io/dexidp/dex:v2.35.3")),
 			To:   must(image.Parse("localhost:5000/imported/dex:v2.35.3")),
+		},
+		manifest.ImageRequest{
+			From: must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
+			To:   must(image.Parse("localhost:5000/alsoimported/hypcast:latest")),
 		},
 		manifest.ImageRequest{
 			From: must(image.Parse("quay.io/minio/minio:RELEASE.2023-02-22T18-23-45Z")),
