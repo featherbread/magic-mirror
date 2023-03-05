@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -38,7 +39,25 @@ func GetClient(registry image.Registry, scope Scope) (http.Client, error) {
 	return client, err
 }
 
+type transportKey struct {
+	registry image.Registry
+	scope    string
+}
+
+var (
+	transports   = make(map[transportKey]*lockedTransport)
+	transportsMu sync.Mutex
+)
+
 func getTransport(registry image.Registry, scope string) (http.RoundTripper, error) {
+	transportsMu.Lock()
+	defer transportsMu.Unlock()
+
+	key := transportKey{registry, scope}
+	if transport, ok := transports[key]; ok {
+		return transport, nil
+	}
+
 	gRegistry, err := name.NewRegistry(string(registry))
 	if err != nil {
 		return nil, err
@@ -47,11 +66,29 @@ func getTransport(registry image.Registry, scope string) (http.RoundTripper, err
 	if err != nil {
 		authenticator = authn.Anonymous
 	}
-	return transport.NewWithContext(
+	gTransport, err := transport.NewWithContext(
 		context.TODO(),
 		gRegistry,
 		authenticator,
 		http.DefaultTransport,
 		[]string{gRegistry.Scope(scope)},
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	transport := &lockedTransport{RoundTripper: gTransport}
+	transports[key] = transport
+	return transport, err
+}
+
+type lockedTransport struct {
+	http.RoundTripper
+	mu sync.Mutex
+}
+
+func (t *lockedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.RoundTripper.RoundTrip(req)
 }

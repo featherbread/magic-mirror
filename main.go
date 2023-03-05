@@ -12,10 +12,10 @@ import (
 )
 
 func main() {
-	blobCopier := blob.NewCopier(5)
+	blobCopier := blob.NewCopier(15)
 	defer blobCopier.Close()
 
-	platformCopier := manifest.NewPlatformCopier(5, blobCopier)
+	platformCopier := manifest.NewPlatformCopier(10, blobCopier)
 	defer platformCopier.Close()
 
 	imageCopier := manifest.NewImageCopier(5, platformCopier)
@@ -50,6 +50,40 @@ func main() {
 				Namespace: "alsoimported/hypcast",
 			},
 			Tag: "latest",
+		},
+	))
+
+	tasks = append(tasks, imageCopier.RequestCopy(
+		image.Image{
+			Repository: image.Repository{
+				Registry:  "index.docker.io",
+				Namespace: "minio/minio",
+			},
+			Tag: "RELEASE.2023-02-27T18-10-45Z",
+		},
+		image.Image{
+			Repository: image.Repository{
+				Registry:  "localhost:5000",
+				Namespace: "imported/minio",
+			},
+			Tag: "RELEASE.2023-02-27T18-10-45Z",
+		},
+	))
+
+	tasks = append(tasks, imageCopier.RequestCopy(
+		image.Image{
+			Repository: image.Repository{
+				Registry:  "index.docker.io",
+				Namespace: "minio/minio",
+			},
+			Tag: "RELEASE.2023-02-27T18-10-45Z.fips",
+		},
+		image.Image{
+			Repository: image.Repository{
+				Registry:  "localhost:5000",
+				Namespace: "imported/minio",
+			},
+			Tag: "RELEASE.2023-02-27T18-10-45Z.fips",
 		},
 	))
 
