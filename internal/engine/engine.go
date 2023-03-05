@@ -21,8 +21,13 @@ type Engine[K comparable, T any] struct {
 	tasks   map[K]*Task[T]
 	tasksMu sync.Mutex
 
-	queue      []K
-	queueMu    sync.Mutex
+	queue   []K
+	queueMu sync.Mutex
+	// For Engines with a worker count, queueReady is buffered to the number of
+	// workers, and provides "readiness tokens" that can activate a worker and
+	// allow it to pull from the queue. Every push to the queue should attempt to
+	// send one token without blocking (since if the channel's buffer is full, we
+	// know that's enough to eventually activate all workers).
 	queueReady chan struct{}
 }
 
@@ -93,12 +98,11 @@ func (e *Engine[K, T]) Close() {
 }
 
 func (e *Engine[K, V]) run() {
-	for {
-		select {
-		case <-e.queueReady:
-		default:
-		}
+	if _, ok := <-e.queueReady; !ok {
+		return
+	}
 
+	for {
 		key, ok := e.tryPop()
 		if !ok {
 			if _, ready := <-e.queueReady; ready {
@@ -114,6 +118,11 @@ func (e *Engine[K, V]) run() {
 
 		task.value, task.err = e.handle(key)
 		close(task.done)
+
+		select {
+		case <-e.queueReady:
+		default:
+		}
 	}
 }
 
