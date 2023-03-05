@@ -4,22 +4,17 @@ import (
 	"log"
 	"sync"
 
-	"go.alexhamlin.co/magic-mirror/internal/blobmirror"
-	"go.alexhamlin.co/magic-mirror/internal/engine"
+	"go.alexhamlin.co/magic-mirror/internal/blob"
 	"go.alexhamlin.co/magic-mirror/internal/image"
 )
 
 func main() {
-	blobEngine := blobmirror.NewEngine()
-	defer blobEngine.Close()
+	copier := blob.NewCopier(5)
+	defer copier.Close()
 
 	from := image.Repository{
-		Registry: image.Registry("ghcr.io"),
-		Path:     "ahamlinman/hypcast",
-	}
-	to := image.Repository{
-		Registry: image.Registry("localhost:5000"),
-		Path:     "imported/hypcast",
+		Registry:  image.Registry("ghcr.io"),
+		Namespace: "ahamlinman/hypcast",
 	}
 	digests := []image.Digest{
 		"sha256:1a8ac054707c16fa2a642d01ead1c0cd72bd806b3bf63b8a236a599a4f595687",
@@ -34,19 +29,27 @@ func main() {
 		"sha256:daa2a7aaa8b3aceea6d0a40f07b3c74bcc31b5df580fd7a6171957e20a0d3ca3",
 	}
 
-	blobTasks := make([]*engine.Task[struct{}], len(digests))
-	for i, dgst := range digests {
-		blobTasks[i] = blobEngine.Register(dgst, from, to)
+	to1 := image.Repository{Registry: image.Registry("localhost:5000"), Namespace: "imported/hypcast"}
+	to2 := image.Repository{Registry: image.Registry("localhost:5000"), Namespace: "alsoimported/hypcast"}
+
+	blobTasks := make([]blob.CopyTask, 0, 2*len(digests))
+	for _, dgst := range digests {
+		blobTasks = append(blobTasks, copier.RequestCopy(dgst, from, to1))
+		log.Printf("[main] requested to copy %s from %s to %s", dgst, from, to1)
+	}
+	for _, dgst := range digests {
+		blobTasks = append(blobTasks, copier.RequestCopy(dgst, from, to2))
+		log.Printf("[main] requested to copy %s from %s to %s", dgst, from, to2)
 	}
 
 	var wg sync.WaitGroup
 	wg.Add(len(blobTasks))
-	for i, task := range blobTasks {
-		i, task := i, task
+	for _, task := range blobTasks {
+		task := task
 		go func() {
 			defer wg.Done()
-			_, err := task.Wait()
-			log.Printf("[main] Finished transferring %s: %v", digests[i], err)
+			err := task.Wait()
+			log.Printf("[main] copy result: %v", err)
 		}()
 	}
 	wg.Wait()

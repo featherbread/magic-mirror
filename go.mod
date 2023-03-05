@@ -2,7 +2,10 @@ module go.alexhamlin.co/magic-mirror
 
 go 1.20
 
-require github.com/google/go-containerregistry v0.13.0
+require (
+	github.com/deckarep/golang-set/v2 v2.1.0
+	github.com/google/go-containerregistry v0.13.0
+)
 
 require (
 	github.com/docker/cli v20.10.20+incompatible // indirect

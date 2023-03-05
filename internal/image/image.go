@@ -6,7 +6,7 @@ type Registry string
 
 type Repository struct {
 	Registry
-	Path string
+	Namespace string
 }
 
 type Image struct {
