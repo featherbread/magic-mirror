@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
-
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/image/registry"
 	"go.alexhamlin.co/magic-mirror/internal/work"
@@ -45,7 +43,7 @@ func uploadManifest(img image.Image, manifest manifest) error {
 		return err
 	}
 	defer resp.Body.Close()
-	return transport.CheckError(resp, http.StatusCreated)
+	return registry.CheckResponse(resp, http.StatusCreated)
 }
 
 type manifestCache struct {
@@ -95,7 +93,7 @@ func (d *manifestCache) handleRequest(img image.Image) (resp manifest, err error
 		return
 	}
 	defer downloadResp.Body.Close()
-	err = transport.CheckError(downloadResp, http.StatusOK)
+	err = registry.CheckResponse(downloadResp, http.StatusOK)
 	if err != nil {
 		return
 	}

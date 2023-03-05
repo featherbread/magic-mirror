@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	mapset "github.com/deckarep/golang-set/v2"
-	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/image/registry"
@@ -131,7 +130,7 @@ func (c *blobCopier) handleRequest(req blobCopyRequest) (err error) {
 		return err
 	}
 	defer uploadResp.Body.Close()
-	if err := transport.CheckError(uploadResp, http.StatusCreated); err != nil {
+	if err := registry.CheckResponse(uploadResp, http.StatusCreated); err != nil {
 		return err
 	}
 
@@ -157,7 +156,7 @@ func checkForExistingBlob(repo image.Repository, dgst image.Digest) (bool, error
 		return false, err
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK, transport.CheckError(resp, http.StatusOK, http.StatusNotFound)
+	return resp.StatusCode == http.StatusOK, registry.CheckResponse(resp, http.StatusOK, http.StatusNotFound)
 }
 
 func downloadBlob(repo image.Repository, dgst image.Digest) (r io.ReadCloser, size int64, err error) {
@@ -177,7 +176,7 @@ func downloadBlob(repo image.Repository, dgst image.Digest) (r io.ReadCloser, si
 	if err != nil {
 		return nil, 0, err
 	}
-	if err := transport.CheckError(resp, http.StatusOK); err != nil {
+	if err := registry.CheckResponse(resp, http.StatusOK); err != nil {
 		resp.Body.Close()
 		return nil, 0, err
 	}
@@ -214,7 +213,7 @@ func requestBlobUploadURL(repo image.Repository, dgst image.Digest, mountNamespa
 		return nil, false, err
 	}
 	defer resp.Body.Close()
-	if err := transport.CheckError(resp, http.StatusCreated, http.StatusAccepted); err != nil {
+	if err := registry.CheckResponse(resp, http.StatusCreated, http.StatusAccepted); err != nil {
 		return nil, false, err
 	}
 

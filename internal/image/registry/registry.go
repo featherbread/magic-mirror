@@ -12,10 +12,16 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/image"
 )
 
+// Scope represents a permission on a particular image repository.
 type Scope string
 
 const (
+	// PullScope represents the permission to pull images from a specific
+	// repository.
 	PullScope = Scope(transport.PullScope)
+
+	// PushScope represents the permission to push images to a specific
+	// repository.
 	PushScope = Scope(transport.PushScope)
 )
 
@@ -29,6 +35,10 @@ var (
 	clientsMu sync.Mutex
 )
 
+// GetClient returns an HTTP client that transparently authenticates API
+// requests to the provided image repository with the provided scope. The
+// returned client is safe for concurrent use by multiple goroutines, and may be
+// shared with other callers.
 func GetClient(repo image.Repository, scope Scope) (http.Client, error) {
 	clientsMu.Lock()
 	defer clientsMu.Unlock()
@@ -44,6 +54,13 @@ func GetClient(repo image.Repository, scope Scope) (http.Client, error) {
 		clients[key] = client
 	}
 	return client, err
+}
+
+// CheckResponse validates that the response code is within the provided set of
+// codes. If it is not, CheckResponse consumes the response body and returns a
+// detailed error.
+func CheckResponse(resp *http.Response, codes ...int) error {
+	return transport.CheckError(resp, codes...)
 }
 
 func getTransport(repo image.Repository, scope string) (http.RoundTripper, error) {
