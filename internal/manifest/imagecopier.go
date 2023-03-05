@@ -9,7 +9,8 @@ import (
 )
 
 type ImageCopier struct {
-	engine             *work.Queue[ImageRequest, work.NoValue]
+	*work.Queue[ImageRequest, work.NoValue]
+
 	manifestDownloader *Downloader
 	platformCopier     *PlatformCopier
 }
@@ -24,29 +25,18 @@ func NewImageCopier(workers int, manifestDownloader *Downloader, platformCopier 
 		manifestDownloader: manifestDownloader,
 		platformCopier:     platformCopier,
 	}
-	c.engine = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
+	c.Queue = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
 	return c
 }
 
-func (c *ImageCopier) SubmitAll(reqs ...ImageRequest) []ImageCopyTask {
-	tasks := make([]ImageCopyTask, len(reqs))
-	for i, task := range c.engine.GetOrSubmitAll(reqs...) {
-		tasks[i] = ImageCopyTask{task}
-	}
-	return tasks
-}
-
-type ImageCopyTask struct {
-	*work.Task[work.NoValue]
-}
-
-func (t ImageCopyTask) Wait() error {
-	_, err := t.Task.Wait()
+func (c *ImageCopier) Copy(from, to image.Image) error {
+	_, err := c.Queue.GetOrSubmit(ImageRequest{From: from, To: to}).Wait()
 	return err
 }
 
-func (c *ImageCopier) Close() {
-	c.engine.CloseSubmit()
+func (c *ImageCopier) CopyAll(reqs ...ImageRequest) error {
+	_, err := c.Queue.GetOrSubmitAll(reqs...).WaitAll()
+	return err
 }
 
 func (c *ImageCopier) handleRequest(req ImageRequest) error {

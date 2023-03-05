@@ -3,8 +3,6 @@ package main
 import (
 	"log"
 	"os"
-	"sync"
-	"sync/atomic"
 
 	"go.alexhamlin.co/magic-mirror/internal/blob"
 	"go.alexhamlin.co/magic-mirror/internal/image"
@@ -29,9 +27,9 @@ func main() {
 	defer platformCopier.CloseSubmit()
 
 	imageCopier := manifest.NewImageCopier(0, manifestDownloader, platformCopier)
-	defer imageCopier.Close()
+	defer imageCopier.CloseSubmit()
 
-	tasks := imageCopier.SubmitAll(
+	err := imageCopier.CopyAll(
 		manifest.ImageRequest{
 			From: must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
 			To:   must(image.Parse("localhost:5000/imported/hypcast:latest")),
@@ -57,23 +55,8 @@ func main() {
 			To:   must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-27T18-10-45Z.fips")),
 		},
 	)
-
-	var hadError atomic.Bool
-	var wg sync.WaitGroup
-	wg.Add(len(tasks))
-	for _, task := range tasks {
-		task := task
-		go func() {
-			defer wg.Done()
-			if err := task.Wait(); err != nil {
-				hadError.Store(true)
-				log.Printf("[main] copy error: %v", err)
-			}
-		}()
-	}
-	wg.Wait()
-
-	if hadError.Load() {
+	if err != nil {
+		log.Printf("[main] some copies failed:\n%v", err)
 		os.Exit(1)
 	}
 }
