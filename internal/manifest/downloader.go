@@ -55,7 +55,7 @@ func (d *Downloader) handleRequest(img image.Image) (resp DownloadResponse, err 
 
 	log.Printf("[manifest]\tdownloading %s", img)
 
-	client, err := registry.GetClient(img.Registry, registry.PullScope)
+	client, err := registry.GetClient(img.Repository, registry.PullScope)
 	if err != nil {
 		return
 	}

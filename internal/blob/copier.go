@@ -125,7 +125,7 @@ func (c *Copier) handleRequest(req Request) (err error) {
 	uploadReq.Header.Add("Content-Type", "application/octet-stream")
 	uploadReq.Header.Add("Content-Length", strconv.FormatInt(size, 10))
 
-	client, err := registry.GetClient(req.To.Registry, registry.PushScope)
+	client, err := registry.GetClient(req.To, registry.PushScope)
 	if err != nil {
 		return err
 	}
@@ -144,7 +144,7 @@ func (c *Copier) handleRequest(req Request) (err error) {
 }
 
 func checkForExistingBlob(repo image.Repository, dgst image.Digest) (bool, error) {
-	client, err := registry.GetClient(repo.Registry, registry.PullScope)
+	client, err := registry.GetClient(repo, registry.PullScope)
 	if err != nil {
 		return false, err
 	}
@@ -165,7 +165,7 @@ func checkForExistingBlob(repo image.Repository, dgst image.Digest) (bool, error
 }
 
 func downloadBlob(repo image.Repository, dgst image.Digest) (r io.ReadCloser, size int64, err error) {
-	client, err := registry.GetClient(repo.Registry, registry.PullScope)
+	client, err := registry.GetClient(repo, registry.PullScope)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -192,7 +192,7 @@ func downloadBlob(repo image.Repository, dgst image.Digest) (r io.ReadCloser, si
 }
 
 func requestBlobUploadURL(repo image.Repository, dgst image.Digest, mountNamespace string) (upload *url.URL, mounted bool, err error) {
-	client, err := registry.GetClient(repo.Registry, registry.PushScope)
+	client, err := registry.GetClient(repo, registry.PushScope)
 	if err != nil {
 		return nil, false, err
 	}

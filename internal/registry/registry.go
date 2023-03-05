@@ -31,14 +31,14 @@ const (
 	PushScope = Scope(transport.PushScope)
 )
 
-func GetClient(registry image.Registry, scope Scope) (http.Client, error) {
-	transport, err := getTransport(registry, string(scope))
+func GetClient(repo image.Repository, scope Scope) (http.Client, error) {
+	transport, err := getTransport(repo, string(scope))
 	client := http.Client{Transport: transport}
 	return client, err
 }
 
 type transportKey struct {
-	registry image.Registry
+	registry image.Repository
 	scope    string
 }
 
@@ -47,29 +47,29 @@ var (
 	transportsMu sync.Mutex
 )
 
-func getTransport(registry image.Registry, scope string) (http.RoundTripper, error) {
+func getTransport(repo image.Repository, scope string) (http.RoundTripper, error) {
 	transportsMu.Lock()
 	defer transportsMu.Unlock()
 
-	key := transportKey{registry, scope}
+	key := transportKey{repo, scope}
 	if transport, ok := transports[key]; ok {
 		return transport, nil
 	}
 
-	gRegistry, err := name.NewRegistry(string(registry))
+	gRepo, err := name.NewRepository(repo.String())
 	if err != nil {
 		return nil, err
 	}
-	authenticator, err := authn.DefaultKeychain.Resolve(gRegistry)
+	authenticator, err := authn.DefaultKeychain.Resolve(gRepo)
 	if err != nil {
 		authenticator = authn.Anonymous
 	}
 	gTransport, err := transport.NewWithContext(
 		context.TODO(),
-		gRegistry,
+		gRepo.Registry,
 		authenticator,
 		http.DefaultTransport,
-		[]string{gRegistry.Scope(scope)},
+		[]string{gRepo.Scope(scope)},
 	)
 	if err != nil {
 		return nil, err

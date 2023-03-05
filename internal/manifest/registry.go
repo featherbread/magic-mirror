@@ -20,7 +20,7 @@ var supportedManifestMediaTypes = []string{
 }
 
 func uploadManifest(img image.Image, contentType string, body json.RawMessage) error {
-	client, err := registry.GetClient(img.Registry, registry.PushScope)
+	client, err := registry.GetClient(img.Repository, registry.PushScope)
 	if err != nil {
 		return err
 	}
