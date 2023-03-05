@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 
+	"go.alexhamlin.co/magic-mirror/internal/blob"
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
@@ -11,6 +12,7 @@ import (
 type Copier struct {
 	*work.Queue[Request, work.NoValue]
 
+	blobCopier         *blob.Copier
 	manifestDownloader *ManifestDownloader
 	platformCopier     *PlatformCopier
 }
@@ -20,12 +22,17 @@ type Request struct {
 	To   image.Image
 }
 
-func NewCopier(workers int, manifestDownloader *ManifestDownloader, platformCopier *PlatformCopier) *Copier {
+func NewCopier(workers int) *Copier {
+	blobCopier := blob.NewCopier(workers)
+	manifestDownloader := NewDownloader(workers)
+	platformCopier := NewPlatformCopier(0, manifestDownloader, blobCopier)
+
 	c := &Copier{
+		blobCopier:         blobCopier,
 		manifestDownloader: manifestDownloader,
 		platformCopier:     platformCopier,
 	}
-	c.Queue = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
+	c.Queue = work.NewQueue(0, work.NoValueHandler(c.handleRequest))
 	return c
 }
 
@@ -37,6 +44,13 @@ func (c *Copier) Copy(from, to image.Image) error {
 func (c *Copier) CopyAll(reqs ...Request) error {
 	_, err := c.Queue.GetOrSubmitAll(reqs...).WaitAll()
 	return err
+}
+
+func (c *Copier) CloseSubmit() {
+	c.Queue.CloseSubmit()
+	c.platformCopier.CloseSubmit()
+	c.manifestDownloader.CloseSubmit()
+	c.blobCopier.CloseSubmit()
 }
 
 func (c *Copier) handleRequest(req Request) error {

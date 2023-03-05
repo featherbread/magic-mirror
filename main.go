@@ -4,7 +4,6 @@ import (
 	"log"
 	"os"
 
-	"go.alexhamlin.co/magic-mirror/internal/blob"
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/image/copy"
 )
@@ -17,19 +16,10 @@ func must[T any](x T, err error) T {
 }
 
 func main() {
-	blobCopier := blob.NewCopier(10)
-	defer blobCopier.CloseSubmit()
+	copier := copy.NewCopier(10)
+	defer copier.CloseSubmit()
 
-	manifestDownloader := copy.NewDownloader(10)
-	defer manifestDownloader.CloseSubmit()
-
-	platformCopier := copy.NewPlatformCopier(0, manifestDownloader, blobCopier)
-	defer platformCopier.CloseSubmit()
-
-	imageCopier := copy.NewCopier(0, manifestDownloader, platformCopier)
-	defer imageCopier.CloseSubmit()
-
-	err := imageCopier.CopyAll(
+	err := copier.CopyAll(
 		copy.Request{
 			From: must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
 			To:   must(image.Parse("localhost:5000/imported/hypcast:latest")),
