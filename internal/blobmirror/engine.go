@@ -69,6 +69,9 @@ func (e *Engine) work() {
 		status := e.statuses[req]
 		e.statusesMu.Unlock()
 		status.Err = transfer(req.Digest, e.getSourceList(req.Digest).Copy(), req.To)
+		if status.Err != nil {
+			e.registerSource(req.Digest, req.To)
+		}
 		close(status.Done)
 	}
 }
