@@ -12,7 +12,7 @@ type Copier struct {
 	*work.Queue[Request, work.NoValue]
 
 	blobs     *blobCopier
-	manifests *manifestDownloader
+	manifests *manifestCache
 	platforms *platformCopier
 }
 
@@ -23,7 +23,7 @@ type Request struct {
 
 func NewCopier(workers int) *Copier {
 	blobs := newBlobCopier(workers)
-	manifests := newManifestDownloader(workers)
+	manifests := newManifestCache(workers)
 	platforms := newPlatformCopier(0, manifests, blobs)
 
 	c := &Copier{

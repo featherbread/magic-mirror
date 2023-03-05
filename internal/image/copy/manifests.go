@@ -48,17 +48,17 @@ func uploadManifest(img image.Image, manifest manifest) error {
 	return transport.CheckError(resp, http.StatusCreated)
 }
 
-type manifestDownloader struct {
+type manifestCache struct {
 	*work.Queue[image.Image, manifest]
 }
 
-func newManifestDownloader(workers int) *manifestDownloader {
-	d := &manifestDownloader{}
+func newManifestCache(workers int) *manifestCache {
+	d := &manifestCache{}
 	d.Queue = work.NewQueue(workers, d.handleRequest)
 	return d
 }
 
-func (d *manifestDownloader) Get(img image.Image) (manifest, error) {
+func (d *manifestCache) Get(img image.Image) (manifest, error) {
 	return d.Queue.GetOrSubmit(img).Wait()
 }
 
@@ -69,7 +69,7 @@ var supportedManifestMediaTypes = []string{
 	"application/vnd.docker.distribution.manifest.v2+json",
 }
 
-func (d *manifestDownloader) handleRequest(img image.Image) (resp manifest, err error) {
+func (d *manifestCache) handleRequest(img image.Image) (resp manifest, err error) {
 	reference := string(img.Digest)
 	if reference == "" {
 		reference = img.Tag

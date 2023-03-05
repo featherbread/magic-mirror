@@ -11,7 +11,7 @@ import (
 type platformCopier struct {
 	*work.Queue[platformCopyRequest, work.NoValue]
 
-	manifests *manifestDownloader
+	manifests *manifestCache
 	blobs     *blobCopier
 }
 
@@ -20,7 +20,7 @@ type platformCopyRequest struct {
 	To   image.Repository
 }
 
-func newPlatformCopier(workers int, manifests *manifestDownloader, blobs *blobCopier) *platformCopier {
+func newPlatformCopier(workers int, manifests *manifestCache, blobs *blobCopier) *platformCopier {
 	c := &platformCopier{
 		manifests: manifests,
 		blobs:     blobs,
