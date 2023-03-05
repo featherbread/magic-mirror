@@ -2,6 +2,8 @@ package engine
 
 import "sync"
 
+type NoValue = struct{}
+
 type Engine[K comparable, T any] struct {
 	work func(K) (T, error)
 
@@ -21,6 +23,13 @@ func NewEngine[K comparable, T any](workers int, work func(K) (T, error)) *Engin
 		go e.run()
 	}
 	return e
+}
+
+func NoValueFunc[K comparable](work func(K) error) func(K) (NoValue, error) {
+	return func(key K) (_ NoValue, err error) {
+		err = work(key)
+		return
+	}
 }
 
 func (e *Engine[K, T]) GetOrSubmit(key K) *Task[T] {

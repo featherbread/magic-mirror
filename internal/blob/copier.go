@@ -21,7 +21,7 @@ import (
 )
 
 type Copier struct {
-	engine *engine.Engine[Request, struct{}]
+	engine *engine.Engine[Request, engine.NoValue]
 
 	sourcesMap map[image.Digest]mapset.Set[image.Repository]
 	sourcesMu  sync.Mutex
@@ -33,11 +33,11 @@ type Request struct {
 }
 
 func NewCopier(workers int) *Copier {
-	t := &Copier{
+	c := &Copier{
 		sourcesMap: make(map[image.Digest]mapset.Set[image.Repository]),
 	}
-	t.engine = engine.NewEngine(workers, t.handleRequest)
-	return t
+	c.engine = engine.NewEngine(workers, engine.NoValueFunc(c.handleRequest))
+	return c
 }
 
 func (c *Copier) RequestCopy(dgst image.Digest, from, to image.Repository) CopyTask {
@@ -46,7 +46,7 @@ func (c *Copier) RequestCopy(dgst image.Digest, from, to image.Repository) CopyT
 }
 
 type CopyTask struct {
-	*engine.Task[struct{}]
+	*engine.Task[engine.NoValue]
 }
 
 func (t CopyTask) Wait() error {
@@ -69,20 +69,20 @@ func (c *Copier) sources(dgst image.Digest) mapset.Set[image.Repository] {
 	return set
 }
 
-func (c *Copier) handleRequest(req Request) (struct{}, error) {
+func (c *Copier) handleRequest(req Request) error {
 	sourceSet := c.sources(req.Digest)
 	if sourceSet.Contains(req.To) {
 		log.Printf("[blob] %s known to contain %s", req.To, req.Digest)
-		return struct{}{}, nil
+		return nil
 	}
 
 	hasBlob, err := checkForExistingBlob(req.To, req.Digest)
 	if err != nil {
-		return struct{}{}, err
+		return err
 	}
 	if hasBlob {
 		log.Printf("[blob] %s found to contain %s", req.To, req.Digest)
-		return struct{}{}, nil
+		return nil
 	}
 
 	var mountSource image.Repository
@@ -97,49 +97,49 @@ func (c *Copier) handleRequest(req Request) (struct{}, error) {
 
 	uploadURL, mounted, err := requestBlobUploadURL(req.To, req.Digest, mountSource.Namespace)
 	if err != nil {
-		return struct{}{}, err
+		return err
 	}
 	if mounted {
 		log.Printf("[blob] %s successfully mounted %s from %s", req.To, req.Digest, mountSource)
-		return struct{}{}, nil
+		return nil
 	}
 
 	blob, size, err := downloadBlob(sources[0], req.Digest)
 	if err != nil {
-		return struct{}{}, err
+		return err
 	}
 
 	query, err := url.ParseQuery(uploadURL.RawQuery)
 	if err != nil {
-		return struct{}{}, err
+		return err
 	}
 	query.Add("digest", string(req.Digest))
 	uploadURL.RawQuery = query.Encode()
 
 	uploadReq, err := http.NewRequest(http.MethodPut, uploadURL.String(), blob)
 	if err != nil {
-		return struct{}{}, err
+		return err
 	}
 	uploadReq.Header.Add("Content-Type", "application/octet-stream")
 	uploadReq.Header.Add("Content-Length", strconv.FormatInt(size, 10))
 
 	client, err := getRegistryClient(req.To.Registry, transport.PushScope)
 	if err != nil {
-		return struct{}{}, err
+		return err
 	}
 
 	uploadResp, err := client.Do(uploadReq)
 	if err != nil {
-		return struct{}{}, err
+		return err
 	}
 	defer uploadResp.Body.Close()
 	if err := transport.CheckError(uploadResp, http.StatusCreated); err != nil {
-		return struct{}{}, err
+		return err
 	}
 
 	log.Printf("[blob] %s successfully copied %s from %s", req.To, req.Digest, sources[0])
 	c.sources(req.Digest).Add(req.To)
-	return struct{}{}, nil
+	return nil
 }
 
 func checkForExistingBlob(repo image.Repository, dgst image.Digest) (bool, error) {
