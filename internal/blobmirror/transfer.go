@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
+	"strconv"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
+	"go.alexhamlin.co/magic-mirror/internal/registry"
 )
 
 func transfer(dgst image.Digest, from []image.Repository, to image.Repository) error {
@@ -41,54 +42,12 @@ func transfer(dgst image.Digest, from []image.Repository, to image.Repository) e
 	if err := transport.CheckError(fromResp, http.StatusOK); err != nil {
 		return err
 	}
-
-	toTransport, err := newTransport(to.Registry, transport.PushScope)
+	size, err := strconv.ParseInt(fromResp.Header.Get("Content-Length"), 10, 64)
 	if err != nil {
-		return err
-	}
-	toClient := &http.Client{Transport: toTransport}
-
-	requestUploadURL := to.Registry.BaseURL()
-	requestUploadURL.Path = fmt.Sprintf("/v2/%s/blobs/uploads/", to.Path)
-	requestUploadReq, err := http.NewRequest(http.MethodPost, requestUploadURL.String(), nil)
-	if err != nil {
-		return err
-	}
-	requestUploadResp, err := toClient.Do(requestUploadReq)
-	if err != nil {
-		return err
-	}
-	defer requestUploadResp.Body.Close()
-	if err := transport.CheckError(requestUploadResp, http.StatusAccepted); err != nil {
 		return err
 	}
 
-	doUploadURL, err := requestUploadURL.Parse(requestUploadResp.Header.Get("Location"))
-	if err != nil {
-		return err
-	}
-	doUploadQuery, err := url.ParseQuery(doUploadURL.RawQuery)
-	if err != nil {
-		return err
-	}
-	doUploadQuery.Add("digest", string(dgst))
-	doUploadURL.RawQuery = doUploadQuery.Encode()
-	doUploadReq, err := http.NewRequest(http.MethodPut, doUploadURL.String(), fromResp.Body)
-	if err != nil {
-		return err
-	}
-	doUploadReq.Header.Set("Content-Type", "application/octet-stream")
-	doUploadReq.Header.Set("Content-Length", fromResp.Header.Get("Content-Length"))
-	doUploadResp, err := toClient.Do(doUploadReq)
-	if err != nil {
-		return err
-	}
-	defer doUploadResp.Body.Close()
-	if err := transport.CheckError(doUploadResp, http.StatusCreated); err != nil {
-		return err
-	}
-
-	return nil
+	return registry.UploadBlob(to, dgst, size, fromResp.Body)
 }
 
 func newTransport(registry image.Registry, scopes ...string) (http.RoundTripper, error) {
