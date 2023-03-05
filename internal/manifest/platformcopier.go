@@ -67,15 +67,13 @@ func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
 		return err
 	}
 
-	copyRequests := make([]blob.CopyRequest, len(manifest.Layers)+1)
+	blobDigests := make([]image.Digest, len(manifest.Layers)+1)
 	for i, layer := range manifest.Layers {
-		c.blobCopier.RegisterSource(layer.Digest, req.From.Repository)
-		copyRequests[i] = blob.CopyRequest{Digest: layer.Digest, To: req.To}
+		blobDigests[i] = layer.Digest
 	}
-	c.blobCopier.RegisterSource(manifest.Config.Digest, req.From.Repository)
-	copyRequests[len(copyRequests)-1] = blob.CopyRequest{Digest: manifest.Config.Digest, To: req.To}
+	blobDigests[len(blobDigests)-1] = manifest.Config.Digest
 
-	_, err = c.blobCopier.GetOrSubmitAll(copyRequests...).WaitAll()
+	_, err = c.blobCopier.CopyAll(req.From.Repository, req.To, blobDigests...).WaitAll()
 	if err != nil {
 		return err
 	}
