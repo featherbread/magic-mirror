@@ -69,23 +69,17 @@ func (c *ImageCopier) handleRequest(req ImageRequest) error {
 		return err
 	}
 
-	var tasks []PlatformCopyTask
-	if len(manifest.Manifests) > 0 {
-		for _, m := range manifest.Manifests {
-			img := image.Image{Repository: req.From.Repository, Digest: string(m.Digest)}
-			tasks = append(tasks, c.platformCopier.RequestCopy(img, req.To.Repository))
-		}
+	if len(manifest.Manifests) == 0 {
+		err = c.platformCopier.Copy(req.From, req.To.Repository)
 	} else {
-		tasks = []PlatformCopyTask{c.platformCopier.RequestCopy(req.From, req.To.Repository)}
-	}
-	var taskErr error
-	for _, task := range tasks {
-		if err := task.Wait(); err != nil && taskErr == nil {
-			taskErr = err
+		imgs := make([]image.Image, len(manifest.Manifests))
+		for i, m := range manifest.Manifests {
+			imgs[i] = image.Image{Repository: req.From.Repository, Digest: string(m.Digest)}
 		}
+		err = c.platformCopier.CopyAll(req.To.Repository, imgs...)
 	}
-	if taskErr != nil {
-		return taskErr
+	if err != nil {
+		return err
 	}
 
 	if len(manifest.Manifests) > 0 {

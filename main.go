@@ -26,7 +26,7 @@ func main() {
 	defer manifestDownloader.CloseSubmit()
 
 	platformCopier := manifest.NewPlatformCopier(0, manifestDownloader, blobCopier)
-	defer platformCopier.Close()
+	defer platformCopier.CloseSubmit()
 
 	imageCopier := manifest.NewImageCopier(0, manifestDownloader, platformCopier)
 	defer imageCopier.Close()

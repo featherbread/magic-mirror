@@ -10,7 +10,8 @@ import (
 )
 
 type PlatformCopier struct {
-	engine             *work.Queue[PlatformRequest, work.NoValue]
+	*work.Queue[PlatformRequest, work.NoValue]
+
 	manifestDownloader *Downloader
 	blobCopier         *blob.Copier
 }
@@ -25,28 +26,22 @@ func NewPlatformCopier(workers int, manifestDownloader *Downloader, blobCopier *
 		manifestDownloader: manifestDownloader,
 		blobCopier:         blobCopier,
 	}
-	c.engine = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
+	c.Queue = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
 	return c
 }
 
-func (c *PlatformCopier) RequestCopy(from image.Image, to image.Repository) PlatformCopyTask {
-	return PlatformCopyTask{c.engine.GetOrSubmit(PlatformRequest{
-		From: from,
-		To:   to,
-	})}
-}
-
-type PlatformCopyTask struct {
-	*work.Task[work.NoValue]
-}
-
-func (t PlatformCopyTask) Wait() error {
-	_, err := t.Task.Wait()
+func (c *PlatformCopier) Copy(from image.Image, to image.Repository) error {
+	_, err := c.Queue.GetOrSubmit(PlatformRequest{From: from, To: to}).Wait()
 	return err
 }
 
-func (c *PlatformCopier) Close() {
-	c.engine.CloseSubmit()
+func (c *PlatformCopier) CopyAll(to image.Repository, from ...image.Image) error {
+	reqs := make([]PlatformRequest, len(from))
+	for i, img := range from {
+		reqs[i] = PlatformRequest{From: img, To: to}
+	}
+	_, err := c.Queue.GetOrSubmitAll(reqs...).WaitAll()
+	return err
 }
 
 func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
