@@ -26,31 +26,31 @@ func main() {
 	platformCopier := copy.NewPlatformCopier(0, manifestDownloader, blobCopier)
 	defer platformCopier.CloseSubmit()
 
-	imageCopier := copy.NewImageCopier(0, manifestDownloader, platformCopier)
+	imageCopier := copy.NewCopier(0, manifestDownloader, platformCopier)
 	defer imageCopier.CloseSubmit()
 
 	err := imageCopier.CopyAll(
-		copy.ImageRequest{
+		copy.Request{
 			From: must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
 			To:   must(image.Parse("localhost:5000/imported/hypcast:latest")),
 		},
-		copy.ImageRequest{
+		copy.Request{
 			From: must(image.Parse("ghcr.io/dexidp/dex:v2.35.3")),
 			To:   must(image.Parse("localhost:5000/imported/dex:v2.35.3")),
 		},
-		copy.ImageRequest{
+		copy.Request{
 			From: must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
 			To:   must(image.Parse("localhost:5000/alsoimported/hypcast:latest")),
 		},
-		copy.ImageRequest{
+		copy.Request{
 			From: must(image.Parse("quay.io/minio/minio:RELEASE.2023-02-22T18-23-45Z")),
 			To:   must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-22T18-23-45Z")),
 		},
-		copy.ImageRequest{
+		copy.Request{
 			From: must(image.Parse("quay.io/minio/minio:RELEASE.2023-02-27T18-10-45Z")),
 			To:   must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-27T18-10-45Z")),
 		},
-		copy.ImageRequest{
+		copy.Request{
 			From: must(image.Parse("quay.io/minio/minio:release.2023-02-27t18-10-45z.fips")),
 			To:   must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-27T18-10-45Z.fips")),
 		},

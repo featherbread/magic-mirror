@@ -8,20 +8,20 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
-type ImageCopier struct {
-	*work.Queue[ImageRequest, work.NoValue]
+type Copier struct {
+	*work.Queue[Request, work.NoValue]
 
 	manifestDownloader *ManifestDownloader
 	platformCopier     *PlatformCopier
 }
 
-type ImageRequest struct {
+type Request struct {
 	From image.Image
 	To   image.Image
 }
 
-func NewImageCopier(workers int, manifestDownloader *ManifestDownloader, platformCopier *PlatformCopier) *ImageCopier {
-	c := &ImageCopier{
+func NewCopier(workers int, manifestDownloader *ManifestDownloader, platformCopier *PlatformCopier) *Copier {
+	c := &Copier{
 		manifestDownloader: manifestDownloader,
 		platformCopier:     platformCopier,
 	}
@@ -29,17 +29,17 @@ func NewImageCopier(workers int, manifestDownloader *ManifestDownloader, platfor
 	return c
 }
 
-func (c *ImageCopier) Copy(from, to image.Image) error {
-	_, err := c.Queue.GetOrSubmit(ImageRequest{From: from, To: to}).Wait()
+func (c *Copier) Copy(from, to image.Image) error {
+	_, err := c.Queue.GetOrSubmit(Request{From: from, To: to}).Wait()
 	return err
 }
 
-func (c *ImageCopier) CopyAll(reqs ...ImageRequest) error {
+func (c *Copier) CopyAll(reqs ...Request) error {
 	_, err := c.Queue.GetOrSubmitAll(reqs...).WaitAll()
 	return err
 }
 
-func (c *ImageCopier) handleRequest(req ImageRequest) error {
+func (c *Copier) handleRequest(req Request) error {
 	log.Printf("[image]\tstarting copy from %s to %s", req.From, req.To)
 
 	manifestResponse, err := c.manifestDownloader.Get(req.From)
