@@ -10,7 +10,7 @@ type Digest string
 
 type Registry string
 
-func (r Registry) BaseURL() url.URL {
+func (r Registry) BaseURL() *url.URL {
 	scheme := "https"
 	if strings.HasPrefix(string(r), "localhost:") {
 		scheme = "http"
@@ -19,7 +19,7 @@ func (r Registry) BaseURL() url.URL {
 	if err != nil {
 		panic(err) // TODO: Not this.
 	}
-	return *u
+	return u
 }
 
 type Repository struct {

@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
+
 	"go.alexhamlin.co/magic-mirror/internal/image"
 )
 
@@ -97,5 +98,5 @@ func (p *pusher) getBlobUploadURL() (u *url.URL, err error) {
 func (p *pusher) url(format string, v ...interface{}) *url.URL {
 	u := p.repository.BaseURL()
 	u.Path = "/v2/" + p.repository.Path + fmt.Sprintf(format, v...)
-	return &u
+	return u
 }

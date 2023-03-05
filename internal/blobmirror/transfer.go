@@ -1,14 +1,12 @@
 package blobmirror
 
 import (
-	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
 
-	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
@@ -22,55 +20,35 @@ func transfer(dgst image.Digest, from []image.Repository, to image.Repository) e
 
 	log.Printf("[blobmirror] Transferring %s from %s to %s", dgst, from[0], to)
 
-	fromTransport, err := newTransport(from[0].Registry, transport.PullScope)
+	blob, size, err := requestBlob(from[0], dgst)
 	if err != nil {
 		return err
 	}
-	fromClient := &http.Client{Transport: fromTransport}
-
-	fromURL := from[0].Registry.BaseURL()
-	fromURL.Path = fmt.Sprintf("/v2/%s/blobs/%s", from[0].Path, dgst)
-	fromReq, err := http.NewRequest(http.MethodGet, fromURL.String(), nil)
-	if err != nil {
-		return err
-	}
-	fromResp, err := fromClient.Do(fromReq)
-	if err != nil {
-		return err
-	}
-	defer fromResp.Body.Close()
-	if err := transport.CheckError(fromResp, http.StatusOK); err != nil {
-		return err
-	}
-	size, err := strconv.ParseInt(fromResp.Header.Get("Content-Length"), 10, 64)
-	if err != nil {
-		return err
-	}
-
-	return registry.UploadBlob(to, dgst, size, fromResp.Body)
+	defer blob.Close()
+	return registry.UploadBlob(to, dgst, size, blob)
 }
 
-func newTransport(registry image.Registry, scopes ...string) (http.RoundTripper, error) {
-	gRegistry, err := name.NewRegistry(string(registry))
+func requestBlob(from image.Repository, dgst image.Digest) (r io.ReadCloser, size int64, err error) {
+	client, err := registry.NewClient(from.Registry, transport.PullScope)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	authenticator, err := authn.DefaultKeychain.Resolve(gRegistry)
+	u := fmt.Sprintf("%s/v2/%s/blobs/%s", client.BaseURL().String(), from.Path, dgst)
+	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
-		authenticator = authn.Anonymous
+		return nil, 0, err
 	}
 
-	imgScopes := make([]string, len(scopes))
-	for i, scope := range scopes {
-		imgScopes[i] = gRegistry.Scope(scope)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := transport.CheckError(resp, http.StatusOK); err != nil {
+		resp.Body.Close()
+		return nil, 0, err
 	}
 
-	return transport.NewWithContext(
-		context.Background(),
-		gRegistry,
-		authenticator,
-		http.DefaultTransport,
-		imgScopes,
-	)
+	size, err = strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
+	return resp.Body, size, err
 }
