@@ -12,17 +12,52 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
+type Request struct {
+	From image.Image
+	To   image.Image
+}
+
+func ValidateRequests(reqs ...Request) error {
+	_, err := coalesceRequests(reqs)
+	return err
+}
+
+func coalesceRequests(reqs []Request) ([]Request, error) {
+	var errs []error
+
+	sources := mapset.NewThreadUnsafeSet[image.Image]()
+	for _, req := range reqs {
+		sources.Add(req.From)
+	}
+	for _, req := range reqs {
+		if sources.Contains(req.To) {
+			errs = append(errs, fmt.Errorf("%s is both a source and a destination", req.To))
+		}
+	}
+
+	coalesced := make([]Request, 0, len(reqs))
+	requestsByDestination := make(map[image.Image]Request)
+	for _, current := range reqs {
+		previous, ok := requestsByDestination[current.To]
+		if !ok {
+			coalesced = append(coalesced, current)
+			requestsByDestination[current.To] = current
+			continue
+		}
+		if previous != current {
+			errs = append(errs, fmt.Errorf("%s requests inconsistent copies from %s and %s", current.To, current.From, previous.From))
+		}
+	}
+
+	return coalesced, errors.Join(errs...)
+}
+
 type Copier struct {
 	*work.Queue[Request, work.NoValue]
 
 	blobs     *blobCopier
 	manifests *manifestCache
 	platforms *platformCopier
-}
-
-type Request struct {
-	From image.Image
-	To   image.Image
 }
 
 func NewCopier(workers int) *Copier {
@@ -58,36 +93,6 @@ func (c *Copier) CloseSubmit() {
 	c.platforms.CloseSubmit()
 	c.manifests.CloseSubmit()
 	c.blobs.CloseSubmit()
-}
-
-func coalesceRequests(reqs []Request) ([]Request, error) {
-	var errs []error
-
-	sources := mapset.NewThreadUnsafeSet[image.Image]()
-	for _, req := range reqs {
-		sources.Add(req.From)
-	}
-	for _, req := range reqs {
-		if sources.Contains(req.To) {
-			errs = append(errs, fmt.Errorf("%s is both a source and a destination", req.To))
-		}
-	}
-
-	coalesced := make([]Request, 0, len(reqs))
-	requestsByDestination := make(map[image.Image]Request)
-	for _, current := range reqs {
-		previous, ok := requestsByDestination[current.To]
-		if !ok {
-			coalesced = append(coalesced, current)
-			requestsByDestination[current.To] = current
-			continue
-		}
-		if previous != current {
-			errs = append(errs, fmt.Errorf("%s requests inconsistent copies from %s and %s", current.To, current.From, previous.From))
-		}
-	}
-
-	return coalesced, errors.Join(errs...)
 }
 
 func (c *Copier) handleRequest(req Request) error {
