@@ -9,8 +9,9 @@ import (
 )
 
 type ImageCopier struct {
-	engine         *engine.Engine[ImageRequest, engine.NoValue]
-	platformCopier *PlatformCopier
+	engine             *engine.Engine[ImageRequest, engine.NoValue]
+	manifestDownloader *Downloader
+	platformCopier     *PlatformCopier
 }
 
 type ImageRequest struct {
@@ -18,8 +19,11 @@ type ImageRequest struct {
 	To   image.Image
 }
 
-func NewImageCopier(workers int, platformCopier *PlatformCopier) *ImageCopier {
-	c := &ImageCopier{platformCopier: platformCopier}
+func NewImageCopier(workers int, manifestDownloader *Downloader, platformCopier *PlatformCopier) *ImageCopier {
+	c := &ImageCopier{
+		manifestDownloader: manifestDownloader,
+		platformCopier:     platformCopier,
+	}
 	c.engine = engine.NewEngine(workers, engine.NoValueFunc(c.handleRequest))
 	return c
 }
@@ -42,8 +46,9 @@ func (c *ImageCopier) Close() {
 }
 
 func (c *ImageCopier) handleRequest(req ImageRequest) error {
-	log.Printf("[image] downloading root manifest for %s", req.From)
-	contentType, body, err := downloadManifest(req.From.Repository, req.From.Tag)
+	log.Printf("[image] starting copy from %s to %s", req.From, req.To)
+
+	manifestResponse, err := c.manifestDownloader.RequestDownload(req.From.Repository, req.From.Tag).Wait()
 	if err != nil {
 		return err
 	}
@@ -56,7 +61,7 @@ func (c *ImageCopier) handleRequest(req ImageRequest) error {
 			Digest image.Digest `json:"digest"`
 		} `json:"layers"`
 	}
-	if err := json.Unmarshal([]byte(body), &manifest); err != nil {
+	if err := json.Unmarshal([]byte(manifestResponse.Body), &manifest); err != nil {
 		return err
 	}
 
@@ -79,7 +84,7 @@ func (c *ImageCopier) handleRequest(req ImageRequest) error {
 	}
 
 	if len(manifest.Manifests) > 0 {
-		if err := uploadManifest(req.To.Repository, req.From.Tag, contentType, body); err != nil {
+		if err := uploadManifest(req.To.Repository, req.From.Tag, manifestResponse.ContentType, manifestResponse.Body); err != nil {
 			return err
 		}
 	}

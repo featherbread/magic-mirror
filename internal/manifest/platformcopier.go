@@ -2,7 +2,6 @@ package manifest
 
 import (
 	"encoding/json"
-	"log"
 
 	"go.alexhamlin.co/magic-mirror/internal/blob"
 	"go.alexhamlin.co/magic-mirror/internal/engine"
@@ -10,8 +9,9 @@ import (
 )
 
 type PlatformCopier struct {
-	engine     *engine.Engine[PlatformRequest, engine.NoValue]
-	blobCopier *blob.Copier
+	engine             *engine.Engine[PlatformRequest, engine.NoValue]
+	manifestDownloader *Downloader
+	blobCopier         *blob.Copier
 }
 
 type PlatformRequest struct {
@@ -20,8 +20,11 @@ type PlatformRequest struct {
 	To        image.Repository
 }
 
-func NewPlatformCopier(workers int, blobCopier *blob.Copier) *PlatformCopier {
-	c := &PlatformCopier{blobCopier: blobCopier}
+func NewPlatformCopier(workers int, manifestDownloader *Downloader, blobCopier *blob.Copier) *PlatformCopier {
+	c := &PlatformCopier{
+		manifestDownloader: manifestDownloader,
+		blobCopier:         blobCopier,
+	}
 	c.engine = engine.NewEngine(workers, engine.NoValueFunc(c.handleRequest))
 	return c
 }
@@ -48,8 +51,7 @@ func (c *PlatformCopier) Close() {
 }
 
 func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
-	log.Printf("[platform] downloading manifest %s for %s", req.Reference, req.From)
-	contentType, body, err := downloadManifest(req.From, req.Reference)
+	manifestResponse, err := c.manifestDownloader.RequestDownload(req.From, req.Reference).Wait()
 	if err != nil {
 		return err
 	}
@@ -62,7 +64,7 @@ func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
 			Digest image.Digest `json:"digest"`
 		} `json:"layers"`
 	}
-	if err := json.Unmarshal([]byte(body), &manifest); err != nil {
+	if err := json.Unmarshal([]byte(manifestResponse.Body), &manifest); err != nil {
 		return err
 	}
 
@@ -82,5 +84,5 @@ func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
 		return taskErr
 	}
 
-	return uploadManifest(req.To, req.Reference, contentType, body)
+	return uploadManifest(req.To, req.Reference, manifestResponse.ContentType, manifestResponse.Body)
 }

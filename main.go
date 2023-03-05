@@ -15,10 +15,13 @@ func main() {
 	blobCopier := blob.NewCopier(15)
 	defer blobCopier.Close()
 
-	platformCopier := manifest.NewPlatformCopier(10, blobCopier)
+	manifestDownloader := manifest.NewDownloader(10)
+	defer manifestDownloader.Close()
+
+	platformCopier := manifest.NewPlatformCopier(10, manifestDownloader, blobCopier)
 	defer platformCopier.Close()
 
-	imageCopier := manifest.NewImageCopier(5, platformCopier)
+	imageCopier := manifest.NewImageCopier(5, manifestDownloader, platformCopier)
 	defer imageCopier.Close()
 
 	var tasks []manifest.ImageCopyTask
@@ -50,6 +53,23 @@ func main() {
 				Namespace: "alsoimported/hypcast",
 			},
 			Tag: "latest",
+		},
+	))
+
+	tasks = append(tasks, imageCopier.RequestCopy(
+		image.Image{
+			Repository: image.Repository{
+				Registry:  "index.docker.io",
+				Namespace: "minio/minio",
+			},
+			Tag: "RELEASE.2023-02-22T18-23-45Z",
+		},
+		image.Image{
+			Repository: image.Repository{
+				Registry:  "localhost:5000",
+				Namespace: "imported/minio",
+			},
+			Tag: "RELEASE.2023-02-22T18-23-45Z",
 		},
 	))
 
