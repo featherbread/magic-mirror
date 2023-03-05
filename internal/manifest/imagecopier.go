@@ -46,7 +46,7 @@ func (c *ImageCopier) Close() {
 }
 
 func (c *ImageCopier) handleRequest(req ImageRequest) error {
-	log.Printf("[image] starting copy from %s to %s", req.From, req.To)
+	log.Printf("[image]\tstarting copy from %s to %s", req.From, req.To)
 
 	manifestResponse, err := c.manifestDownloader.RequestDownload(req.From.Repository, req.From.Tag).Wait()
 	if err != nil {
@@ -88,6 +88,6 @@ func (c *ImageCopier) handleRequest(req ImageRequest) error {
 			return err
 		}
 	}
-	log.Printf("[image] fully copied %s to %s", req.From, req.To)
+	log.Printf("[image]\tfully copied %s to %s", req.From, req.To)
 	return nil
 }

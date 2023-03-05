@@ -46,6 +46,23 @@ func main() {
 	))
 
 	tasks = append(tasks, imageCopier.RequestCopy(
+		image.Image{
+			Repository: image.Repository{
+				Registry:  "ghcr.io",
+				Namespace: "dexidp/dex",
+			},
+			Tag: "v2.35.3",
+		},
+		image.Image{
+			Repository: image.Repository{
+				Registry:  "localhost:5000",
+				Namespace: "imported/dex",
+			},
+			Tag: "v2.35.3",
+		},
+	))
+
+	tasks = append(tasks, imageCopier.RequestCopy(
 		hypcastImage,
 		image.Image{
 			Repository: image.Repository{

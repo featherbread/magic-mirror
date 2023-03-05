@@ -51,7 +51,7 @@ func (d *Downloader) Close() {
 }
 
 func (d *Downloader) handleRequest(req DownloadRequest) (resp DownloadResponse, err error) {
-	log.Printf("[manifest] downloading %s for %s", req.Reference, req.From)
+	log.Printf("[manifest]\tdownloading %s for %s", req.Reference, req.From)
 
 	client, err := registry.GetClient(req.From.Registry, registry.PullScope)
 	if err != nil {

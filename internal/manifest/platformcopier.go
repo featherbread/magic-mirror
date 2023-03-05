@@ -2,6 +2,7 @@ package manifest
 
 import (
 	"encoding/json"
+	"log"
 
 	"go.alexhamlin.co/magic-mirror/internal/blob"
 	"go.alexhamlin.co/magic-mirror/internal/engine"
@@ -84,5 +85,11 @@ func (c *PlatformCopier) handleRequest(req PlatformRequest) error {
 		return taskErr
 	}
 
-	return uploadManifest(req.To, req.Reference, manifestResponse.ContentType, manifestResponse.Body)
+	err = uploadManifest(req.To, req.Reference, manifestResponse.ContentType, manifestResponse.Body)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("[platform]\tcopied %s to %s", req.Reference, req.To)
+	return nil
 }
