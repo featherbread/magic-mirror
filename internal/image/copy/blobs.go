@@ -20,8 +20,8 @@ import (
 type blobCopier struct {
 	*work.Queue[blobCopyRequest, work.NoValue]
 
-	srcsMap map[digest.Digest]mapset.Set[image.Repository]
-	srcsMu  sync.Mutex
+	sourceMap   map[digest.Digest]mapset.Set[image.Repository]
+	sourceMapMu sync.Mutex
 }
 
 type blobCopyRequest struct {
@@ -31,7 +31,7 @@ type blobCopyRequest struct {
 
 func newBlobCopier(workers int) *blobCopier {
 	c := &blobCopier{
-		srcsMap: make(map[digest.Digest]mapset.Set[image.Repository]),
+		sourceMap: make(map[digest.Digest]mapset.Set[image.Repository]),
 	}
 	c.Queue = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
 	return c
@@ -52,13 +52,13 @@ func (c *blobCopier) CopyAll(src, dst image.Repository, dgsts ...digest.Digest) 
 }
 
 func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {
-	c.srcsMu.Lock()
-	defer c.srcsMu.Unlock()
-	if set, ok := c.srcsMap[dgst]; ok {
+	c.sourceMapMu.Lock()
+	defer c.sourceMapMu.Unlock()
+	if set, ok := c.sourceMap[dgst]; ok {
 		return set
 	}
 	set := mapset.NewSet[image.Repository]()
-	c.srcsMap[dgst] = set
+	c.sourceMap[dgst] = set
 	return set
 }
 
