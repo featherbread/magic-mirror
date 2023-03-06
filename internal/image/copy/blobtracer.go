@@ -7,6 +7,18 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
+// blobTracer downloads all of the manifest information for the images provided
+// to it, and registers the image's repository as a valid source for every blob
+// referenced in each manifest.
+//
+// A blobTracer is typically used with the destination images targeted by a copy
+// operation. In the event that a multi-platform image index at the destination
+// is already up to date with its source, there is normally no reason to
+// download its referenced platform-level manifests when we could instead move
+// on to check new sources. However, the blob information in these manifests can
+// still be valuable to optimize future copies to the same registry, so the
+// blobTracer downloads these manifests in the background using a separate
+// manifest cache. (TODO: Move this documentation elsewhere.)
 type blobTracer struct {
 	*work.Queue[image.Image, work.NoValue]
 
@@ -23,10 +35,14 @@ func newBlobTracer(manifests *manifestCache, blobs *blobCopier) *blobTracer {
 	return d
 }
 
+// QueueForTracing submits the provided image for tracing, without waiting for
+// the trace to complete.
 func (d *blobTracer) QueueForTracing(img image.Image) {
 	d.Queue.GetOrSubmit(img)
 }
 
+// QueueAllForTracing submits the provided images for tracing, without waiting
+// for the traces to complete.
 func (d *blobTracer) QueueAllForTracing(imgs ...image.Image) {
 	d.Queue.GetOrSubmitAll(imgs...)
 }
