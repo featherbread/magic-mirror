@@ -10,36 +10,6 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-type Digest struct {
-	inner digest.Digest
-}
-
-func ParseDigest(s string) (Digest, error) {
-	d := digest.Digest(s)
-	return Digest{d}, d.Validate()
-}
-
-func (d Digest) IsZero() bool {
-	return d == (Digest{})
-}
-
-func (d Digest) String() string {
-	return d.inner.String()
-}
-
-func (d Digest) MarshalText() ([]byte, error) {
-	return []byte(d.String()), nil
-}
-
-func (d *Digest) UnmarshalText(text []byte) error {
-
-	parsed, err := ParseDigest(string(text))
-	if err == nil {
-		*d = parsed
-	}
-	return err
-}
-
 type Registry string
 
 func (r Registry) APIBaseURL() *url.URL {
@@ -65,7 +35,7 @@ func (r Repository) String() string {
 type Image struct {
 	Repository
 	Tag    string
-	Digest Digest
+	Digest digest.Digest
 }
 
 const defaultRegistry = "docker.io"
@@ -104,9 +74,8 @@ func Parse(s string) (Image, error) {
 	}
 
 	if rawDigest != "" {
-		var err error
-		img.Digest, err = ParseDigest(rawDigest)
-		if err != nil {
+		img.Digest = digest.Digest(rawDigest)
+		if err := img.Digest.Validate(); err != nil {
 			return Image{}, fmt.Errorf("invalid digest in %q: %w", s, err)
 		}
 	}

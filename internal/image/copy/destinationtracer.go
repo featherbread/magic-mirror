@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 
+	"github.com/opencontainers/go-digest"
+
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
@@ -40,13 +42,13 @@ func (d *destinationTracer) handleRequest(img image.Image) error {
 
 	var parsedManifest struct {
 		Config struct {
-			Digest image.Digest `json:"digest"`
+			Digest digest.Digest `json:"digest"`
 		} `json:"config"`
 		Layers []struct {
-			Digest image.Digest `json:"digest"`
+			Digest digest.Digest `json:"digest"`
 		} `json:"layers"`
 		Manifests []struct {
-			Digest image.Digest `json:"digest"`
+			Digest digest.Digest `json:"digest"`
 		} `json:"manifests"`
 	}
 	if err := json.Unmarshal([]byte(manifest.Body), &parsedManifest); err != nil {
@@ -56,15 +58,24 @@ func (d *destinationTracer) handleRequest(img image.Image) error {
 	if len(parsedManifest.Manifests) > 0 {
 		imgs := make([]image.Image, len(parsedManifest.Manifests))
 		for i, m := range parsedManifest.Manifests {
+			if err := m.Digest.Validate(); err != nil {
+				return err
+			}
 			imgs[i] = image.Image{Repository: img.Repository, Digest: m.Digest}
 		}
 		d.QueueTraces(imgs...)
 	}
 
 	for _, l := range parsedManifest.Layers {
+		if err := l.Digest.Validate(); err != nil {
+			return err
+		}
 		d.blobs.RegisterSource(l.Digest, img.Repository)
 	}
-	if !parsedManifest.Config.Digest.IsZero() {
+	if parsedManifest.Config.Digest != "" {
+		if err := parsedManifest.Config.Digest.Validate(); err != nil {
+			return err
+		}
 		d.blobs.RegisterSource(parsedManifest.Config.Digest, img.Repository)
 	}
 

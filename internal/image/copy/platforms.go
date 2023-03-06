@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 
+	"github.com/opencontainers/go-digest"
+
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
@@ -51,21 +53,26 @@ func (c *platformCopier) handleRequest(req platformCopyRequest) error {
 
 	var parsedManifest struct {
 		Config struct {
-			Digest image.Digest `json:"digest"`
+			Digest digest.Digest `json:"digest"`
 		} `json:"config"`
 		Layers []struct {
-			Digest image.Digest `json:"digest"`
+			Digest digest.Digest `json:"digest"`
 		} `json:"layers"`
 	}
 	if err := json.Unmarshal([]byte(manifest.Body), &parsedManifest); err != nil {
 		return err
 	}
 
-	blobDigests := make([]image.Digest, len(parsedManifest.Layers)+1)
+	blobDigests := make([]digest.Digest, len(parsedManifest.Layers)+1)
 	for i, layer := range parsedManifest.Layers {
 		blobDigests[i] = layer.Digest
 	}
 	blobDigests[len(blobDigests)-1] = parsedManifest.Config.Digest
+	for _, dgst := range blobDigests {
+		if err := dgst.Validate(); err != nil {
+			return err
+		}
+	}
 	if err := c.blobs.CopyAll(req.From.Repository, req.To, blobDigests...); err != nil {
 		return err
 	}

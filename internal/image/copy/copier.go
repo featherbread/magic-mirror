@@ -8,6 +8,7 @@ import (
 	"log"
 
 	mapset "github.com/deckarep/golang-set/v2"
+	"github.com/opencontainers/go-digest"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/work"
@@ -129,27 +130,32 @@ func (c *Copier) handleRequest(req Request) error {
 
 	var parsedManifest struct {
 		Config struct {
-			Digest image.Digest `json:"digest"`
+			Digest digest.Digest `json:"digest"`
 		} `json:"config"`
 		Layers []struct {
-			Digest image.Digest `json:"digest"`
+			Digest digest.Digest `json:"digest"`
 		} `json:"layers"`
 		Manifests []struct {
-			Digest image.Digest `json:"digest"`
+			Digest digest.Digest `json:"digest"`
 		} `json:"manifests"`
 	}
 	if err := json.Unmarshal([]byte(sourceManifest.Body), &parsedManifest); err != nil {
 		return err
 	}
 
-	blobDigests := make([]image.Digest, len(parsedManifest.Layers)+1)
+	blobDigests := make([]digest.Digest, len(parsedManifest.Layers)+1)
 	for i, layer := range parsedManifest.Layers {
 		blobDigests[i] = layer.Digest
 	}
-	if !parsedManifest.Config.Digest.IsZero() {
+	if parsedManifest.Config.Digest != "" {
 		blobDigests[len(blobDigests)-1] = parsedManifest.Config.Digest
 	} else {
 		blobDigests = blobDigests[:len(blobDigests)-1]
+	}
+	for _, dgst := range blobDigests {
+		if err := dgst.Validate(); err != nil {
+			return err
+		}
 	}
 	if err := c.blobs.CopyAll(req.From.Repository, req.To.Repository, blobDigests...); err != nil {
 		return err

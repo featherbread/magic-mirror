@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	mapset "github.com/deckarep/golang-set/v2"
+	"github.com/opencontainers/go-digest"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/image/registry"
@@ -19,28 +20,28 @@ import (
 type blobCopier struct {
 	*work.Queue[blobCopyRequest, work.NoValue]
 
-	sourcesMap map[image.Digest]mapset.Set[image.Repository]
+	sourcesMap map[digest.Digest]mapset.Set[image.Repository]
 	sourcesMu  sync.Mutex
 }
 
 type blobCopyRequest struct {
-	Digest image.Digest
+	Digest digest.Digest
 	To     image.Repository
 }
 
 func newBlobCopier(workers int) *blobCopier {
 	c := &blobCopier{
-		sourcesMap: make(map[image.Digest]mapset.Set[image.Repository]),
+		sourcesMap: make(map[digest.Digest]mapset.Set[image.Repository]),
 	}
 	c.Queue = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
 	return c
 }
 
-func (c *blobCopier) RegisterSource(dgst image.Digest, from image.Repository) {
+func (c *blobCopier) RegisterSource(dgst digest.Digest, from image.Repository) {
 	c.sources(dgst).Add(from)
 }
 
-func (c *blobCopier) CopyAll(from, to image.Repository, dgsts ...image.Digest) error {
+func (c *blobCopier) CopyAll(from, to image.Repository, dgsts ...digest.Digest) error {
 	requests := make([]blobCopyRequest, len(dgsts))
 	for i, dgst := range dgsts {
 		c.RegisterSource(dgst, from)
@@ -50,7 +51,7 @@ func (c *blobCopier) CopyAll(from, to image.Repository, dgsts ...image.Digest) e
 	return err
 }
 
-func (c *blobCopier) sources(dgst image.Digest) mapset.Set[image.Repository] {
+func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {
 	c.sourcesMu.Lock()
 	defer c.sourcesMu.Unlock()
 	if set, ok := c.sourcesMap[dgst]; ok {
@@ -138,7 +139,7 @@ func (c *blobCopier) handleRequest(req blobCopyRequest) (err error) {
 	return nil
 }
 
-func checkForExistingBlob(repo image.Repository, dgst image.Digest) (bool, error) {
+func checkForExistingBlob(repo image.Repository, dgst digest.Digest) (bool, error) {
 	client, err := registry.GetClient(repo, registry.PullScope)
 	if err != nil {
 		return false, err
@@ -159,7 +160,7 @@ func checkForExistingBlob(repo image.Repository, dgst image.Digest) (bool, error
 	return resp.StatusCode == http.StatusOK, registry.CheckResponse(resp, http.StatusOK, http.StatusNotFound)
 }
 
-func downloadBlob(repo image.Repository, dgst image.Digest) (r io.ReadCloser, size int64, err error) {
+func downloadBlob(repo image.Repository, dgst digest.Digest) (r io.ReadCloser, size int64, err error) {
 	client, err := registry.GetClient(repo, registry.PullScope)
 	if err != nil {
 		return nil, 0, err
@@ -186,7 +187,7 @@ func downloadBlob(repo image.Repository, dgst image.Digest) (r io.ReadCloser, si
 	return
 }
 
-func requestBlobUploadURL(repo image.Repository, dgst image.Digest, mountNamespace string) (upload *url.URL, mounted bool, err error) {
+func requestBlobUploadURL(repo image.Repository, dgst digest.Digest, mountNamespace string) (upload *url.URL, mounted bool, err error) {
 	client, err := registry.GetClient(repo, registry.PushScope)
 	if err != nil {
 		return nil, false, err
