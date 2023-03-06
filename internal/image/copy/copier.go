@@ -1,7 +1,6 @@
 package copy
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -56,6 +55,7 @@ func coalesceRequests(reqs []Request) ([]Request, error) {
 type Copier struct {
 	*work.Queue[Request, work.NoValue]
 
+	compareMode     CompareMode
 	blobs           *blobCopier
 	sourceManifests *manifestCache
 	platforms       *platformCopier
@@ -63,7 +63,7 @@ type Copier struct {
 	destTracer      *destinationTracer
 }
 
-func NewCopier(workers int) *Copier {
+func NewCopier(workers int, compareMode CompareMode) *Copier {
 	blobs := newBlobCopier(workers)
 	sourceManifests := newManifestCache(workers)
 	platforms := newPlatformCopier(sourceManifests, blobs)
@@ -71,6 +71,7 @@ func NewCopier(workers int) *Copier {
 	destTracer := newDestinationTracer(destManifests, blobs)
 
 	c := &Copier{
+		compareMode:     compareMode,
 		blobs:           blobs,
 		sourceManifests: sourceManifests,
 		platforms:       platforms,
@@ -121,7 +122,11 @@ func (c *Copier) handleRequest(req Request) error {
 	destManifest, err := destTask.Wait()
 	if err == nil {
 		c.destTracer.QueueTrace(req.To)
-		if bytes.Equal(sourceManifest.Body, destManifest.Body) {
+		same, err := comparisons[c.compareMode](sourceManifest, destManifest)
+		if err != nil {
+			return err
+		}
+		if same {
 			log.Printf("[image]\tno change from %s to %s", req.From, req.To)
 			return nil
 		}
