@@ -1,0 +1,36 @@
+{
+  "src": "ghcr.io/ahamlinman/hypcast:latest",
+  "dst": "localhost:5000/imported/hypcast:latest"
+}
+[
+  {
+    "src": "ghcr.io/dexidp/dex:v2.35.3",
+    "dst": "localhost:5000/imported/dex:v2.35.3"
+  },
+  {
+    "src": "ghcr.io/dexidp/dex:v2.35.3",
+    "dst": "localhost:5000/imported/dex:v2.35.3"
+  }
+]
+{
+  "src": "ghcr.io/ahamlinman/hypcast:latest",
+  "dst": "localhost:5000/alsoimported/hypcast:latest"
+}
+[
+  {
+    "src": "quay.io/minio/minio:RELEASE.2023-02-22T18-23-45Z",
+    "dst": "localhost:5000/imported/minio:RELEASE.2023-02-22T18-23-45Z"
+  },
+  {
+    "src": "quay.io/minio/minio:RELEASE.2023-02-27T18-10-45Z",
+    "dst": "localhost:5000/imported/minio:RELEASE.2023-02-27T18-10-45Z"
+  },
+  {
+    "src": "quay.io/minio/minio:RELEASE.2023-02-27T18-10-45Z.fips",
+    "dst": "localhost:5000/imported/minio:fips"
+  },
+  {
+    "src": "quay.io/minio/minio:RELEASE.2023-02-27T18-10-45Z.fips",
+    "dst": "localhost:5000/imported/minio:alsofips"
+  }
+]
