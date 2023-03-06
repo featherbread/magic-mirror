@@ -55,20 +55,26 @@ func coalesceRequests(reqs []Request) ([]Request, error) {
 type Copier struct {
 	*work.Queue[Request, work.NoValue]
 
-	blobs     *blobCopier
-	manifests *manifestCache
-	platforms *platformCopier
+	blobs           *blobCopier
+	sourceManifests *manifestCache
+	platforms       *platformCopier
+	destManifests   *manifestCache
+	destTracer      *destinationTracer
 }
 
 func NewCopier(workers int) *Copier {
 	blobs := newBlobCopier(workers)
-	manifests := newManifestCache(workers)
-	platforms := newPlatformCopier(0, manifests, blobs)
+	sourceManifests := newManifestCache(workers)
+	platforms := newPlatformCopier(sourceManifests, blobs)
+	destManifests := newManifestCache(workers)
+	destTracer := newDestinationTracer(destManifests, blobs)
 
 	c := &Copier{
-		blobs:     blobs,
-		manifests: manifests,
-		platforms: platforms,
+		blobs:           blobs,
+		sourceManifests: sourceManifests,
+		platforms:       platforms,
+		destManifests:   destManifests,
+		destTracer:      destTracer,
 	}
 	c.Queue = work.NewQueue(0, work.NoValueHandler(c.handleRequest))
 	return c
@@ -89,16 +95,23 @@ func (c *Copier) CopyAll(reqs ...Request) error {
 }
 
 func (c *Copier) CloseSubmit() {
+	// TODO: This is only safe after all Copier tasks are finished.
 	c.Queue.CloseSubmit()
 	c.platforms.CloseSubmit()
-	c.manifests.CloseSubmit()
+	c.sourceManifests.CloseSubmit()
+	// TODO: Since we don't block on destination tracing, these may not be safe to
+	// clean up. Need to figure out a cancellation strategy.
+	// c.destTracer.CloseSubmit()
+	// c.destManifests.CloseSubmit()
 	c.blobs.CloseSubmit()
 }
 
 func (c *Copier) handleRequest(req Request) error {
 	log.Printf("[image]\tstarting copy from %s to %s", req.From, req.To)
 
-	manifest, err := c.manifests.Get(req.From)
+	c.destTracer.QueueTrace(req.To)
+
+	manifest, err := c.sourceManifests.Get(req.From)
 	if err != nil {
 		return err
 	}
