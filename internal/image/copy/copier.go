@@ -144,7 +144,7 @@ func (c *Copier) handleRequest(req Request) error {
 	case mediaType.MediaType.IsIndex():
 		err = c.copyIndex(sourceManifest, req.From, req.To)
 	case mediaType.MediaType.IsManifest():
-		err = c.platforms.Copy(req.From, req.To)
+		_, err = c.platforms.Copy(req.From, req.To)
 	default:
 		err = fmt.Errorf("unknown manifest type for %s: %s", req.From, mediaType.MediaType)
 	}
@@ -169,7 +169,7 @@ func (c *Copier) copyIndex(sourceManifest manifest, from, to image.Image) error 
 	for i, m := range parsedIndex.Manifests {
 		imgs[i] = image.Image{Repository: from.Repository, Digest: m.Digest}
 	}
-	if err := c.platforms.CopyAll(to.Repository, imgs...); err != nil {
+	if _, err := c.platforms.CopyAll(to.Repository, imgs...); err != nil {
 		return err
 	}
 
