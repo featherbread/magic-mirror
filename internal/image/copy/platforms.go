@@ -57,7 +57,7 @@ func (c *platformCopier) handleRequest(req platformCopyRequest) (m manifest, err
 		return
 	}
 
-	var parsedManifest image.Manifest
+	var parsedManifest image.ParsedManifest
 	if err = json.Unmarshal([]byte(sourceManifest.Body), &parsedManifest); err != nil {
 		return
 	}

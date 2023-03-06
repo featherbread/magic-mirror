@@ -158,7 +158,7 @@ func (c *Copier) handleRequest(req Request) error {
 }
 
 func (c *Copier) copyIndex(sourceManifest manifest, from, to image.Image) error {
-	var parsedIndex image.Index
+	var parsedIndex image.ParsedIndex
 	if err := json.Unmarshal(sourceManifest.Body, &parsedIndex); err != nil {
 		return err
 	}
