@@ -8,6 +8,7 @@ import (
 
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/opencontainers/go-digest"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/work"
@@ -67,7 +68,7 @@ type Copier struct {
 func NewCopier(workers int, compareMode CompareMode) *Copier {
 	blobs := newBlobCopier(workers)
 	sourceManifests := newManifestCache(workers)
-	platforms := newPlatformCopier(sourceManifests, blobs)
+	platforms := newPlatformCopier(compareMode, sourceManifests, blobs)
 	destManifests := newManifestCache(workers)
 	destTracer := newDestinationTracer(destManifests, blobs)
 
@@ -169,7 +170,8 @@ func (c *Copier) copyIndex(sourceManifest manifest, from, to image.Image) error 
 	for i, m := range parsedIndex.Manifests {
 		imgs[i] = image.Image{Repository: from.Repository, Digest: m.Digest}
 	}
-	if _, err := c.platforms.CopyAll(to.Repository, imgs...); err != nil {
+	newPlatformManifests, err := c.platforms.CopyAll(to.Repository, imgs...)
+	if err != nil {
 		return err
 	}
 
@@ -177,13 +179,20 @@ func (c *Copier) copyIndex(sourceManifest manifest, from, to image.Image) error 
 		return uploadManifest(to, sourceManifest)
 	}
 
-	if image.MediaType(parsedIndex.MediaType) == image.DockerIndexMediaType {
-		parsedIndex.MediaType = string(image.OCIIndexMediaType)
-	}
+	parsedIndex.MediaType = string(image.OCIIndexMediaType)
 	if parsedIndex.Annotations == nil {
 		parsedIndex.Annotations = make(map[string]string)
 	}
 	parsedIndex.Annotations[annotationSourceDigest] = digest.Canonical.FromBytes(sourceManifest.Body).String()
+	for i, m := range newPlatformManifests {
+		parsedIndex.Manifests[i] = v1.Descriptor{
+			MediaType:   m.ContentType,
+			Digest:      digest.Canonical.FromBytes(m.Body),
+			Size:        int64(len(m.Body)),
+			Annotations: parsedIndex.Manifests[i].Annotations,
+			Platform:    parsedIndex.Manifests[i].Platform,
+		}
+	}
 
 	newIndex, err := json.Marshal(parsedIndex)
 	if err != nil {
