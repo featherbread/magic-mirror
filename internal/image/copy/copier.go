@@ -17,6 +17,11 @@ type Request struct {
 }
 
 func ValidateRequests(reqs ...Request) error {
+	// TODO: Validate that destinations do not contain digests in annotation
+	// comparison mode.
+
+	// TODO: Validate that source and destination digests do not mismatch.
+
 	_, err := coalesceRequests(reqs)
 	return err
 }
