@@ -17,6 +17,7 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
+// blobCopier handles requests to copy blob content between repositories.
 type blobCopier struct {
 	*work.Queue[blobCopyRequest, work.NoValue]
 
@@ -37,10 +38,22 @@ func newBlobCopier(workers int) *blobCopier {
 	return c
 }
 
+// RegisterSource informs the copier that the provided source repository
+// contains the blob with the provided digest. The copier may use this
+// information to optimize its copy attempts, by skipping copies of blobs that
+// are known to exist at a destination or attempting cross-repository mounts of
+// blobs within the same registry.
 func (c *blobCopier) RegisterSource(dgst digest.Digest, src image.Repository) {
 	c.sources(dgst).Add(src)
 }
 
+// CopyAll ensures that all of the referenced blobs from the source repository
+// exist in the destination repository.
+//
+// The source repository will be registered as a source for the provided blobs.
+// Note that the copier may source the blobs for this operation from another
+// repository, and may use the provided repository as a source for future
+// unrelated copies.
 func (c *blobCopier) CopyAll(src, dst image.Repository, dgsts ...digest.Digest) error {
 	requests := make([]blobCopyRequest, len(dgsts))
 	for i, dgst := range dgsts {
@@ -84,28 +97,29 @@ func (c *blobCopier) handleRequest(req blobCopyRequest) (err error) {
 		return nil
 	}
 
-	var mountSrc image.Repository
-	srcs := srcSet.ToSlice()
-	for _, src := range srcs {
+	var mountRepo image.Repository
+	sources := srcSet.ToSlice()
+	for _, src := range sources {
 		if src.Registry == req.Dst.Registry {
-			mountSrc = src
+			mountRepo = src
 			break
 		}
 	}
 
-	uploadURL, mounted, err := requestBlobUploadURL(req.Dst, req.Digest, mountSrc.Namespace)
+	uploadURL, mounted, err := requestBlobUploadURL(req.Dst, req.Digest, mountRepo.Namespace)
 	if err != nil {
 		return err
 	}
 	if mounted {
-		log.Printf("[blob]\tmounted %s@%s to %s", mountSrc, req.Digest, req.Dst)
+		log.Printf("[blob]\tmounted %s@%s to %s", mountRepo, req.Digest, req.Dst)
 		return nil
 	}
 
-	blob, size, err := downloadBlob(srcs[0], req.Digest)
+	blob, size, err := downloadBlob(sources[0], req.Digest)
 	if err != nil {
 		return err
 	}
+	defer blob.Close()
 
 	query, err := url.ParseQuery(uploadURL.RawQuery)
 	if err != nil {
@@ -135,7 +149,7 @@ func (c *blobCopier) handleRequest(req blobCopyRequest) (err error) {
 		return err
 	}
 
-	log.Printf("[blob]\tcopied %s@%s to %s", srcs[0], req.Digest, req.Dst)
+	log.Printf("[blob]\tcopied %s@%s to %s", sources[0], req.Digest, req.Dst)
 	return nil
 }
 
