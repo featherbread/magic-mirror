@@ -16,7 +16,7 @@ func must[T any](x T, err error) T {
 }
 
 func main() {
-	copier := copy.NewCopier(10, copy.CompareModeEqual)
+	copier := copy.NewCopier(10, copy.CompareModeAnnotation)
 	defer copier.CloseSubmit()
 
 	err := copier.CopyAll(

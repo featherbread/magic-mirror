@@ -7,6 +7,7 @@ import (
 	"log"
 
 	mapset "github.com/deckarep/golang-set/v2"
+	"github.com/opencontainers/go-digest"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/work"
@@ -172,5 +173,24 @@ func (c *Copier) copyIndex(sourceManifest manifest, from, to image.Image) error 
 		return err
 	}
 
-	return uploadManifest(to, sourceManifest)
+	if c.compareMode == CompareModeEqual {
+		return uploadManifest(to, sourceManifest)
+	}
+
+	if image.MediaType(parsedIndex.MediaType) == image.DockerIndexMediaType {
+		parsedIndex.MediaType = string(image.OCIIndexMediaType)
+	}
+	if parsedIndex.Annotations == nil {
+		parsedIndex.Annotations = make(map[string]string)
+	}
+	parsedIndex.Annotations[annotationSourceDigest] = digest.Canonical.FromBytes(sourceManifest.Body).String()
+
+	newIndex, err := json.Marshal(parsedIndex)
+	if err != nil {
+		return err
+	}
+	return uploadManifest(to, manifest{
+		ContentType: string(image.OCIIndexMediaType),
+		Body:        json.RawMessage(newIndex),
+	})
 }
