@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"io"
 	"log"
 	"os"
@@ -11,10 +12,17 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/image/copy"
 )
 
+var (
+	flagCompareMode = flag.String("compare", "equal", `Mode for comparing manifests ("equal" or "annotated")`)
+	flagConcurrency = flag.Int("concurrency", 10, "Number of simultaneous blob and manifest operations")
+)
+
 func main() {
+	flag.Parse()
+
 	var specReader io.Reader = os.Stdin
-	if len(os.Args) > 1 {
-		specFile, err := os.Open(os.Args[1])
+	if flag.NArg() >= 1 {
+		specFile, err := os.Open(flag.Arg(0))
 		if err != nil {
 			log.Printf("[main] cannot open %s: %v", os.Args[1], err)
 			os.Exit(2)
@@ -29,7 +37,18 @@ func main() {
 		os.Exit(2)
 	}
 
-	copier := copy.NewCopier(10, copy.CompareModeEqual)
+	var compareMode copy.CompareMode
+	switch *flagCompareMode {
+	case "equal":
+		compareMode = copy.CompareModeEqual
+	case "annotated":
+		compareMode = copy.CompareModeAnnotation
+	default:
+		log.Printf("[main] invalid -compare mode %s", *flagCompareMode)
+		os.Exit(2)
+	}
+
+	copier := copy.NewCopier(*flagConcurrency, compareMode)
 	defer copier.CloseSubmit()
 
 	if err := copier.CopyAll(requests...); err != nil {
