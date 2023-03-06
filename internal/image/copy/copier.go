@@ -1,6 +1,7 @@
 package copy
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -109,12 +110,22 @@ func (c *Copier) CloseSubmit() {
 func (c *Copier) handleRequest(req Request) error {
 	log.Printf("[image]\tstarting copy from %s to %s", req.From, req.To)
 
-	sourceManifest, err := c.sourceManifests.Get(req.From)
+	sourceTask := c.sourceManifests.GetOrSubmit(req.From)
+	destTask := c.destManifests.GetOrSubmit(req.To)
+
+	sourceManifest, err := sourceTask.Wait()
 	if err != nil {
 		return err
 	}
 
-	c.destTracer.QueueTrace(req.To)
+	destManifest, err := destTask.Wait()
+	if err == nil {
+		c.destTracer.QueueTrace(req.To)
+		if bytes.Equal(sourceManifest.Body, destManifest.Body) {
+			log.Printf("[image]\tno change from %s to %s", req.From, req.To)
+			return nil
+		}
+	}
 
 	var parsedManifest struct {
 		Config struct {
