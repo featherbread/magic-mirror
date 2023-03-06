@@ -64,7 +64,7 @@ type Copier struct {
 	srcManifests *manifestCache
 	platforms    *platformCopier
 	dstManifests *manifestCache
-	dstTracer    *destinationTracer
+	dstTracer    *blobTracer
 }
 
 func NewCopier(workers int, compareMode CompareMode) *Copier {
@@ -72,7 +72,7 @@ func NewCopier(workers int, compareMode CompareMode) *Copier {
 	srcManifests := newManifestCache(workers)
 	platforms := newPlatformCopier(compareMode, srcManifests, blobs)
 	dstManifests := newManifestCache(workers)
-	dstTracer := newDestinationTracer(dstManifests, blobs)
+	dstTracer := newBlobTracer(dstManifests, blobs)
 
 	c := &Copier{
 		compareMode:  compareMode,
@@ -125,7 +125,7 @@ func (c *Copier) handleRequest(req Request) error {
 
 	dstManifest, err := dstTask.Wait()
 	if err == nil {
-		c.dstTracer.QueueTrace(req.Dst)
+		c.dstTracer.QueueForTracing(req.Dst)
 		if comparisons[c.compareMode](srcManifest, dstManifest) {
 			log.Printf("[image]\tno change from %s to %s", req.Src, req.Dst)
 			return nil
