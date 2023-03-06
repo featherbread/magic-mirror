@@ -12,6 +12,14 @@ import (
 
 type Digest digest.Digest
 
+func (d *Digest) UnmarshalText(text []byte) error {
+	err := digest.Digest(text).Validate()
+	if err == nil {
+		*d = Digest(text)
+	}
+	return err
+}
+
 type Registry string
 
 func (r Registry) APIBaseURL() *url.URL {
