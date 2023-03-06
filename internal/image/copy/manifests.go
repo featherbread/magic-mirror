@@ -25,9 +25,12 @@ func uploadManifest(img image.Image, manifest manifest) error {
 		return err
 	}
 
-	reference := string(img.Digest)
+	reference := img.Tag
 	if reference == "" {
-		reference = img.Tag
+		reference = img.Digest.String()
+	}
+	if reference == "" {
+		return fmt.Errorf("no valid reference in %s", img)
 	}
 
 	u := img.Registry.APIBaseURL()
@@ -72,7 +75,7 @@ var supportedManifestMediaTypes = []string{
 }
 
 func (d *manifestCache) handleRequest(img image.Image) (resp manifest, err error) {
-	reference := string(img.Digest)
+	reference := img.Digest.String()
 	if reference == "" {
 		reference = img.Tag
 	}

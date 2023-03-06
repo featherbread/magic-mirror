@@ -110,7 +110,7 @@ func (c *blobCopier) handleRequest(req blobCopyRequest) (err error) {
 	if err != nil {
 		return err
 	}
-	query.Add("digest", string(req.Digest))
+	query.Add("digest", req.Digest.String())
 	uploadURL.RawQuery = query.Encode()
 
 	uploadReq, err := http.NewRequest(http.MethodPut, uploadURL.String(), blob)
@@ -194,10 +194,10 @@ func requestBlobUploadURL(repo image.Repository, dgst image.Digest, mountNamespa
 
 	query := make(url.Values)
 	if mountNamespace != "" {
-		query.Add("mount", string(dgst))
+		query.Add("mount", dgst.String())
 		query.Add("from", mountNamespace)
 	} else {
-		query.Add("digest", string(dgst))
+		query.Add("digest", dgst.String())
 	}
 
 	u := repo.Registry.APIBaseURL()

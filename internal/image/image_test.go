@@ -31,6 +31,16 @@ func TestDigestFromJSON(t *testing.T) {
 			JSON:        `{"digest": "latest"}`,
 			Valid:       false,
 		},
+		{
+			Description: "blank",
+			JSON:        `{"digest": ""}`,
+			Valid:       false,
+		},
+		{
+			Description: "never touched",
+			JSON:        `{"unrelated": true}`,
+			Valid:       true,
+		},
 	}
 
 	for _, tc := range testCases {

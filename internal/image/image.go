@@ -10,12 +10,32 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-type Digest digest.Digest
+type Digest struct {
+	inner digest.Digest
+}
+
+func ParseDigest(s string) (Digest, error) {
+	d := digest.Digest(s)
+	return Digest{d}, d.Validate()
+}
+
+func (d Digest) IsZero() bool {
+	return d == (Digest{})
+}
+
+func (d Digest) String() string {
+	return d.inner.String()
+}
+
+func (d Digest) MarshalText() ([]byte, error) {
+	return []byte(d.String()), nil
+}
 
 func (d *Digest) UnmarshalText(text []byte) error {
-	err := digest.Digest(text).Validate()
+
+	parsed, err := ParseDigest(string(text))
 	if err == nil {
-		*d = Digest(text)
+		*d = parsed
 	}
 	return err
 }
@@ -75,29 +95,32 @@ func Parse(s string) (Image, error) {
 		tag = "latest"
 	}
 
-	if rawDigest != "" {
-		if err := digest.Digest(rawDigest).Validate(); err != nil {
-			return Image{}, fmt.Errorf("invalid digest in %q: %w", s, err)
-		}
-	}
-
-	return Image{
+	img := Image{
 		Repository: Repository{
 			Registry:  Registry(registry),
 			Namespace: namespace,
 		},
-		Tag:    tag,
-		Digest: Digest(rawDigest),
-	}, nil
+		Tag: tag,
+	}
+
+	if rawDigest != "" {
+		var err error
+		img.Digest, err = ParseDigest(rawDigest)
+		if err != nil {
+			return Image{}, fmt.Errorf("invalid digest in %q: %w", s, err)
+		}
+	}
+
+	return img, nil
 }
 
 func (i Image) String() string {
-	s := i.Repository.String()
+	result := i.Repository.String()
 	if i.Tag != "" {
-		s += ":" + i.Tag
+		result += ":" + i.Tag
 	}
-	if i.Digest != "" {
-		s += "@" + string(i.Digest)
+	if digest := i.Digest.String(); digest != "" {
+		result += "@" + digest
 	}
-	return s
+	return result
 }

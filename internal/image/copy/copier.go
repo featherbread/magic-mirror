@@ -146,7 +146,7 @@ func (c *Copier) handleRequest(req Request) error {
 	for i, layer := range parsedManifest.Layers {
 		blobDigests[i] = layer.Digest
 	}
-	if parsedManifest.Config.Digest != "" {
+	if !parsedManifest.Config.Digest.IsZero() {
 		blobDigests[len(blobDigests)-1] = parsedManifest.Config.Digest
 	} else {
 		blobDigests = blobDigests[:len(blobDigests)-1]

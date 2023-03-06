@@ -64,7 +64,7 @@ func (d *destinationTracer) handleRequest(img image.Image) error {
 	for _, l := range parsedManifest.Layers {
 		d.blobs.RegisterSource(l.Digest, img.Repository)
 	}
-	if parsedManifest.Config.Digest != "" {
+	if !parsedManifest.Config.Digest.IsZero() {
 		d.blobs.RegisterSource(parsedManifest.Config.Digest, img.Repository)
 	}
 
