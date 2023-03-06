@@ -19,8 +19,8 @@ type platformCopier struct {
 }
 
 type platformCopyRequest struct {
-	From image.Image
-	To   image.Image
+	Src image.Image
+	Dst image.Image
 }
 
 func newPlatformCopier(compareMode CompareMode, manifests *manifestCache, blobs *blobCopier) *platformCopier {
@@ -33,18 +33,18 @@ func newPlatformCopier(compareMode CompareMode, manifests *manifestCache, blobs 
 	return c
 }
 
-func (c *platformCopier) Copy(from image.Image, to image.Image) (image.Manifest, error) {
-	return c.Queue.GetOrSubmit(platformCopyRequest{From: from, To: to}).Wait()
+func (c *platformCopier) Copy(src image.Image, dst image.Image) (image.Manifest, error) {
+	return c.Queue.GetOrSubmit(platformCopyRequest{Src: src, Dst: dst}).Wait()
 }
 
-func (c *platformCopier) CopyAll(to image.Repository, from ...image.Image) ([]image.Manifest, error) {
-	reqs := make([]platformCopyRequest, len(from))
-	for i, from := range from {
+func (c *platformCopier) CopyAll(dst image.Repository, srcs ...image.Image) ([]image.Manifest, error) {
+	reqs := make([]platformCopyRequest, len(srcs))
+	for i, src := range srcs {
 		reqs[i] = platformCopyRequest{
-			From: from,
-			To: image.Image{
-				Repository: to,
-				Digest:     from.Digest,
+			Src: src,
+			Dst: image.Image{
+				Repository: dst,
+				Digest:     src.Digest,
 			},
 		}
 	}
@@ -52,16 +52,16 @@ func (c *platformCopier) CopyAll(to image.Repository, from ...image.Image) ([]im
 }
 
 func (c *platformCopier) handleRequest(req platformCopyRequest) (m image.Manifest, err error) {
-	sourceManifest, err := c.manifests.Get(req.From)
+	srcManifest, err := c.manifests.Get(req.Src)
 	if err != nil {
 		return
 	}
-	if !sourceManifest.GetMediaType().IsManifest() {
-		err = fmt.Errorf("%s is a manifest list, but should be a manifest", req.From)
+	if !srcManifest.GetMediaType().IsManifest() {
+		err = fmt.Errorf("%s is a manifest list, but should be a manifest", req.Src)
 		return
 	}
 
-	manifest := sourceManifest.(image.Manifest)
+	manifest := srcManifest.(image.Manifest)
 	if err = manifest.Validate(); err != nil {
 		return
 	}
@@ -72,14 +72,14 @@ func (c *platformCopier) handleRequest(req platformCopyRequest) (m image.Manifes
 		blobDigests[i] = layer.Digest
 	}
 	blobDigests[len(blobDigests)-1] = manifest.Parsed().Config.Digest
-	if err = c.blobs.CopyAll(req.From.Repository, req.To.Repository, blobDigests...); err != nil {
+	if err = c.blobs.CopyAll(req.Src.Repository, req.Dst.Repository, blobDigests...); err != nil {
 		return
 	}
 
 	if c.compareMode == CompareModeEqual {
-		err := uploadManifest(req.To, sourceManifest)
+		err := uploadManifest(req.Dst, srcManifest)
 		if err == nil {
-			log.Printf("[platform]\tcopied %s to %s", req.From, req.To)
+			log.Printf("[platform]\tcopied %s to %s", req.Src, req.Dst)
 		}
 		return manifest, err
 	}
@@ -92,13 +92,13 @@ func (c *platformCopier) handleRequest(req platformCopyRequest) (m image.Manifes
 	newManifest.Annotations[annotationSourceDigest] = manifest.Descriptor().Digest.String()
 
 	newImg := image.Image{
-		Repository: req.To.Repository,
-		Tag:        req.To.Tag,
+		Repository: req.Dst.Repository,
+		Tag:        req.Dst.Tag,
 		Digest:     newManifest.Descriptor().Digest,
 	}
 	err = uploadManifest(newImg, newManifest)
 	if err == nil {
-		log.Printf("[platform]\tcopied %s to %s", req.From, req.To)
+		log.Printf("[platform]\tcopied %s to %s", req.Src, req.Dst)
 	}
 	return newManifest, err
 }

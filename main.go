@@ -21,36 +21,36 @@ func main() {
 
 	err := copier.CopyAll(
 		copy.Request{
-			From: must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
-			To:   must(image.Parse("localhost:5000/imported/hypcast:latest")),
+			Src: must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
+			Dst: must(image.Parse("localhost:5000/imported/hypcast:latest")),
 		},
 		copy.Request{
-			From: must(image.Parse("ghcr.io/dexidp/dex:v2.35.3")),
-			To:   must(image.Parse("localhost:5000/imported/dex:v2.35.3")),
+			Src: must(image.Parse("ghcr.io/dexidp/dex:v2.35.3")),
+			Dst: must(image.Parse("localhost:5000/imported/dex:v2.35.3")),
 		},
 		copy.Request{
-			From: must(image.Parse("ghcr.io/dexidp/dex:v2.35.3")),
-			To:   must(image.Parse("localhost:5000/imported/dex:v2.35.3")),
+			Src: must(image.Parse("ghcr.io/dexidp/dex:v2.35.3")),
+			Dst: must(image.Parse("localhost:5000/imported/dex:v2.35.3")),
 		},
 		copy.Request{
-			From: must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
-			To:   must(image.Parse("localhost:5000/alsoimported/hypcast:latest")),
+			Src: must(image.Parse("ghcr.io/ahamlinman/hypcast:latest")),
+			Dst: must(image.Parse("localhost:5000/alsoimported/hypcast:latest")),
 		},
 		copy.Request{
-			From: must(image.Parse("quay.io/minio/minio:RELEASE.2023-02-22T18-23-45Z")),
-			To:   must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-22T18-23-45Z")),
+			Src: must(image.Parse("quay.io/minio/minio:RELEASE.2023-02-22T18-23-45Z")),
+			Dst: must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-22T18-23-45Z")),
 		},
 		copy.Request{
-			From: must(image.Parse("quay.io/minio/minio:RELEASE.2023-02-27T18-10-45Z")),
-			To:   must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-27T18-10-45Z")),
+			Src: must(image.Parse("quay.io/minio/minio:RELEASE.2023-02-27T18-10-45Z")),
+			Dst: must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-27T18-10-45Z")),
 		},
 		copy.Request{
-			From: must(image.Parse("quay.io/minio/minio:RELEASE.2023-02-27T18-10-45Z.fips")),
-			To:   must(image.Parse("localhost:5000/imported/minio:fips")),
+			Src: must(image.Parse("quay.io/minio/minio:RELEASE.2023-02-27T18-10-45Z.fips")),
+			Dst: must(image.Parse("localhost:5000/imported/minio:fips")),
 		},
 		copy.Request{
-			From: must(image.Parse("quay.io/minio/minio:RELEASE.2023-02-27T18-10-45Z.fips")),
-			To:   must(image.Parse("localhost:5000/imported/minio:alsofips")),
+			Src: must(image.Parse("quay.io/minio/minio:RELEASE.2023-02-27T18-10-45Z.fips")),
+			Dst: must(image.Parse("localhost:5000/imported/minio:alsofips")),
 		},
 	)
 	if err != nil {

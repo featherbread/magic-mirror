@@ -20,89 +20,89 @@ import (
 type blobCopier struct {
 	*work.Queue[blobCopyRequest, work.NoValue]
 
-	sourcesMap map[digest.Digest]mapset.Set[image.Repository]
-	sourcesMu  sync.Mutex
+	srcsMap map[digest.Digest]mapset.Set[image.Repository]
+	srcsMu  sync.Mutex
 }
 
 type blobCopyRequest struct {
 	Digest digest.Digest
-	To     image.Repository
+	Dst    image.Repository
 }
 
 func newBlobCopier(workers int) *blobCopier {
 	c := &blobCopier{
-		sourcesMap: make(map[digest.Digest]mapset.Set[image.Repository]),
+		srcsMap: make(map[digest.Digest]mapset.Set[image.Repository]),
 	}
 	c.Queue = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
 	return c
 }
 
-func (c *blobCopier) RegisterSource(dgst digest.Digest, from image.Repository) {
-	c.sources(dgst).Add(from)
+func (c *blobCopier) RegisterSource(dgst digest.Digest, src image.Repository) {
+	c.sources(dgst).Add(src)
 }
 
-func (c *blobCopier) CopyAll(from, to image.Repository, dgsts ...digest.Digest) error {
+func (c *blobCopier) CopyAll(src, dst image.Repository, dgsts ...digest.Digest) error {
 	requests := make([]blobCopyRequest, len(dgsts))
 	for i, dgst := range dgsts {
-		c.RegisterSource(dgst, from)
-		requests[i] = blobCopyRequest{Digest: dgst, To: to}
+		c.RegisterSource(dgst, src)
+		requests[i] = blobCopyRequest{Digest: dgst, Dst: dst}
 	}
 	_, err := c.Queue.GetOrSubmitAll(requests...).WaitAll()
 	return err
 }
 
 func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {
-	c.sourcesMu.Lock()
-	defer c.sourcesMu.Unlock()
-	if set, ok := c.sourcesMap[dgst]; ok {
+	c.srcsMu.Lock()
+	defer c.srcsMu.Unlock()
+	if set, ok := c.srcsMap[dgst]; ok {
 		return set
 	}
 	set := mapset.NewSet[image.Repository]()
-	c.sourcesMap[dgst] = set
+	c.srcsMap[dgst] = set
 	return set
 }
 
 func (c *blobCopier) handleRequest(req blobCopyRequest) (err error) {
-	sourceSet := c.sources(req.Digest)
-	if sourceSet.Contains(req.To) {
-		log.Printf("[blob]\tknown %s@%s", req.To, req.Digest)
+	srcSet := c.sources(req.Digest)
+	if srcSet.Contains(req.Dst) {
+		log.Printf("[blob]\tknown %s@%s", req.Dst, req.Digest)
 		return nil
 	}
 
 	defer func() {
 		if err == nil {
-			c.RegisterSource(req.Digest, req.To)
+			c.RegisterSource(req.Digest, req.Dst)
 		}
 	}()
 
-	hasBlob, err := checkForExistingBlob(req.To, req.Digest)
+	hasBlob, err := checkForExistingBlob(req.Dst, req.Digest)
 	if err != nil {
 		return err
 	}
 	if hasBlob {
-		log.Printf("[blob]\tfound %s@%s", req.To, req.Digest)
+		log.Printf("[blob]\tfound %s@%s", req.Dst, req.Digest)
 		return nil
 	}
 
-	var mountSource image.Repository
-	sources := sourceSet.ToSlice()
-	for _, source := range sources {
-		if source.Registry == req.To.Registry {
-			mountSource = source
+	var mountSrc image.Repository
+	srcs := srcSet.ToSlice()
+	for _, src := range srcs {
+		if src.Registry == req.Dst.Registry {
+			mountSrc = src
 			break
 		}
 	}
 
-	uploadURL, mounted, err := requestBlobUploadURL(req.To, req.Digest, mountSource.Namespace)
+	uploadURL, mounted, err := requestBlobUploadURL(req.Dst, req.Digest, mountSrc.Namespace)
 	if err != nil {
 		return err
 	}
 	if mounted {
-		log.Printf("[blob]\tmounted %s@%s to %s", mountSource, req.Digest, req.To)
+		log.Printf("[blob]\tmounted %s@%s to %s", mountSrc, req.Digest, req.Dst)
 		return nil
 	}
 
-	blob, size, err := downloadBlob(sources[0], req.Digest)
+	blob, size, err := downloadBlob(srcs[0], req.Digest)
 	if err != nil {
 		return err
 	}
@@ -121,7 +121,7 @@ func (c *blobCopier) handleRequest(req blobCopyRequest) (err error) {
 	uploadReq.Header.Add("Content-Type", "application/octet-stream")
 	uploadReq.Header.Add("Content-Length", strconv.FormatInt(size, 10))
 
-	client, err := registry.GetClient(req.To, registry.PushScope)
+	client, err := registry.GetClient(req.Dst, registry.PushScope)
 	if err != nil {
 		return err
 	}
@@ -135,7 +135,7 @@ func (c *blobCopier) handleRequest(req blobCopyRequest) (err error) {
 		return err
 	}
 
-	log.Printf("[blob]\tcopied %s@%s to %s", sources[0], req.Digest, req.To)
+	log.Printf("[blob]\tcopied %s@%s to %s", srcs[0], req.Digest, req.Dst)
 	return nil
 }
 

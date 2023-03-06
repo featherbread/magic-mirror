@@ -12,8 +12,8 @@ import (
 )
 
 type Request struct {
-	From image.Image
-	To   image.Image
+	Src image.Image
+	Dst image.Image
 }
 
 func ValidateRequests(reqs ...Request) error {
@@ -24,27 +24,27 @@ func ValidateRequests(reqs ...Request) error {
 func coalesceRequests(reqs []Request) ([]Request, error) {
 	var errs []error
 
-	sources := mapset.NewThreadUnsafeSet[image.Image]()
+	srcs := mapset.NewThreadUnsafeSet[image.Image]()
 	for _, req := range reqs {
-		sources.Add(req.From)
+		srcs.Add(req.Src)
 	}
 	for _, req := range reqs {
-		if sources.Contains(req.To) {
-			errs = append(errs, fmt.Errorf("%s is both a source and a destination", req.To))
+		if srcs.Contains(req.Dst) {
+			errs = append(errs, fmt.Errorf("%s is both a source and a destination", req.Dst))
 		}
 	}
 
 	coalesced := make([]Request, 0, len(reqs))
-	requestsByDestination := make(map[image.Image]Request)
+	requestsByDst := make(map[image.Image]Request)
 	for _, current := range reqs {
-		previous, ok := requestsByDestination[current.To]
+		previous, ok := requestsByDst[current.Dst]
 		if !ok {
 			coalesced = append(coalesced, current)
-			requestsByDestination[current.To] = current
+			requestsByDst[current.Dst] = current
 			continue
 		}
 		if previous != current {
-			errs = append(errs, fmt.Errorf("%s requests inconsistent copies from %s and %s", current.To, current.From, previous.From))
+			errs = append(errs, fmt.Errorf("%s requests inconsistent copies from %s and %s", current.Dst, current.Src, previous.Src))
 		}
 	}
 
@@ -54,35 +54,35 @@ func coalesceRequests(reqs []Request) ([]Request, error) {
 type Copier struct {
 	*work.Queue[Request, work.NoValue]
 
-	compareMode     CompareMode
-	blobs           *blobCopier
-	sourceManifests *manifestCache
-	platforms       *platformCopier
-	destManifests   *manifestCache
-	destTracer      *destinationTracer
+	compareMode  CompareMode
+	blobs        *blobCopier
+	srcManifests *manifestCache
+	platforms    *platformCopier
+	dstManifests *manifestCache
+	dstTracer    *destinationTracer
 }
 
 func NewCopier(workers int, compareMode CompareMode) *Copier {
 	blobs := newBlobCopier(workers)
-	sourceManifests := newManifestCache(workers)
-	platforms := newPlatformCopier(compareMode, sourceManifests, blobs)
-	destManifests := newManifestCache(workers)
-	destTracer := newDestinationTracer(destManifests, blobs)
+	srcManifests := newManifestCache(workers)
+	platforms := newPlatformCopier(compareMode, srcManifests, blobs)
+	dstManifests := newManifestCache(workers)
+	dstTracer := newDestinationTracer(dstManifests, blobs)
 
 	c := &Copier{
-		compareMode:     compareMode,
-		blobs:           blobs,
-		sourceManifests: sourceManifests,
-		platforms:       platforms,
-		destManifests:   destManifests,
-		destTracer:      destTracer,
+		compareMode:  compareMode,
+		blobs:        blobs,
+		srcManifests: srcManifests,
+		platforms:    platforms,
+		dstManifests: dstManifests,
+		dstTracer:    dstTracer,
 	}
 	c.Queue = work.NewQueue(0, work.NoValueHandler(c.handleRequest))
 	return c
 }
 
-func (c *Copier) Copy(from, to image.Image) error {
-	_, err := c.Queue.GetOrSubmit(Request{From: from, To: to}).Wait()
+func (c *Copier) Copy(src, dst image.Image) error {
+	_, err := c.Queue.GetOrSubmit(Request{Src: src, Dst: dst}).Wait()
 	return err
 }
 
@@ -99,7 +99,7 @@ func (c *Copier) CloseSubmit() {
 	// TODO: This is only safe after all Copier tasks are finished.
 	c.Queue.CloseSubmit()
 	c.platforms.CloseSubmit()
-	c.sourceManifests.CloseSubmit()
+	c.srcManifests.CloseSubmit()
 	// TODO: Since we don't block on destination tracing, these may not be safe to
 	// clean up. Need to figure out a cancellation strategy.
 	// c.destTracer.CloseSubmit()
@@ -108,73 +108,73 @@ func (c *Copier) CloseSubmit() {
 }
 
 func (c *Copier) handleRequest(req Request) error {
-	log.Printf("[image]\tstarting copy from %s to %s", req.From, req.To)
+	log.Printf("[image]\tstarting copy from %s to %s", req.Src, req.Dst)
 
-	sourceTask := c.sourceManifests.GetOrSubmit(req.From)
-	destTask := c.destManifests.GetOrSubmit(req.To)
+	srcTask := c.srcManifests.GetOrSubmit(req.Src)
+	dstTask := c.dstManifests.GetOrSubmit(req.Dst)
 
-	sourceManifest, err := sourceTask.Wait()
+	srcManifest, err := srcTask.Wait()
 	if err != nil {
 		return err
 	}
 
-	destManifest, err := destTask.Wait()
+	dstManifest, err := dstTask.Wait()
 	if err == nil {
-		c.destTracer.QueueTrace(req.To)
-		if comparisons[c.compareMode](sourceManifest, destManifest) {
-			log.Printf("[image]\tno change from %s to %s", req.From, req.To)
+		c.dstTracer.QueueTrace(req.Dst)
+		if comparisons[c.compareMode](srcManifest, dstManifest) {
+			log.Printf("[image]\tno change from %s to %s", req.Src, req.Dst)
 			return nil
 		}
 	}
 
-	sourceMediaType := sourceManifest.GetMediaType()
+	srcMediaType := srcManifest.GetMediaType()
 	switch {
-	case sourceMediaType.IsIndex():
-		err = c.copyIndex(sourceManifest.(image.Index), req.From, req.To)
-	case sourceMediaType.IsManifest():
-		_, err = c.platforms.Copy(req.From, req.To)
+	case srcMediaType.IsIndex():
+		err = c.copyIndex(srcManifest.(image.Index), req.Src, req.Dst)
+	case srcMediaType.IsManifest():
+		_, err = c.platforms.Copy(req.Src, req.Dst)
 	default:
-		err = fmt.Errorf("unknown manifest type for %s: %s", req.From, sourceMediaType)
+		err = fmt.Errorf("unknown manifest type for %s: %s", req.Src, srcMediaType)
 	}
 	if err != nil {
 		return err
 	}
 
-	log.Printf("[image]\tfully copied %s to %s", req.From, req.To)
+	log.Printf("[image]\tfully copied %s to %s", req.Src, req.Dst)
 	return nil
 }
 
-func (c *Copier) copyIndex(sourceIndex image.Index, from, to image.Image) error {
-	if err := sourceIndex.Validate(); err != nil {
+func (c *Copier) copyIndex(srcIndex image.Index, src, dst image.Image) error {
+	if err := srcIndex.Validate(); err != nil {
 		return err
 	}
 
-	sourceDescriptors := sourceIndex.Parsed().Manifests
-	imgs := make([]image.Image, len(sourceDescriptors))
-	for i, m := range sourceDescriptors {
-		imgs[i] = image.Image{Repository: from.Repository, Digest: m.Digest}
+	srcDescriptors := srcIndex.Parsed().Manifests
+	imgs := make([]image.Image, len(srcDescriptors))
+	for i, m := range srcDescriptors {
+		imgs[i] = image.Image{Repository: src.Repository, Digest: m.Digest}
 	}
-	newPlatformManifests, err := c.platforms.CopyAll(to.Repository, imgs...)
+	dstManifests, err := c.platforms.CopyAll(dst.Repository, imgs...)
 	if err != nil {
 		return err
 	}
 
 	if c.compareMode == CompareModeEqual {
-		return uploadManifest(to, sourceIndex)
+		return uploadManifest(dst, srcIndex)
 	}
 
-	newIndex := sourceIndex.Parsed()
+	newIndex := srcIndex.Parsed()
 	newIndex.MediaType = string(image.OCIIndexMediaType)
 	if newIndex.Annotations == nil {
 		newIndex.Annotations = make(map[string]string)
 	}
-	newIndex.Annotations[annotationSourceDigest] = sourceIndex.Descriptor().Digest.String()
-	for i, m := range newPlatformManifests {
-		oldDescriptor := newIndex.Manifests[i]
-		newDescriptor := m.Descriptor()
-		newDescriptor.Annotations = oldDescriptor.Annotations
-		newDescriptor.Platform = oldDescriptor.Platform
-		newIndex.Manifests[i] = newDescriptor
+	newIndex.Annotations[annotationSourceDigest] = srcIndex.Descriptor().Digest.String()
+	for i, dstManifest := range dstManifests {
+		old := newIndex.Manifests[i]
+		new := dstManifest.Descriptor()
+		new.Annotations = old.Annotations
+		new.Platform = old.Platform
+		newIndex.Manifests[i] = new
 	}
-	return uploadManifest(to, newIndex)
+	return uploadManifest(dst, newIndex)
 }
