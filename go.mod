@@ -6,6 +6,7 @@ require (
 	github.com/deckarep/golang-set/v2 v2.1.0
 	github.com/google/go-containerregistry v0.13.0
 	github.com/opencontainers/go-digest v1.0.0
+	github.com/opencontainers/image-spec v1.1.0-rc2
 )
 
 require (
