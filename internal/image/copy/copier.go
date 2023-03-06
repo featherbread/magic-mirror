@@ -8,7 +8,6 @@ import (
 	"log"
 
 	mapset "github.com/deckarep/golang-set/v2"
-	"github.com/opencontainers/go-digest"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/work"
@@ -128,53 +127,45 @@ func (c *Copier) handleRequest(req Request) error {
 		}
 	}
 
-	var parsedManifest struct {
-		Config struct {
-			Digest digest.Digest `json:"digest"`
-		} `json:"config"`
-		Layers []struct {
-			Digest digest.Digest `json:"digest"`
-		} `json:"layers"`
-		Manifests []struct {
-			Digest digest.Digest `json:"digest"`
-		} `json:"manifests"`
+	var mediaType struct {
+		MediaType image.MediaType `json:"mediaType"`
 	}
-	if err := json.Unmarshal([]byte(sourceManifest.Body), &parsedManifest); err != nil {
+	if err := json.Unmarshal(sourceManifest.Body, &mediaType); err != nil {
 		return err
 	}
 
-	blobDigests := make([]digest.Digest, len(parsedManifest.Layers)+1)
-	for i, layer := range parsedManifest.Layers {
-		blobDigests[i] = layer.Digest
+	switch {
+	case mediaType.MediaType.IsIndex():
+		err = c.copyIndex(sourceManifest, req.From, req.To)
+	case mediaType.MediaType.IsManifest():
+		err = c.platforms.Copy(req.From, req.To)
+	default:
+		err = fmt.Errorf("unknown manifest type for %s: %s", req.From, mediaType.MediaType)
 	}
-	if parsedManifest.Config.Digest != "" {
-		blobDigests[len(blobDigests)-1] = parsedManifest.Config.Digest
-	} else {
-		blobDigests = blobDigests[:len(blobDigests)-1]
-	}
-	for _, dgst := range blobDigests {
-		if err := dgst.Validate(); err != nil {
-			return err
-		}
-	}
-	if err := c.blobs.CopyAll(req.From.Repository, req.To.Repository, blobDigests...); err != nil {
-		return err
-	}
-
-	if len(parsedManifest.Manifests) > 0 {
-		imgs := make([]image.Image, len(parsedManifest.Manifests))
-		for i, m := range parsedManifest.Manifests {
-			imgs[i] = image.Image{Repository: req.From.Repository, Digest: m.Digest}
-		}
-		if err := c.platforms.CopyAll(req.To.Repository, imgs...); err != nil {
-			return err
-		}
-	}
-
-	if err := uploadManifest(req.To, sourceManifest); err != nil {
+	if err != nil {
 		return err
 	}
 
 	log.Printf("[image]\tfully copied %s to %s", req.From, req.To)
 	return nil
+}
+
+func (c *Copier) copyIndex(sourceManifest manifest, from, to image.Image) error {
+	var parsedIndex image.Index
+	if err := json.Unmarshal(sourceManifest.Body, &parsedIndex); err != nil {
+		return err
+	}
+	if err := parsedIndex.Validate(); err != nil {
+		return err
+	}
+
+	imgs := make([]image.Image, len(parsedIndex.Manifests))
+	for i, m := range parsedIndex.Manifests {
+		imgs[i] = image.Image{Repository: from.Repository, Digest: m.Digest}
+	}
+	if err := c.platforms.CopyAll(to.Repository, imgs...); err != nil {
+		return err
+	}
+
+	return uploadManifest(to, sourceManifest)
 }

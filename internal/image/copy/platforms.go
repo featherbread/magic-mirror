@@ -19,7 +19,7 @@ type platformCopier struct {
 
 type platformCopyRequest struct {
 	From image.Image
-	To   image.Repository
+	To   image.Image
 }
 
 func newPlatformCopier(manifests *manifestCache, blobs *blobCopier) *platformCopier {
@@ -31,15 +31,21 @@ func newPlatformCopier(manifests *manifestCache, blobs *blobCopier) *platformCop
 	return c
 }
 
-func (c *platformCopier) Copy(from image.Image, to image.Repository) error {
+func (c *platformCopier) Copy(from image.Image, to image.Image) error {
 	_, err := c.Queue.GetOrSubmit(platformCopyRequest{From: from, To: to}).Wait()
 	return err
 }
 
 func (c *platformCopier) CopyAll(to image.Repository, from ...image.Image) error {
 	reqs := make([]platformCopyRequest, len(from))
-	for i, img := range from {
-		reqs[i] = platformCopyRequest{From: img, To: to}
+	for i, from := range from {
+		reqs[i] = platformCopyRequest{
+			From: from,
+			To: image.Image{
+				Repository: to,
+				Digest:     from.Digest,
+			},
+		}
 	}
 	_, err := c.Queue.GetOrSubmitAll(reqs...).WaitAll()
 	return err
@@ -51,15 +57,11 @@ func (c *platformCopier) handleRequest(req platformCopyRequest) error {
 		return err
 	}
 
-	var parsedManifest struct {
-		Config struct {
-			Digest digest.Digest `json:"digest"`
-		} `json:"config"`
-		Layers []struct {
-			Digest digest.Digest `json:"digest"`
-		} `json:"layers"`
-	}
+	var parsedManifest image.Manifest
 	if err := json.Unmarshal([]byte(manifest.Body), &parsedManifest); err != nil {
+		return err
+	}
+	if err := parsedManifest.Validate(); err != nil {
 		return err
 	}
 
@@ -68,21 +70,15 @@ func (c *platformCopier) handleRequest(req platformCopyRequest) error {
 		blobDigests[i] = layer.Digest
 	}
 	blobDigests[len(blobDigests)-1] = parsedManifest.Config.Digest
-	for _, dgst := range blobDigests {
-		if err := dgst.Validate(); err != nil {
-			return err
-		}
-	}
-	if err := c.blobs.CopyAll(req.From.Repository, req.To, blobDigests...); err != nil {
+	if err := c.blobs.CopyAll(req.From.Repository, req.To.Repository, blobDigests...); err != nil {
 		return err
 	}
 
-	destImg := image.Image{Repository: req.To, Digest: req.From.Digest}
-	err = uploadManifest(destImg, manifest)
+	err = uploadManifest(req.To, manifest)
 	if err != nil {
 		return err
 	}
 
-	log.Printf("[platform]\tcopied %s to %s", req.From, destImg.Repository)
+	log.Printf("[platform]\tcopied %s to %s", req.From, req.To)
 	return nil
 }
