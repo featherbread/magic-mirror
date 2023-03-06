@@ -45,8 +45,8 @@ func main() {
 			To:   must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-27T18-10-45Z")),
 		},
 		copy.Request{
-			From: must(image.Parse("quay.io/minio/minio:release.2023-02-27t18-10-45z.fips")),
-			To:   must(image.Parse("localhost:5000/imported/minio:RELEASE.2023-02-27T18-10-45Z.fips")),
+			From: must(image.Parse("quay.io/minio/minio:RELEASE.2023-02-27T18-10-45Z.fips")),
+			To:   must(image.Parse("localhost:5000/imported/minio:fips")),
 		},
 	)
 	if err != nil {

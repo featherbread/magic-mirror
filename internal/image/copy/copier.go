@@ -109,43 +109,55 @@ func (c *Copier) CloseSubmit() {
 func (c *Copier) handleRequest(req Request) error {
 	log.Printf("[image]\tstarting copy from %s to %s", req.From, req.To)
 
-	c.destTracer.QueueTrace(req.To)
-
-	manifest, err := c.sourceManifests.Get(req.From)
+	sourceManifest, err := c.sourceManifests.Get(req.From)
 	if err != nil {
 		return err
 	}
 
+	c.destTracer.QueueTrace(req.To)
+
 	var parsedManifest struct {
-		Manifests []struct {
+		Config struct {
 			Digest image.Digest `json:"digest"`
-		} `json:"manifests"`
+		} `json:"config"`
 		Layers []struct {
 			Digest image.Digest `json:"digest"`
 		} `json:"layers"`
+		Manifests []struct {
+			Digest image.Digest `json:"digest"`
+		} `json:"manifests"`
 	}
-	if err := json.Unmarshal([]byte(manifest.Body), &parsedManifest); err != nil {
+	if err := json.Unmarshal([]byte(sourceManifest.Body), &parsedManifest); err != nil {
 		return err
 	}
 
-	if len(parsedManifest.Manifests) == 0 {
-		err = c.platforms.Copy(req.From, req.To.Repository)
-	} else {
-		imgs := make([]image.Image, len(parsedManifest.Manifests))
-		for i, m := range parsedManifest.Manifests {
-			imgs[i] = image.Image{Repository: req.From.Repository, Digest: m.Digest}
-		}
-		err = c.platforms.CopyAll(req.To.Repository, imgs...)
+	blobDigests := make([]image.Digest, len(parsedManifest.Layers)+1)
+	for i, layer := range parsedManifest.Layers {
+		blobDigests[i] = layer.Digest
 	}
-	if err != nil {
+	if parsedManifest.Config.Digest != "" {
+		blobDigests[len(blobDigests)-1] = parsedManifest.Config.Digest
+	} else {
+		blobDigests = blobDigests[:len(blobDigests)-1]
+	}
+	if err := c.blobs.CopyAll(req.From.Repository, req.To.Repository, blobDigests...); err != nil {
 		return err
 	}
 
 	if len(parsedManifest.Manifests) > 0 {
-		if err := uploadManifest(req.To, manifest); err != nil {
+		imgs := make([]image.Image, len(parsedManifest.Manifests))
+		for i, m := range parsedManifest.Manifests {
+			imgs[i] = image.Image{Repository: req.From.Repository, Digest: m.Digest}
+		}
+		if err := c.platforms.CopyAll(req.To.Repository, imgs...); err != nil {
 			return err
 		}
 	}
+
+	if err := uploadManifest(req.To, sourceManifest); err != nil {
+		return err
+	}
+
 	log.Printf("[image]\tfully copied %s to %s", req.From, req.To)
 	return nil
 }

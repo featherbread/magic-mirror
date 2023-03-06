@@ -66,13 +66,11 @@ func (c *platformCopier) handleRequest(req platformCopyRequest) error {
 		blobDigests[i] = layer.Digest
 	}
 	blobDigests[len(blobDigests)-1] = parsedManifest.Config.Digest
-
-	err = c.blobs.CopyAll(req.From.Repository, req.To, blobDigests...)
-	if err != nil {
+	if err := c.blobs.CopyAll(req.From.Repository, req.To, blobDigests...); err != nil {
 		return err
 	}
 
-	destImg := image.Image{Repository: req.To, Tag: req.From.Tag, Digest: req.From.Digest}
+	destImg := image.Image{Repository: req.To, Digest: req.From.Digest}
 	err = uploadManifest(destImg, manifest)
 	if err != nil {
 		return err
