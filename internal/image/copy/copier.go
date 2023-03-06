@@ -1,14 +1,11 @@
 package copy
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 
 	mapset "github.com/deckarep/golang-set/v2"
-	"github.com/opencontainers/go-digest"
-	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/work"
@@ -134,20 +131,14 @@ func (c *Copier) handleRequest(req Request) error {
 		}
 	}
 
-	var mediaType struct {
-		MediaType image.MediaType `json:"mediaType"`
-	}
-	if err := json.Unmarshal(sourceManifest.Body, &mediaType); err != nil {
-		return err
-	}
-
+	sourceMediaType := sourceManifest.GetMediaType()
 	switch {
-	case mediaType.MediaType.IsIndex():
-		err = c.copyIndex(sourceManifest, req.From, req.To)
-	case mediaType.MediaType.IsManifest():
+	case sourceMediaType.IsIndex():
+		err = c.copyIndex(sourceManifest.(image.Index), req.From, req.To)
+	case sourceMediaType.IsManifest():
 		_, err = c.platforms.Copy(req.From, req.To)
 	default:
-		err = fmt.Errorf("unknown manifest type for %s: %s", req.From, mediaType.MediaType)
+		err = fmt.Errorf("unknown manifest type for %s: %s", req.From, sourceMediaType)
 	}
 	if err != nil {
 		return err
@@ -157,17 +148,14 @@ func (c *Copier) handleRequest(req Request) error {
 	return nil
 }
 
-func (c *Copier) copyIndex(sourceManifest manifest, from, to image.Image) error {
-	var parsedIndex image.ParsedIndex
-	if err := json.Unmarshal(sourceManifest.Body, &parsedIndex); err != nil {
-		return err
-	}
-	if err := parsedIndex.Validate(); err != nil {
+func (c *Copier) copyIndex(sourceIndex image.Index, from, to image.Image) error {
+	if err := sourceIndex.Validate(); err != nil {
 		return err
 	}
 
-	imgs := make([]image.Image, len(parsedIndex.Manifests))
-	for i, m := range parsedIndex.Manifests {
+	sourceDescriptors := sourceIndex.Parsed().Manifests
+	imgs := make([]image.Image, len(sourceDescriptors))
+	for i, m := range sourceDescriptors {
 		imgs[i] = image.Image{Repository: from.Repository, Digest: m.Digest}
 	}
 	newPlatformManifests, err := c.platforms.CopyAll(to.Repository, imgs...)
@@ -176,30 +164,21 @@ func (c *Copier) copyIndex(sourceManifest manifest, from, to image.Image) error 
 	}
 
 	if c.compareMode == CompareModeEqual {
-		return uploadManifest(to, sourceManifest)
+		return uploadManifest(to, sourceIndex)
 	}
 
-	parsedIndex.MediaType = string(image.OCIIndexMediaType)
-	if parsedIndex.Annotations == nil {
-		parsedIndex.Annotations = make(map[string]string)
+	newIndex := sourceIndex.Parsed()
+	newIndex.MediaType = string(image.OCIIndexMediaType)
+	if newIndex.Annotations == nil {
+		newIndex.Annotations = make(map[string]string)
 	}
-	parsedIndex.Annotations[annotationSourceDigest] = digest.Canonical.FromBytes(sourceManifest.Body).String()
+	newIndex.Annotations[annotationSourceDigest] = sourceIndex.Descriptor().Digest.String()
 	for i, m := range newPlatformManifests {
-		parsedIndex.Manifests[i] = v1.Descriptor{
-			MediaType:   m.ContentType,
-			Digest:      digest.Canonical.FromBytes(m.Body),
-			Size:        int64(len(m.Body)),
-			Annotations: parsedIndex.Manifests[i].Annotations,
-			Platform:    parsedIndex.Manifests[i].Platform,
-		}
+		oldDescriptor := newIndex.Manifests[i]
+		newDescriptor := m.Descriptor()
+		newDescriptor.Annotations = oldDescriptor.Annotations
+		newDescriptor.Platform = oldDescriptor.Platform
+		newIndex.Manifests[i] = newDescriptor
 	}
-
-	newIndex, err := json.Marshal(parsedIndex)
-	if err != nil {
-		return err
-	}
-	return uploadManifest(to, manifest{
-		ContentType: string(image.OCIIndexMediaType),
-		Body:        json.RawMessage(newIndex),
-	})
+	return uploadManifest(to, newIndex)
 }

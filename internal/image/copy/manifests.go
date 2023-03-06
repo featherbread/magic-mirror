@@ -14,12 +14,7 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
-type manifest struct {
-	ContentType string
-	Body        json.RawMessage
-}
-
-func uploadManifest(img image.Image, manifest manifest) error {
+func uploadManifest(img image.Image, manifest image.ManifestKind) error {
 	client, err := registry.GetClient(img.Repository, registry.PushScope)
 	if err != nil {
 		return err
@@ -35,11 +30,11 @@ func uploadManifest(img image.Image, manifest manifest) error {
 
 	u := img.Registry.APIBaseURL()
 	u.Path = fmt.Sprintf("/v2/%s/manifests/%s", img.Namespace, reference)
-	req, err := http.NewRequest(http.MethodPut, u.String(), bytes.NewReader(manifest.Body))
+	req, err := http.NewRequest(http.MethodPut, u.String(), bytes.NewReader(manifest.Encoded()))
 	if err != nil {
 		return err
 	}
-	req.Header.Add("Content-Type", manifest.ContentType)
+	req.Header.Add("Content-Type", manifest.Descriptor().MediaType)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -50,7 +45,7 @@ func uploadManifest(img image.Image, manifest manifest) error {
 }
 
 type manifestCache struct {
-	*work.Queue[image.Image, manifest]
+	*work.Queue[image.Image, image.ManifestKind]
 }
 
 func newManifestCache(workers int) *manifestCache {
@@ -59,22 +54,15 @@ func newManifestCache(workers int) *manifestCache {
 	return d
 }
 
-func (d *manifestCache) Get(img image.Image) (manifest, error) {
+func (d *manifestCache) Get(img image.Image) (image.ManifestKind, error) {
 	return d.Queue.GetOrSubmit(img).Wait()
 }
 
-func (d *manifestCache) GetOrSubmit(img image.Image) *work.Task[manifest] {
+func (d *manifestCache) GetOrSubmit(img image.Image) *work.Task[image.ManifestKind] {
 	return d.Queue.GetOrSubmit(img)
 }
 
-var supportedManifestMediaTypes = []string{
-	"application/vnd.oci.image.index.v1+json",
-	"application/vnd.docker.distribution.manifest.list.v2+json",
-	"application/vnd.oci.image.manifest.v1+json",
-	"application/vnd.docker.distribution.manifest.v2+json",
-}
-
-func (d *manifestCache) handleRequest(img image.Image) (resp manifest, err error) {
+func (d *manifestCache) handleRequest(img image.Image) (resp image.ManifestKind, err error) {
 	reference := img.Digest.String()
 	if reference == "" {
 		reference = img.Tag
@@ -93,7 +81,7 @@ func (d *manifestCache) handleRequest(img image.Image) (resp manifest, err error
 	if err != nil {
 		return
 	}
-	downloadReq.Header.Add("Accept", strings.Join(supportedManifestMediaTypes, ","))
+	downloadReq.Header.Add("Accept", strings.Join(image.AllManifestMediaTypes, ","))
 
 	downloadResp, err := client.Do(downloadReq)
 	if err != nil {
@@ -105,7 +93,19 @@ func (d *manifestCache) handleRequest(img image.Image) (resp manifest, err error
 		return
 	}
 
-	contentType := downloadResp.Header.Get("Content-Type")
+	contentType := image.MediaType(downloadResp.Header.Get("Content-Type"))
 	body, err := io.ReadAll(downloadResp.Body)
-	return manifest{ContentType: contentType, Body: body}, err
+	switch {
+	case contentType.IsIndex():
+		var index image.RawIndex
+		err = json.Unmarshal(body, &index)
+		resp = index
+	case contentType.IsManifest():
+		var manifest image.RawManifest
+		err = json.Unmarshal(body, &manifest)
+		resp = manifest
+	default:
+		err = fmt.Errorf("unknown manifest type for %s: %s", img, contentType)
+	}
+	return
 }

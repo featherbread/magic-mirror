@@ -1,7 +1,7 @@
 package copy
 
 import (
-	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/opencontainers/go-digest"
@@ -11,7 +11,7 @@ import (
 )
 
 type platformCopier struct {
-	*work.Queue[platformCopyRequest, manifest]
+	*work.Queue[platformCopyRequest, image.Manifest]
 
 	compareMode CompareMode
 	manifests   *manifestCache
@@ -33,11 +33,11 @@ func newPlatformCopier(compareMode CompareMode, manifests *manifestCache, blobs 
 	return c
 }
 
-func (c *platformCopier) Copy(from image.Image, to image.Image) (manifest, error) {
+func (c *platformCopier) Copy(from image.Image, to image.Image) (image.Manifest, error) {
 	return c.Queue.GetOrSubmit(platformCopyRequest{From: from, To: to}).Wait()
 }
 
-func (c *platformCopier) CopyAll(to image.Repository, from ...image.Image) ([]manifest, error) {
+func (c *platformCopier) CopyAll(to image.Repository, from ...image.Image) ([]image.Manifest, error) {
 	reqs := make([]platformCopyRequest, len(from))
 	for i, from := range from {
 		reqs[i] = platformCopyRequest{
@@ -51,25 +51,27 @@ func (c *platformCopier) CopyAll(to image.Repository, from ...image.Image) ([]ma
 	return c.Queue.GetOrSubmitAll(reqs...).WaitAll()
 }
 
-func (c *platformCopier) handleRequest(req platformCopyRequest) (m manifest, err error) {
+func (c *platformCopier) handleRequest(req platformCopyRequest) (m image.Manifest, err error) {
 	sourceManifest, err := c.manifests.Get(req.From)
 	if err != nil {
 		return
 	}
-
-	var parsedManifest image.ParsedManifest
-	if err = json.Unmarshal([]byte(sourceManifest.Body), &parsedManifest); err != nil {
-		return
-	}
-	if err = parsedManifest.Validate(); err != nil {
+	if !sourceManifest.GetMediaType().IsManifest() {
+		err = fmt.Errorf("%s is a manifest list, but should be a manifest", req.From)
 		return
 	}
 
-	blobDigests := make([]digest.Digest, len(parsedManifest.Layers)+1)
-	for i, layer := range parsedManifest.Layers {
+	manifest := sourceManifest.(image.Manifest)
+	if err = manifest.Validate(); err != nil {
+		return
+	}
+
+	layers := manifest.Parsed().Layers
+	blobDigests := make([]digest.Digest, len(layers)+1)
+	for i, layer := range layers {
 		blobDigests[i] = layer.Digest
 	}
-	blobDigests[len(blobDigests)-1] = parsedManifest.Config.Digest
+	blobDigests[len(blobDigests)-1] = manifest.Parsed().Config.Digest
 	if err = c.blobs.CopyAll(req.From.Repository, req.To.Repository, blobDigests...); err != nil {
 		return
 	}
@@ -79,28 +81,20 @@ func (c *platformCopier) handleRequest(req platformCopyRequest) (m manifest, err
 		if err == nil {
 			log.Printf("[platform]\tcopied %s to %s", req.From, req.To)
 		}
-		return sourceManifest, err
+		return manifest, err
 	}
 
-	parsedManifest.MediaType = string(image.OCIManifestMediaType)
-	if parsedManifest.Annotations == nil {
-		parsedManifest.Annotations = make(map[string]string)
+	newManifest := manifest.Parsed()
+	newManifest.MediaType = string(image.OCIManifestMediaType)
+	if newManifest.Annotations == nil {
+		newManifest.Annotations = make(map[string]string)
 	}
-	parsedManifest.Annotations[annotationSourceDigest] = digest.Canonical.FromBytes(sourceManifest.Body).String()
+	newManifest.Annotations[annotationSourceDigest] = manifest.Descriptor().Digest.String()
 
-	newManifestBody, err := json.Marshal(parsedManifest)
-	if err != nil {
-		return
-	}
-	newManifest := manifest{
-		ContentType: string(image.OCIManifestMediaType),
-		Body:        newManifestBody,
-	}
-	newDigest := digest.Canonical.FromBytes(newManifestBody)
 	newImg := image.Image{
 		Repository: req.To.Repository,
 		Tag:        req.To.Tag,
-		Digest:     newDigest,
+		Digest:     newManifest.Descriptor().Digest,
 	}
 	err = uploadManifest(newImg, newManifest)
 	if err == nil {

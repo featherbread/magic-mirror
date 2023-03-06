@@ -12,6 +12,13 @@ const (
 	DockerManifestMediaType = MediaType("application/vnd.docker.distribution.manifest.v2+json")
 )
 
+var AllManifestMediaTypes = []string{
+	string(OCIIndexMediaType),
+	string(DockerIndexMediaType),
+	string(OCIManifestMediaType),
+	string(DockerManifestMediaType),
+}
+
 func (mt MediaType) IsIndex() bool {
 	return mt == OCIIndexMediaType || mt == DockerIndexMediaType
 }

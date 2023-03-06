@@ -1,10 +1,7 @@
 package copy
 
 import (
-	"encoding/json"
 	"log"
-
-	"github.com/opencontainers/go-digest"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/work"
@@ -39,46 +36,33 @@ func (d *destinationTracer) handleRequest(img image.Image) error {
 	if err != nil {
 		return err
 	}
-
-	var parsedManifest struct {
-		Config struct {
-			Digest digest.Digest `json:"digest"`
-		} `json:"config"`
-		Layers []struct {
-			Digest digest.Digest `json:"digest"`
-		} `json:"layers"`
-		Manifests []struct {
-			Digest digest.Digest `json:"digest"`
-		} `json:"manifests"`
-	}
-	if err := json.Unmarshal([]byte(manifest.Body), &parsedManifest); err != nil {
+	if err := manifest.Validate(); err != nil {
 		return err
 	}
 
-	if len(parsedManifest.Manifests) > 0 {
-		imgs := make([]image.Image, len(parsedManifest.Manifests))
-		for i, m := range parsedManifest.Manifests {
-			if err := m.Digest.Validate(); err != nil {
-				return err
-			}
-			imgs[i] = image.Image{Repository: img.Repository, Digest: m.Digest}
-		}
-		d.QueueTraces(imgs...)
+	manifestType := manifest.GetMediaType()
+	switch {
+	case manifestType.IsIndex():
+		d.queueManifestsForIndex(img.Repository, manifest.(image.Index))
+	case manifestType.IsManifest():
+		d.traceManifest(img.Repository, manifest.(image.Manifest))
+		log.Printf("[dest]\tdiscovered existing blobs for %s", img)
 	}
-
-	for _, l := range parsedManifest.Layers {
-		if err := l.Digest.Validate(); err != nil {
-			return err
-		}
-		d.blobs.RegisterSource(l.Digest, img.Repository)
-	}
-	if parsedManifest.Config.Digest != "" {
-		if err := parsedManifest.Config.Digest.Validate(); err != nil {
-			return err
-		}
-		d.blobs.RegisterSource(parsedManifest.Config.Digest, img.Repository)
-	}
-
-	log.Printf("[dest]\tdiscovered existing blobs for %s", img)
 	return nil
+}
+
+func (d *destinationTracer) queueManifestsForIndex(repo image.Repository, index image.Index) {
+	descriptors := index.Parsed().Manifests
+	imgs := make([]image.Image, len(descriptors))
+	for i, desc := range descriptors {
+		imgs[i] = image.Image{Repository: repo, Digest: desc.Digest}
+	}
+	d.QueueTraces(imgs...)
+}
+
+func (d *destinationTracer) traceManifest(repo image.Repository, manifest image.Manifest) {
+	d.blobs.RegisterSource(manifest.Parsed().Config.Digest, repo)
+	for _, layer := range manifest.Parsed().Layers {
+		d.blobs.RegisterSource(layer.Digest, repo)
+	}
 }
