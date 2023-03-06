@@ -32,6 +32,7 @@ func (r Repository) String() string {
 	return fmt.Sprintf("%s/%s", r.Registry, r.Namespace)
 }
 
+// TODO: Rename this to something like Ref?
 type Image struct {
 	Repository
 	Tag    string

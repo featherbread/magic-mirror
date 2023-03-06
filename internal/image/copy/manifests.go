@@ -25,7 +25,7 @@ func uploadManifest(img image.Image, manifest image.ManifestKind) error {
 		reference = img.Digest.String()
 	}
 	if reference == "" {
-		return fmt.Errorf("no valid reference in %s", img)
+		reference = manifest.Descriptor().Digest.String()
 	}
 
 	u := img.Registry.APIBaseURL()

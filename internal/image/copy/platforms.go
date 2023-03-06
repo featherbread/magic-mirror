@@ -89,12 +89,11 @@ func (c *platformCopier) handleRequest(req platformCopyRequest) (m image.Manifes
 	if newManifest.Annotations == nil {
 		newManifest.Annotations = make(map[string]string)
 	}
-	newManifest.Annotations[annotationSourceDigest] = manifest.Descriptor().Digest.String()
+	newManifest.Annotations[annotationSourceDigest] = srcManifest.Descriptor().Digest.String()
 
 	newImg := image.Image{
 		Repository: req.Dst.Repository,
 		Tag:        req.Dst.Tag,
-		Digest:     newManifest.Descriptor().Digest,
 	}
 	err = uploadManifest(newImg, newManifest)
 	if err == nil {
