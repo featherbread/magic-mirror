@@ -12,13 +12,24 @@ import (
 )
 
 func main() {
-	requests, err := readRequests(os.Stdin)
+	var specReader io.Reader = os.Stdin
+	if len(os.Args) > 1 {
+		specFile, err := os.Open(os.Args[1])
+		if err != nil {
+			log.Printf("[main] cannot open %s: %v", os.Args[1], err)
+			os.Exit(2)
+		}
+		defer specFile.Close()
+		specReader = specFile
+	}
+
+	requests, err := readRequests(specReader)
 	if err != nil {
 		log.Printf("[main] invalid copy spec: %v", err)
 		os.Exit(2)
 	}
 
-	copier := copy.NewCopier(10, copy.CompareModeAnnotation)
+	copier := copy.NewCopier(10, copy.CompareModeEqual)
 	defer copier.CloseSubmit()
 
 	if err := copier.CopyAll(requests...); err != nil {
