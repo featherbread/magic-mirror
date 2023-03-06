@@ -100,13 +100,10 @@ func (q *Queue[K, T]) getOrCreateTasks(keys ...K) (tasks TaskList[T], newKeys []
 	defer q.tasksMu.Unlock()
 
 	for i, key := range keys {
-		key := key
-
 		if task, ok := q.tasks[key]; ok {
 			tasks[i] = task
 			continue
 		}
-
 		task := &Task[T]{done: make(chan struct{})}
 		q.tasks[key] = task
 		tasks[i] = task
@@ -180,6 +177,7 @@ func (q *Queue[K, V]) worker() {
 func (q *Queue[K, T]) tryPop() (key K, ok bool) {
 	q.queueMu.Lock()
 	defer q.queueMu.Unlock()
+
 	if len(q.queue) > 0 {
 		key = q.queue[0]
 		ok = true
