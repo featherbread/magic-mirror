@@ -121,11 +121,7 @@ func (c *Copier) handleRequest(req Request) error {
 	destManifest, err := destTask.Wait()
 	if err == nil {
 		c.destTracer.QueueTrace(req.To)
-		same, err := comparisons[c.compareMode](sourceManifest, destManifest)
-		if err != nil {
-			return err
-		}
-		if same {
+		if comparisons[c.compareMode](sourceManifest, destManifest) {
 			log.Printf("[image]\tno change from %s to %s", req.From, req.To)
 			return nil
 		}

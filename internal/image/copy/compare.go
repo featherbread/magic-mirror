@@ -1,7 +1,7 @@
 package copy
 
 import (
-	"fmt"
+	"bytes"
 
 	"github.com/opencontainers/go-digest"
 
@@ -15,18 +15,18 @@ const (
 	CompareModeAnnotation
 )
 
-var comparisons = map[CompareMode]func(src, dst image.ManifestKind) (bool, error){
+var comparisons = map[CompareMode]func(src, dst image.ManifestKind) bool{
 	CompareModeEqual:      compareEqual,
 	CompareModeAnnotation: compareAnnotation,
 }
 
-func compareEqual(src, dst image.ManifestKind) (bool, error) {
-	return src.Descriptor().Digest == dst.Descriptor().Digest, nil
+func compareEqual(src, dst image.ManifestKind) bool {
+	return bytes.Equal(src.Encoded(), dst.Encoded())
 }
 
 const annotationSourceDigest = "co.alexhamlin.magic-mirror.source-digest"
 
-func compareAnnotation(src, dst image.ManifestKind) (bool, error) {
+func compareAnnotation(src, dst image.ManifestKind) bool {
 	var dstAnnotations map[string]string
 	dstMediaType := dst.GetMediaType()
 	switch {
@@ -35,18 +35,18 @@ func compareAnnotation(src, dst image.ManifestKind) (bool, error) {
 	case dstMediaType.IsManifest():
 		dstAnnotations = dst.(image.Manifest).Parsed().Annotations
 	default:
-		return false, fmt.Errorf("unknown manifest type %s", dstMediaType)
+		return false
 	}
 
 	rawWantDigest, ok := dstAnnotations[annotationSourceDigest]
 	if !ok {
-		return false, nil
+		return false
 	}
 	wantDigest := digest.Digest(rawWantDigest)
 	if err := wantDigest.Validate(); err != nil {
-		return false, err
+		return false
 	}
 
 	sourceDigest := src.Descriptor().Digest
-	return sourceDigest == wantDigest, nil
+	return sourceDigest == wantDigest
 }
