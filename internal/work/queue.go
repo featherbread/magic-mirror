@@ -37,6 +37,11 @@ type Queue[K comparable, T any] struct {
 	// workers ready to pop from the queue should try to steal an available token
 	// without blocking, and maybe keep an idle worker from having to awaken.
 	queueReady chan struct{}
+
+	// For queues with a worker count, reattach allows a detached worker to force
+	// another worker to exit, so that it can reestablish itself within the worker
+	// limit. See Detach for details.
+	reattach chan struct{}
 }
 
 // NewQueue creates a queue that uses the provided handler function to complete
@@ -53,6 +58,7 @@ func NewQueue[K comparable, T any](workers int, handle Handler[K, T]) *Queue[K, 
 		tasks:  make(map[K]*Task[T]),
 	}
 	if workers > 0 {
+		q.reattach = make(chan struct{})
 		q.queueReady = make(chan struct{}, workers)
 		for i := 0; i < workers; i++ {
 			go q.worker()
@@ -160,16 +166,35 @@ func (q *Queue[K, T]) completeTask(key K) {
 
 func (q *Queue[K, V]) worker() {
 	for {
-		if key, ok := q.tryPop(); ok {
-			q.completeTask(key)
+		key, ok := q.tryPop()
+		if !ok {
 			select {
-			case <-q.queueReady:
-			default:
+			case _, ok := <-q.queueReady:
+				if ok {
+					continue
+				} else {
+					return
+				}
+			case <-q.ctx.Done():
+				return
+			case <-q.reattach:
+				return
 			}
-			continue
 		}
-		if _, ready := <-q.queueReady; !ready {
+
+		q.completeTask(key)
+
+		select {
+		case <-q.ctx.Done():
 			return
+		case <-q.reattach:
+			return
+		default:
+		}
+
+		select {
+		case <-q.queueReady:
+		default:
 		}
 	}
 }
