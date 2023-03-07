@@ -125,7 +125,7 @@ func (c *Copier) handleRequest(req Request) error {
 
 	dstManifest, err := dstTask.Wait()
 	if err == nil {
-		c.dstTracer.QueueForTracing(req.Dst)
+		c.dstTracer.Trace(req.Dst.Repository, dstManifest)
 		if comparisons[c.compareMode](srcManifest, dstManifest) {
 			log.Printf("[image]\tno change from %s to %s", req.Src, req.Dst)
 			return nil
