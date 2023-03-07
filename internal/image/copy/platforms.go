@@ -1,6 +1,7 @@
 package copy
 
 import (
+	"context"
 	"fmt"
 	"log"
 
@@ -51,7 +52,7 @@ func (c *platformCopier) CopyAll(dst image.Repository, srcs ...image.Image) ([]i
 	return c.Queue.GetOrSubmitAll(reqs...).Wait()
 }
 
-func (c *platformCopier) handleRequest(req platformCopyRequest) (m image.Manifest, err error) {
+func (c *platformCopier) handleRequest(_ context.Context, req platformCopyRequest) (m image.Manifest, err error) {
 	srcManifest, err := c.manifests.Get(req.Src)
 	if err != nil {
 		return

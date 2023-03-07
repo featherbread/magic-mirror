@@ -1,6 +1,7 @@
 package work
 
 import (
+	"context"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -10,14 +11,14 @@ import (
 )
 
 func TestQueueBasicUnlimited(t *testing.T) {
-	q := NewQueue(0, func(x int) (int, error) { return x, nil })
+	q := NewQueue(0, func(_ context.Context, x int) (int, error) { return x, nil })
 	defer q.CloseSubmit()
 
 	assertTaskSucceedsWithin[int](t, 2*time.Second, q.GetOrSubmit(42), 42)
 }
 
 func TestQueueBasicLimited(t *testing.T) {
-	q := NewQueue(1, func(x int) (int, error) { return x, nil })
+	q := NewQueue(1, func(_ context.Context, x int) (int, error) { return x, nil })
 	defer q.CloseSubmit()
 
 	assertTaskSucceedsWithin[int](t, 2*time.Second, q.GetOrSubmit(42), 42)
@@ -30,7 +31,7 @@ func TestQueueDeduplication(t *testing.T) {
 	)
 
 	unblock := make(chan struct{})
-	q := NewQueue(0, func(x int) (int, error) {
+	q := NewQueue(0, func(_ context.Context, x int) (int, error) {
 		<-unblock
 		return x, nil
 	})
@@ -69,7 +70,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 		breached atomic.Bool
 		unblock  = make(chan struct{})
 	)
-	q := NewQueue(workerCount, func(x int) (int, error) {
+	q := NewQueue(workerCount, func(_ context.Context, x int) (int, error) {
 		count := inflight.Add(1)
 		defer inflight.Add(-1)
 		if count > workerCount {

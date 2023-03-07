@@ -2,6 +2,7 @@ package copy
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -62,7 +63,7 @@ func (d *manifestCache) GetOrSubmit(img image.Image) *work.Task[image.ManifestKi
 	return d.Queue.GetOrSubmit(img)
 }
 
-func (d *manifestCache) handleRequest(img image.Image) (resp image.ManifestKind, err error) {
+func (d *manifestCache) handleRequest(_ context.Context, img image.Image) (resp image.ManifestKind, err error) {
 	reference := img.Digest.String()
 	if reference == "" {
 		reference = img.Tag

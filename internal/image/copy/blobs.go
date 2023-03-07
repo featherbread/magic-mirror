@@ -1,6 +1,7 @@
 package copy
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -75,7 +76,7 @@ func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {
 	return set
 }
 
-func (c *blobCopier) handleRequest(req blobCopyRequest) (err error) {
+func (c *blobCopier) handleRequest(_ context.Context, req blobCopyRequest) (err error) {
 	srcSet := c.sources(req.Digest)
 	if srcSet.Contains(req.Dst) {
 		log.Printf("[blob]\tknown %s@%s", req.Dst, req.Digest)

@@ -10,7 +10,7 @@ import (
 type NoValue = struct{}
 
 // Handler is the type for a queue's handler function.
-type Handler[K comparable, T any] func(K) (T, error)
+type Handler[K comparable, T any] func(context.Context, K) (T, error)
 
 // Queue is a deduplicating work queue. It maps each unique key provided to
 // GetOrSubmit[All] to a single [Task], which acts as a promise for the result
@@ -57,9 +57,9 @@ func NewQueue[K comparable, T any](workers int, handle Handler[K, T]) *Queue[K, 
 
 // NoValueHandler wraps handlers for queues that produce [NoValue], so the
 // handler function can be written to only return an error.
-func NoValueHandler[K comparable](handle func(K) error) Handler[K, NoValue] {
-	return func(key K) (_ NoValue, err error) {
-		err = handle(key)
+func NoValueHandler[K comparable](handle func(context.Context, K) error) Handler[K, NoValue] {
+	return func(ctx context.Context, key K) (_ NoValue, err error) {
+		err = handle(ctx, key)
 		return
 	}
 }
@@ -148,7 +148,7 @@ func (q *Queue[K, T]) completeTask(key K) {
 	task := q.tasks[key]
 	q.tasksMu.Unlock()
 
-	task.value, task.err = q.handle(key)
+	task.value, task.err = q.handle(context.TODO(), key)
 	close(task.done)
 }
 

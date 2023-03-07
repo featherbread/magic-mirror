@@ -1,6 +1,7 @@
 package copy
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -110,7 +111,7 @@ func (c *Copier) CloseSubmit() {
 	c.blobs.CloseSubmit()
 }
 
-func (c *Copier) handleRequest(req Request) error {
+func (c *Copier) handleRequest(_ context.Context, req Request) error {
 	log.Printf("[image]\tstarting copy from %s to %s", req.Src, req.Dst)
 
 	srcTask := c.srcManifests.GetOrSubmit(req.Src)
