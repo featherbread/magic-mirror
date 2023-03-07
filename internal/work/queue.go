@@ -1,6 +1,7 @@
 package work
 
 import (
+	"context"
 	"errors"
 	"sync"
 )
@@ -207,4 +208,28 @@ func (ts TaskList[T]) Wait() ([]T, error) {
 		values[i], errs[i] = task.Wait()
 	}
 	return values, errors.Join(errs...)
+}
+
+// Detach unbounds the calling [Handler] from the concurrency limit of the
+// [Queue] that invoked it, allowing the queue to immediately start work on
+// another task. It returns an error if ctx is not associated with a [Queue].
+//
+// The corresponding [Reattach] function permits a detached handler to
+// reestablish itself within the queue's concurrency limit ahead of any pending
+// submissions. A typical use for detaching is to temporarily block on the
+// completion of another task in the same queue, so that the current task may
+// take advantage of caching or other side effects associated with that task to
+// improve its performance.
+func Detach(ctx context.Context) error {
+	return errors.New("not implemented")
+}
+
+// Reattach blocks the calling [Handler] until it can continue executing within
+// the concurrency limit of the [Queue] that invoked it, or until ctx is
+// canceled. It returns an error if ctx is not associated with a [Queue], or if
+// the handler did not previously [Detach] from the queue.
+//
+// See [Detach] for additional information.
+func Reattach(ctx context.Context) error {
+	return errors.New("not implemented")
 }
