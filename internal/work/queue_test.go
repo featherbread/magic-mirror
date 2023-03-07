@@ -86,8 +86,16 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 	}
 	tasks := q.GetOrSubmitAll(values...)
 
-	// Make an effort to queue as many tasks as possible before unblocking them.
-	runtime.Gosched()
+	// Try to force the Go runtime to make progress on at least the number of
+	// tasks that will result in a breach. There's some inherent non-determinism
+	// in this strategy that could reveal itself if some other test leaks runnable
+	// goroutines, but as of this writing it appears to work just as well as
+	// time.Sleep calls that are about an order of magnitude more expensive.
+	gomaxprocs := runtime.GOMAXPROCS(1)
+	for i := 0; i < workerCount+1; i++ {
+		runtime.Gosched()
+	}
+	runtime.GOMAXPROCS(gomaxprocs)
 	close(unblock)
 
 	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, values)
