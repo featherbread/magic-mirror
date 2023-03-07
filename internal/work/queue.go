@@ -61,7 +61,7 @@ func NewQueue[K comparable, T any](workers int, handle Handler[K, T]) *Queue[K, 
 		q.reattach = make(chan struct{})
 		q.queueReady = make(chan struct{}, workers)
 		for i := 0; i < workers; i++ {
-			go q.worker()
+			go q.workOnQueue()
 		}
 	}
 	return q
@@ -88,7 +88,7 @@ func (q *Queue[K, T]) GetOrSubmit(key K) *Task[T] {
 // after all existing tasks in the queue, in the order of their corresponding
 // keys, without interleaving tasks from any other call to GetOrSubmit[All].
 func (q *Queue[K, T]) GetOrSubmitAll(keys ...K) TaskList[T] {
-	tasks, newKeys := q.getOrCreateTasks(keys...)
+	tasks, newKeys := q.getOrCreateTasks(keys)
 	if len(newKeys) > 0 {
 		q.scheduleNewKeys(newKeys)
 	}
@@ -107,7 +107,7 @@ func (q *Queue[K, T]) CloseSubmit() {
 	}
 }
 
-func (q *Queue[K, T]) getOrCreateTasks(keys ...K) (tasks TaskList[T], newKeys []K) {
+func (q *Queue[K, T]) getOrCreateTasks(keys []K) (tasks TaskList[T], newKeys []K) {
 	tasks = make(TaskList[T], len(keys))
 
 	q.tasksMu.Lock()
@@ -127,10 +127,16 @@ func (q *Queue[K, T]) getOrCreateTasks(keys ...K) (tasks TaskList[T], newKeys []
 }
 
 func (q *Queue[K, T]) scheduleNewKeys(keys []K) {
-	if q.queueReady != nil {
-		q.scheduleQueued(keys)
-	} else {
+	if q.queueReady == nil {
 		q.scheduleUnqueued(keys)
+	} else {
+		q.scheduleQueued(keys)
+	}
+}
+
+func (q *Queue[K, T]) scheduleUnqueued(keys []K) {
+	for _, key := range keys {
+		go q.completeTask(key)
 	}
 }
 
@@ -148,31 +154,7 @@ func (q *Queue[K, T]) scheduleQueued(keys []K) {
 	}
 }
 
-func (q *Queue[K, T]) scheduleUnqueued(keys []K) {
-	for _, key := range keys {
-		key := key
-		go q.completeTask(key)
-	}
-}
-
-func (q *Queue[K, T]) completeTask(key K) *taskContext {
-	q.tasksMu.Lock()
-	task := q.tasks[key]
-	q.tasksMu.Unlock()
-
-	taskCtx := &taskContext{
-		reattach:    q.reattach,
-		spawnWorker: func() { go q.worker() },
-	}
-	ctx := context.WithValue(q.ctx, taskContextKey{}, taskCtx)
-
-	task.value, task.err = q.handle(ctx, key)
-	close(task.done)
-
-	return taskCtx
-}
-
-func (q *Queue[K, T]) worker() {
+func (q *Queue[K, T]) workOnQueue() {
 	for {
 		key, ok := q.tryPop()
 		if !ok {
@@ -209,6 +191,23 @@ func (q *Queue[K, T]) worker() {
 		default:
 		}
 	}
+}
+
+func (q *Queue[K, T]) completeTask(key K) *taskContext {
+	q.tasksMu.Lock()
+	task := q.tasks[key]
+	q.tasksMu.Unlock()
+
+	taskCtx := &taskContext{
+		reattach:    q.reattach,
+		spawnWorker: func() { go q.workOnQueue() },
+	}
+	ctx := context.WithValue(q.ctx, taskContextKey{}, taskCtx)
+
+	task.value, task.err = q.handle(ctx, key)
+	close(task.done)
+
+	return taskCtx
 }
 
 func (q *Queue[K, T]) tryPop() (key K, ok bool) {
