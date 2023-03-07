@@ -4,20 +4,22 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestQueueBasicUnlimited(t *testing.T) {
 	q := NewQueue(0, func(x int) (int, error) { return x, nil })
 	defer q.CloseSubmit()
 
-	assertTaskSucceedsWithin(t, 2*time.Second, q.GetOrSubmit(42), 42)
+	assertTaskSucceedsWithin[int](t, 2*time.Second, q.GetOrSubmit(42), 42)
 }
 
 func TestQueueBasicLimited(t *testing.T) {
 	q := NewQueue(1, func(x int) (int, error) { return x, nil })
 	defer q.CloseSubmit()
 
-	assertTaskSucceedsWithin(t, 2*time.Second, q.GetOrSubmit(42), 42)
+	assertTaskSucceedsWithin[int](t, 2*time.Second, q.GetOrSubmit(42), 42)
 }
 
 func TestQueueDeduplication(t *testing.T) {
@@ -33,20 +35,25 @@ func TestQueueDeduplication(t *testing.T) {
 	defer q.CloseSubmit()
 
 	tasks := make(TaskList[int], submitCount)
+	want := make([]int, len(tasks))
 	for i := range tasks {
 		tasks[i] = q.GetOrSubmit(42)
+		want[i] = 42
 	}
 	close(unblock)
-	for _, task := range tasks {
-		assertTaskSucceedsWithin(t, 2*time.Second, task, 42)
-	}
+
+	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, want)
 
 	if hits := hits.Load(); hits > 1 {
 		t.Errorf("handler saw %d concurrent executions for the same key", hits)
 	}
 }
 
-func assertTaskSucceedsWithin[T comparable](t *testing.T, d time.Duration, task *Task[T], want T) {
+type awaitable[T any] interface {
+	Wait() (T, error)
+}
+
+func assertTaskSucceedsWithin[T any](t *testing.T, d time.Duration, task awaitable[T], want T) {
 	t.Helper()
 
 	done := make(chan struct{})
@@ -61,8 +68,8 @@ func assertTaskSucceedsWithin[T comparable](t *testing.T, d time.Duration, task 
 		if err != nil {
 			t.Errorf("unexpected error from task: %v", err)
 		}
-		if got != want {
-			t.Errorf("unexpected result from task: got %v, want %v", got, 4)
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("unexpected result from task (-want +got): %s", diff)
 		}
 
 	case <-time.After(d):
