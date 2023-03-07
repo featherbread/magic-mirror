@@ -26,10 +26,12 @@ type Queue[K comparable, T any] struct {
 	queue   []K
 	queueMu sync.Mutex
 	// For queues with a worker count, queueReady is buffered to the number of
-	// workers, and provides "readiness tokens" that can activate a worker and
-	// allow it to pull from the queue. Every push to the queue should attempt to
-	// send one token without blocking (since if the channel's buffer is full, we
-	// know that's enough to eventually activate all workers).
+	// workers, and provides "readiness tokens" that activate workers who are
+	// waiting on an empty queue to fill up. Every push to the queue should
+	// attempt to send one token without blocking; if the channel's buffer is
+	// full, that's enough to eventually activate all workers. Correspondingly,
+	// workers ready to pop from the queue should try to steal an available token
+	// without blocking, and maybe keep an idle worker from having to awaken.
 	queueReady chan struct{}
 }
 
@@ -152,20 +154,16 @@ func (q *Queue[K, T]) completeTask(key K) {
 
 func (q *Queue[K, V]) worker() {
 	for {
-		key, ok := q.tryPop()
-		if !ok {
-			if _, ready := <-q.queueReady; ready {
-				continue
-			} else {
-				return
+		if key, ok := q.tryPop(); ok {
+			q.completeTask(key)
+			select {
+			case <-q.queueReady:
+			default:
 			}
+			continue
 		}
-
-		q.completeTask(key)
-
-		select {
-		case <-q.queueReady:
-		default:
+		if _, ready := <-q.queueReady; !ready {
+			return
 		}
 	}
 }
