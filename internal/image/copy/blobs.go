@@ -24,6 +24,8 @@ type blobCopier struct {
 
 	sourceMap   map[digest.Digest]mapset.Set[image.Repository]
 	sourceMapMu sync.Mutex
+
+	copyInflight work.SingleFlight[digest.Digest]
 }
 
 type blobCopyRequest struct {
@@ -33,9 +35,10 @@ type blobCopyRequest struct {
 
 func newBlobCopier(workers int) *blobCopier {
 	c := &blobCopier{
-		sourceMap: make(map[digest.Digest]mapset.Set[image.Repository]),
+		sourceMap:    make(map[digest.Digest]mapset.Set[image.Repository]),
+		copyInflight: work.NewSingleFlight[digest.Digest](),
 	}
-	c.Queue = work.NewQueue(workers, work.NoValueHandler(c.handleRequest))
+	c.Queue = work.NewQueue(workers, work.NoValueHandler(c.copyOneBlob))
 	return c
 }
 
@@ -76,7 +79,23 @@ func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {
 	return set
 }
 
-func (c *blobCopier) handleRequest(_ context.Context, req blobCopyRequest) (err error) {
+func (c *blobCopier) copyOneBlob(ctx context.Context, req blobCopyRequest) (err error) {
+	// TODO: Try to clean this up a bit.
+	var detached bool
+	if c.copyInflight.Running(req.Digest) {
+		detached = true
+		if err := work.Detach(ctx); err != nil {
+			panic(err)
+		}
+	}
+	c.copyInflight.Start(req.Digest)
+	defer c.copyInflight.Finish(req.Digest)
+	if detached {
+		if err := work.Reattach(ctx); err != nil {
+			panic(err)
+		}
+	}
+
 	srcSet := c.sources(req.Digest)
 	if srcSet.Contains(req.Dst) {
 		log.Printf("[blob]\tknown %s@%s", req.Dst, req.Digest)
