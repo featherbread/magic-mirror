@@ -95,7 +95,28 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 	}
 }
 
-func TestQueueDetachReattach(t *testing.T) {
+func TestQueueDetachReattachUnlimited(t *testing.T) {
+	const submitCount = 50
+
+	q := NewQueue(0, func(ctx context.Context, x int) (int, error) {
+		if err := Detach(ctx); err != nil {
+			panic(err) // Not ideal, but a very fast way to fail everything.
+		}
+		if err := Reattach(ctx); err != nil {
+			panic(err)
+		}
+		return x, nil
+	})
+
+	want := make([]int, submitCount)
+	for i := range want {
+		want[i] = i
+	}
+	tasks := q.GetOrSubmitAll(want...)
+	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, want)
+}
+
+func TestQueueDetachReattachLimited(t *testing.T) {
 	const (
 		submitCount = 50
 		workerCount = 10
@@ -111,7 +132,7 @@ func TestQueueDetachReattach(t *testing.T) {
 	)
 	q := NewQueue(workerCount, func(ctx context.Context, x int) (int, error) {
 		if err := Detach(ctx); err != nil {
-			panic(err) // Not ideal, but a very fast way to fail everything.
+			panic(err)
 		}
 		countDetached.Add(1)
 		<-awaitDetached

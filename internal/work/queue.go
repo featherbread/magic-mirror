@@ -199,8 +199,8 @@ func (q *Queue[K, T]) completeTask(key K) *taskContext {
 	q.tasksMu.Unlock()
 
 	taskCtx := &taskContext{
-		reattach:    q.reattach,
-		spawnWorker: func() { go q.workOnQueue() },
+		detach:   q.handleDetach,
+		reattach: q.handleReattach,
 	}
 	ctx := context.WithValue(q.ctx, taskContextKey{}, taskCtx)
 
@@ -208,6 +208,24 @@ func (q *Queue[K, T]) completeTask(key K) *taskContext {
 	close(task.done)
 
 	return taskCtx
+}
+
+func (q *Queue[K, T]) handleDetach() {
+	if q.queueReady != nil {
+		go q.workOnQueue()
+	}
+}
+
+func (q *Queue[K, T]) handleReattach(ctx context.Context) error {
+	if q.queueReady == nil {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case q.reattach <- struct{}{}:
+		return nil
+	}
 }
 
 func (q *Queue[K, T]) tryPop() (key K, ok bool) {
@@ -257,8 +275,8 @@ type taskContextKey struct{}
 type taskContext struct {
 	detached bool
 
-	spawnWorker func()
-	reattach    chan struct{}
+	detach   func()
+	reattach func(context.Context) error
 }
 
 // Detach unbounds the calling [Handler] from the concurrency limit of the
@@ -279,7 +297,7 @@ func Detach(ctx context.Context) error {
 		return errors.New("context not associated with any queue")
 	}
 
-	taskCtx.spawnWorker()
+	taskCtx.detach()
 	taskCtx.detached = true
 	return nil
 }
@@ -303,11 +321,9 @@ func Reattach(ctx context.Context) error {
 		return errors.New("task not detached from queue")
 	}
 
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case taskCtx.reattach <- struct{}{}:
+	err := taskCtx.reattach(ctx)
+	if err == nil {
+		taskCtx.detached = false
 	}
-	taskCtx.detached = false
-	return nil
+	return err
 }
