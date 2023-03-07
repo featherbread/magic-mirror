@@ -160,7 +160,10 @@ func (q *Queue[K, T]) completeTask(key K) *taskContext {
 	task := q.tasks[key]
 	q.tasksMu.Unlock()
 
-	taskCtx := &taskContext{reattach: q.reattach}
+	taskCtx := &taskContext{
+		reattach:    q.reattach,
+		spawnWorker: func() { go q.worker() },
+	}
 	ctx := context.WithValue(q.ctx, taskContextKey{}, taskCtx)
 
 	task.value, task.err = q.handle(ctx, key)
@@ -254,7 +257,9 @@ type taskContextKey struct{}
 
 type taskContext struct {
 	detached bool
-	reattach chan struct{}
+
+	spawnWorker func()
+	reattach    chan struct{}
 }
 
 // Detach unbounds the calling [Handler] from the concurrency limit of the
@@ -268,20 +273,42 @@ type taskContext struct {
 // take advantage of caching or other side effects associated with that task to
 // improve its performance.
 func Detach(ctx context.Context) error {
-	var _ *taskContext
+	var taskCtx *taskContext
 	if v := ctx.Value(taskContextKey{}); v != nil {
-		_ = v.(*taskContext)
+		taskCtx = v.(*taskContext)
+	} else {
+		return errors.New("context not associated with any queue")
 	}
 
-	return errors.New("not implemented")
+	taskCtx.spawnWorker()
+	taskCtx.detached = true
+	return nil
 }
 
 // Reattach blocks the calling [Handler] until it can continue executing within
 // the concurrency limit of the [Queue] that invoked it, or until ctx is
 // canceled. It returns an error if ctx is not associated with a [Queue], or if
-// the handler did not previously [Detach] from the queue.
+// the handler did not previously [Detach] from the queue. When ctx is canceled
+// before the handler reattaches, the returned error is ctx.Err().
 //
 // See [Detach] for additional information.
 func Reattach(ctx context.Context) error {
-	return errors.New("not implemented")
+	var taskCtx *taskContext
+	if v := ctx.Value(taskContextKey{}); v != nil {
+		taskCtx = v.(*taskContext)
+	} else {
+		return errors.New("context not associated with any queue")
+	}
+
+	if !taskCtx.detached {
+		return errors.New("task not detached from queue")
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case taskCtx.reattach <- struct{}{}:
+	}
+	taskCtx.detached = false
+	return nil
 }
