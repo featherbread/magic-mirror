@@ -151,10 +151,6 @@ func (q *Queue[K, T]) completeTask(key K) {
 }
 
 func (q *Queue[K, V]) worker() {
-	if _, ok := <-q.queueReady; !ok {
-		return
-	}
-
 	for {
 		key, ok := q.tryPop()
 		if !ok {
