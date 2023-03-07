@@ -106,6 +106,78 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 	}
 }
 
+func TestQueueDetach(t *testing.T) {
+	const (
+		submitCount = 50
+		workerCount = 10
+	)
+
+	var (
+		awaitDetached      = make(chan struct{})
+		countDetached      atomic.Int32
+		unblockReattach    = make(chan struct{})
+		reattachedInflight atomic.Int32
+		unblockReturn      = make(chan struct{})
+		breachedReattach   atomic.Bool
+	)
+	q := NewQueue(workerCount, func(ctx context.Context, x int) (int, error) {
+		if err := Detach(ctx); err != nil {
+			panic(err) // Not ideal, but a very fast way to fail everything.
+		}
+		countDetached.Add(1)
+		<-awaitDetached
+
+		<-unblockReattach
+
+		if err := Reattach(ctx); err != nil {
+			panic(err)
+		}
+		count := reattachedInflight.Add(1)
+		defer reattachedInflight.Add(-1)
+		if count > workerCount {
+			breachedReattach.Store(true)
+		}
+
+		<-unblockReturn
+		return x, nil
+	})
+
+	want := make([]int, submitCount)
+	for i := range want {
+		want[i] = i
+	}
+
+	tasks := q.GetOrSubmitAll(want...)
+
+	timeout := time.After(2 * time.Second)
+	for i := 0; i < submitCount; i++ {
+		select {
+		case awaitDetached <- struct{}{}:
+		case <-timeout:
+			t.Fatal("timed out waiting for tasks to detach")
+		}
+	}
+	if count := countDetached.Load(); count != submitCount {
+		t.Fatalf("not all workers successfully detached: %d running, want %d", count, submitCount)
+	}
+
+	// Try to force progress on tasks. See above for details.
+	// TODO: Consider refactoring this into a function.
+	close(unblockReattach)
+	gomaxprocs := runtime.GOMAXPROCS(1)
+	for i := 0; i < workerCount+1; i++ {
+		runtime.Gosched()
+	}
+	runtime.GOMAXPROCS(gomaxprocs)
+	close(unblockReturn)
+
+	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, want)
+
+	if breachedReattach.Load() {
+		t.Errorf("queue breached limit of %d workers in flight during reattach", workerCount)
+	}
+}
+
 type awaitable[T any] interface {
 	Wait() (T, error)
 }
