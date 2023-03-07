@@ -64,7 +64,7 @@ type Copier struct {
 	srcManifests *manifestCache
 	platforms    *platformCopier
 	dstManifests *manifestCache
-	dstTracer    *blobTracer
+	dstIndexer   *blobIndexer
 }
 
 func NewCopier(workers int, compareMode CompareMode) *Copier {
@@ -72,7 +72,7 @@ func NewCopier(workers int, compareMode CompareMode) *Copier {
 	srcManifests := newManifestCache(workers)
 	platforms := newPlatformCopier(compareMode, srcManifests, blobs)
 	dstManifests := newManifestCache(workers)
-	dstTracer := newBlobTracer(dstManifests, blobs)
+	dstIndexer := newBlobIndexer(workers, blobs)
 
 	c := &Copier{
 		compareMode:  compareMode,
@@ -80,7 +80,7 @@ func NewCopier(workers int, compareMode CompareMode) *Copier {
 		srcManifests: srcManifests,
 		platforms:    platforms,
 		dstManifests: dstManifests,
-		dstTracer:    dstTracer,
+		dstIndexer:   dstIndexer,
 	}
 	c.Queue = work.NewQueue(0, work.NoValueHandler(c.handleRequest))
 	return c
@@ -102,13 +102,11 @@ func (c *Copier) CopyAll(reqs ...Request) error {
 
 func (c *Copier) CloseSubmit() {
 	// TODO: This is only safe after all Copier tasks are finished.
+	// TODO: There is no way to cleanly stop destination blob indexing.
 	c.Queue.CloseSubmit()
 	c.platforms.CloseSubmit()
 	c.srcManifests.CloseSubmit()
-	// TODO: Since we don't block on destination tracing, these may not be safe to
-	// clean up. Need to figure out a cancellation strategy.
-	// c.destTracer.CloseSubmit()
-	// c.destManifests.CloseSubmit()
+	c.dstManifests.CloseSubmit()
 	c.blobs.CloseSubmit()
 }
 
@@ -125,7 +123,7 @@ func (c *Copier) handleRequest(req Request) error {
 
 	dstManifest, err := dstTask.Wait()
 	if err == nil {
-		c.dstTracer.Trace(req.Dst.Repository, dstManifest)
+		c.dstIndexer.Submit(req.Dst.Repository, dstManifest)
 		if comparisons[c.compareMode](srcManifest, dstManifest) {
 			log.Printf("[image]\tno change from %s to %s", req.Src, req.Dst)
 			return nil
