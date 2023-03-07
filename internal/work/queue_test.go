@@ -47,12 +47,15 @@ func TestQueueDeduplication(t *testing.T) {
 
 	unblock = make(chan struct{})
 	tasks := q.GetOrSubmitAll(want...)
-
 	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks[:half], want[:half])
 	assertTaskBlocked(t, tasks[half])
 
 	close(unblock)
 	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, want)
+
+	unblock = make(chan struct{})
+	tasksAgain := q.GetOrSubmitAll(want...)
+	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasksAgain, want)
 }
 
 func TestQueueConcurrencyLimit(t *testing.T) {
