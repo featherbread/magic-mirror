@@ -24,30 +24,35 @@ func TestQueueBasicLimited(t *testing.T) {
 }
 
 func TestQueueDeduplication(t *testing.T) {
-	const submitCount = 10
+	const (
+		count = 10
+		half  = count / 2
+	)
 
-	var hits atomic.Uint32
 	unblock := make(chan struct{})
 	q := NewQueue(0, func(x int) (int, error) {
-		hits.Add(1)
 		<-unblock
 		return x, nil
 	})
 	defer q.CloseSubmit()
 
-	tasks := make(TaskList[int], submitCount)
-	want := make([]int, len(tasks))
-	for i := range tasks {
-		tasks[i] = q.GetOrSubmit(42)
-		want[i] = 42
+	want := make([]int, count)
+	for i := range want {
+		want[i] = i
 	}
+
 	close(unblock)
+	halfTasks := q.GetOrSubmitAll(want[:half]...)
+	assertTaskSucceedsWithin[[]int](t, 2*time.Second, halfTasks, want[:half])
 
+	unblock = make(chan struct{})
+	tasks := q.GetOrSubmitAll(want...)
+
+	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks[:half], want[:half])
+	assertTaskBlocked(t, tasks[half])
+
+	close(unblock)
 	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, want)
-
-	if hits := hits.Load(); hits > 1 {
-		t.Errorf("handler saw %d concurrent executions for the same key", hits)
-	}
 }
 
 func TestQueueConcurrencyLimit(t *testing.T) {
@@ -114,5 +119,19 @@ func assertTaskSucceedsWithin[T any](t *testing.T, d time.Duration, task awaitab
 
 	case <-time.After(d):
 		t.Fatalf("task did not finish within %v", d)
+	}
+}
+
+func assertTaskBlocked[T any](t *testing.T, task *Task[T]) {
+	t.Helper()
+
+	// Make an effort to ensure the task is scheduled.
+	runtime.Gosched()
+
+	select {
+	case <-task.done:
+		// TODO: Can we do this without touching Task internals?
+		t.Errorf("task was not blocked")
+	default:
 	}
 }
