@@ -1,6 +1,7 @@
 package work
 
 import (
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -27,7 +28,7 @@ func TestQueueDeduplication(t *testing.T) {
 
 	var hits atomic.Uint32
 	unblock := make(chan struct{})
-	q := NewQueue(submitCount, func(x int) (int, error) {
+	q := NewQueue(0, func(x int) (int, error) {
 		hits.Add(1)
 		<-unblock
 		return x, nil
@@ -46,6 +47,45 @@ func TestQueueDeduplication(t *testing.T) {
 
 	if hits := hits.Load(); hits > 1 {
 		t.Errorf("handler saw %d concurrent executions for the same key", hits)
+	}
+}
+
+func TestQueueConcurrencyLimit(t *testing.T) {
+	const (
+		submitCount = 50
+		workerCount = 10
+	)
+
+	var (
+		inflight atomic.Int32
+		breached atomic.Bool
+		unblock  = make(chan struct{})
+	)
+	q := NewQueue(workerCount, func(x int) (int, error) {
+		count := inflight.Add(1)
+		defer inflight.Add(-1)
+		if count > workerCount {
+			breached.Store(true)
+		}
+		<-unblock
+		return x, nil
+	})
+	defer q.CloseSubmit()
+
+	values := make([]int, submitCount)
+	for i := range values {
+		values[i] = i
+	}
+	tasks := q.GetOrSubmitAll(values...)
+
+	// Make an effort to queue as many tasks as possible before unblocking them.
+	runtime.Gosched()
+	close(unblock)
+
+	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, values)
+
+	if breached.Load() {
+		t.Errorf("queue breached limit of %d workers in flight", workerCount)
 	}
 }
 
