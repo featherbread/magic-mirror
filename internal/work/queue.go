@@ -155,12 +155,12 @@ func (q *Queue[K, T]) scheduleUnqueued(keys []K) {
 	}
 }
 
-func (q *Queue[K, T]) completeTask(key K) *taskContext[K, T] {
+func (q *Queue[K, T]) completeTask(key K) *taskContext {
 	q.tasksMu.Lock()
 	task := q.tasks[key]
 	q.tasksMu.Unlock()
 
-	taskCtx := &taskContext[K, T]{Queue: q}
+	taskCtx := &taskContext{reattach: q.reattach}
 	ctx := context.WithValue(q.ctx, taskContextKey{}, taskCtx)
 
 	task.value, task.err = q.handle(ctx, key)
@@ -189,7 +189,7 @@ func (q *Queue[K, T]) worker() {
 
 		taskCtx := q.completeTask(key)
 
-		if taskCtx.Detached {
+		if taskCtx.detached {
 			return
 		}
 
@@ -252,9 +252,9 @@ func (ts TaskList[T]) Wait() ([]T, error) {
 
 type taskContextKey struct{}
 
-type taskContext[K comparable, T any] struct {
-	Queue    *Queue[K, T]
-	Detached bool
+type taskContext struct {
+	detached bool
+	reattach chan struct{}
 }
 
 // Detach unbounds the calling [Handler] from the concurrency limit of the
@@ -268,6 +268,11 @@ type taskContext[K comparable, T any] struct {
 // take advantage of caching or other side effects associated with that task to
 // improve its performance.
 func Detach(ctx context.Context) error {
+	var _ *taskContext
+	if v := ctx.Value(taskContextKey{}); v != nil {
+		_ = v.(*taskContext)
+	}
+
 	return errors.New("not implemented")
 }
 
