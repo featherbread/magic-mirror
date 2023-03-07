@@ -21,6 +21,9 @@ type Handler[K comparable, T any] func(context.Context, K) (T, error)
 type Queue[K comparable, T any] struct {
 	handle Handler[K, T]
 
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	tasks   map[K]*Task[T]
 	tasksMu sync.Mutex
 
@@ -42,8 +45,11 @@ type Queue[K comparable, T any] struct {
 // If workers > 0, the queue will run up to that number of tasks concurrently.
 // If workers <= 0, the queue's concurrency is unbounded.
 func NewQueue[K comparable, T any](workers int, handle Handler[K, T]) *Queue[K, T] {
+	ctx, cancel := context.WithCancel(context.TODO())
 	q := &Queue[K, T]{
 		handle: handle,
+		ctx:    ctx,
+		cancel: cancel, // TODO: Call this somewhere.
 		tasks:  make(map[K]*Task[T]),
 	}
 	if workers > 0 {
@@ -148,7 +154,7 @@ func (q *Queue[K, T]) completeTask(key K) {
 	task := q.tasks[key]
 	q.tasksMu.Unlock()
 
-	task.value, task.err = q.handle(context.TODO(), key)
+	task.value, task.err = q.handle(q.ctx, key)
 	close(task.done)
 }
 
