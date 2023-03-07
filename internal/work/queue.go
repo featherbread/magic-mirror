@@ -203,12 +203,11 @@ func (t *Task[T]) Wait() (T, error) {
 // TaskList represents a list of tasks.
 type TaskList[T any] []*Task[T]
 
-// WaitAll blocks until all of the tasks in the list have completed, then
-// returns their associated values. The returned error is the concatenation of
-// the errors from all tasks, following the semantics of [errors.Join]. To
-// associate errors with specific tasks, call Wait directly on each task in the
-// list.
-func (ts TaskList[T]) WaitAll() ([]T, error) {
+// Wait blocks until all of the tasks in the list have completed, then returns
+// their associated values. The returned error is the concatenation of the
+// errors from all tasks, following the semantics of [errors.Join]. To associate
+// errors with specific tasks, call Wait directly on each task in the list.
+func (ts TaskList[T]) Wait() ([]T, error) {
 	values := make([]T, len(ts))
 	errs := make([]error, len(ts))
 	for i, task := range ts {

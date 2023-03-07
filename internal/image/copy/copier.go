@@ -96,7 +96,7 @@ func (c *Copier) CopyAll(reqs ...Request) error {
 	if err != nil {
 		return err
 	}
-	_, err = c.Queue.GetOrSubmitAll(reqs...).WaitAll()
+	_, err = c.Queue.GetOrSubmitAll(reqs...).Wait()
 	return err
 }
 
