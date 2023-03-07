@@ -96,7 +96,6 @@ func (q *Queue[K, T]) CloseSubmit() {
 
 func (q *Queue[K, T]) getOrCreateTasks(keys ...K) (tasks TaskList[T], newKeys []K) {
 	tasks = make(TaskList[T], len(keys))
-	newKeys = make([]K, 0, len(keys))
 
 	q.tasksMu.Lock()
 	defer q.tasksMu.Unlock()
