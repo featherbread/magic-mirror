@@ -21,7 +21,7 @@ func (sf *SingleFlight[K]) Start(ctx context.Context, key K) error {
 			return
 		}
 		triedDetach = true
-		if err := Detach(ctx); err != nil {
+		if err := Detach(ctx); err == nil {
 			detached = true
 		}
 	}
