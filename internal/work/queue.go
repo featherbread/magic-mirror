@@ -155,16 +155,21 @@ func (q *Queue[K, T]) scheduleUnqueued(keys []K) {
 	}
 }
 
-func (q *Queue[K, T]) completeTask(key K) {
+func (q *Queue[K, T]) completeTask(key K) *taskContext[K, T] {
 	q.tasksMu.Lock()
 	task := q.tasks[key]
 	q.tasksMu.Unlock()
 
-	task.value, task.err = q.handle(q.ctx, key)
+	taskCtx := &taskContext[K, T]{Queue: q}
+	ctx := context.WithValue(q.ctx, taskContextKey{}, taskCtx)
+
+	task.value, task.err = q.handle(ctx, key)
 	close(task.done)
+
+	return taskCtx
 }
 
-func (q *Queue[K, V]) worker() {
+func (q *Queue[K, T]) worker() {
 	for {
 		key, ok := q.tryPop()
 		if !ok {
@@ -182,7 +187,11 @@ func (q *Queue[K, V]) worker() {
 			}
 		}
 
-		q.completeTask(key)
+		taskCtx := q.completeTask(key)
+
+		if taskCtx.Detached {
+			return
+		}
 
 		select {
 		case <-q.ctx.Done():
@@ -239,6 +248,13 @@ func (ts TaskList[T]) Wait() ([]T, error) {
 		values[i], errs[i] = task.Wait()
 	}
 	return values, errors.Join(errs...)
+}
+
+type taskContextKey struct{}
+
+type taskContext[K comparable, T any] struct {
+	Queue    *Queue[K, T]
+	Detached bool
 }
 
 // Detach unbounds the calling [Handler] from the concurrency limit of the
