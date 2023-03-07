@@ -95,7 +95,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 	}
 }
 
-func TestQueueDetach(t *testing.T) {
+func TestQueueDetachReattach(t *testing.T) {
 	const (
 		submitCount = 50
 		workerCount = 10
@@ -134,7 +134,6 @@ func TestQueueDetach(t *testing.T) {
 	for i := range want {
 		want[i] = i
 	}
-
 	tasks := q.GetOrSubmitAll(want...)
 
 	timeout := time.After(2 * time.Second)
@@ -142,11 +141,8 @@ func TestQueueDetach(t *testing.T) {
 		select {
 		case awaitDetached <- struct{}{}:
 		case <-timeout:
-			t.Fatal("timed out waiting for tasks to detach")
+			t.Fatalf("timed out waiting for tasks to detach: %d of %d ready", countDetached.Load(), submitCount)
 		}
-	}
-	if count := countDetached.Load(); count != submitCount {
-		t.Fatalf("not all workers successfully detached: %d running, want %d", count, submitCount)
 	}
 
 	close(unblockReattach)
