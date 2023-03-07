@@ -80,21 +80,10 @@ func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {
 }
 
 func (c *blobCopier) copyOneBlob(ctx context.Context, req blobCopyRequest) (err error) {
-	// TODO: Try to clean this up a bit.
-	var detached bool
-	if c.copyInflight.Running(req.Digest) {
-		detached = true
-		if err := work.Detach(ctx); err != nil {
-			panic(err)
-		}
+	if err := c.copyInflight.Start(ctx, req.Digest); err != nil {
+		return err
 	}
-	c.copyInflight.Start(req.Digest)
 	defer c.copyInflight.Finish(req.Digest)
-	if detached {
-		if err := work.Reattach(ctx); err != nil {
-			panic(err)
-		}
-	}
 
 	srcSet := c.sources(req.Digest)
 	if srcSet.Contains(req.Dst) {
