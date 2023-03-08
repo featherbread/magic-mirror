@@ -23,7 +23,12 @@ type KeyMutex[K comparable] struct {
 //
 // LockDetached returns ctx.Err() if ctx is canceled before the key is locked.
 func (km *KeyMutex[K]) LockDetached(ctx context.Context, key K) (err error) {
-	var detached, triedDetach bool
+	var (
+		locked      bool
+		detached    bool
+		triedDetach bool
+	)
+
 	tryDetach := func() {
 		if triedDetach {
 			return
@@ -33,12 +38,16 @@ func (km *KeyMutex[K]) LockDetached(ctx context.Context, key K) (err error) {
 			detached = true
 		}
 	}
+
 	defer func() {
 		if detached {
 			// This won't lose any information. The only error we can return is
 			// ctx.Err(), and since we know we successfully detached from a queue
 			// that's also the only error Reattach can return.
 			err = Reattach(ctx)
+			if err != nil && locked {
+				km.Unlock(key)
+			}
 		}
 	}()
 
@@ -62,6 +71,7 @@ func (km *KeyMutex[K]) LockDetached(ctx context.Context, key K) (err error) {
 		ch = make(chan struct{})
 		km.chans[key] = ch
 		km.chansMu.Unlock()
+		locked = true
 		return nil
 	}
 }
