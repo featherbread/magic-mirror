@@ -86,7 +86,7 @@ func (km *KeyMutex[K]) Unlock(key K) {
 
 	ch, ok := km.chans[key]
 	if !ok {
-		panic("nothing in flight for key")
+		panic("key is already unlocked")
 	}
 	close(ch)
 	delete(km.chans, key)
