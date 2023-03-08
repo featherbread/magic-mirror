@@ -57,3 +57,43 @@ func TestKeyMutexBasic(t *testing.T) {
 		}
 	}
 }
+
+func TestKeyMutexDetach(t *testing.T) {
+	var (
+		km       KeyMutex[NoValue]
+		taskKeys = []int{0, 1, 2, 3, 4}
+		started  = make(chan struct{}, len(taskKeys))
+		locked   atomic.Bool
+	)
+	q := NewQueue(1, func(ctx context.Context, x int) (int, error) {
+		started <- struct{}{}
+
+		if err := km.LockDetached(ctx, NoValue{}); err != nil {
+			return x, err
+		}
+		defer km.Unlock(NoValue{})
+
+		if !locked.CompareAndSwap(false, true) {
+			t.Errorf("more than one queue handler holding the lock")
+		}
+		defer locked.Store(false)
+		return x, nil
+	})
+
+	if err := km.LockDetached(context.Background(), NoValue{}); err != nil {
+		t.Fatal(err)
+	}
+
+	tasks := q.GetOrSubmitAll(taskKeys...)
+	timeout := time.After(2 * time.Second)
+	for i := range tasks {
+		select {
+		case <-started:
+		case <-timeout:
+			t.Fatalf("timed out waiting for tasks to detach: %d of %d running", i, len(tasks))
+		}
+	}
+
+	km.Unlock(NoValue{})
+	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, taskKeys)
+}
