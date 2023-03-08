@@ -29,18 +29,21 @@ type Queue[K comparable, T any] struct {
 
 	queue   []K
 	queueMu sync.Mutex
-	// For queues with a worker count, queueReady is buffered to the number of
-	// workers, and provides "readiness tokens" that activate workers who are
-	// waiting on an empty queue to fill up. Every push to the queue should
-	// attempt to send one token without blocking; if the channel's buffer is
-	// full, that's enough to eventually activate all workers. Correspondingly,
-	// workers ready to pop from the queue should try to steal an available token
-	// without blocking, and maybe keep an idle worker from having to awaken.
-	queueReady chan struct{}
 
-	// For queues with a worker count, reattach allows a detached worker to force
-	// another worker to exit, so that it can reestablish itself within the worker
-	// limit. See Detach for details.
+	// For queues with a worker count, ready is buffered to the number of workers,
+	// and provides "readiness tokens" that activate workers who are waiting on an
+	// empty queue to fill up. Every push to the queue should attempt to send one
+	// token without blocking; if the channel's buffer is full, that's enough to
+	// eventually activate all workers. Correspondingly, workers ready to pop from
+	// the queue should try to steal an available token without blocking, and
+	// maybe keep an idle worker from having to awaken.
+	ready chan struct{}
+
+	// For queues with a worker count, reattach is an unbuffered channel that
+	// allows a detached worker to reestablish itself within the worker limit by
+	// forcing another worker to exit. Workers ready to pop from the queue should
+	// first try to handle a reattach request without blocking, and return if they
+	// receive a token.
 	reattach chan struct{}
 }
 
@@ -58,8 +61,8 @@ func NewQueue[K comparable, T any](workers int, handle Handler[K, T]) *Queue[K, 
 		tasks:  make(map[K]*Task[T]),
 	}
 	if workers > 0 {
+		q.ready = make(chan struct{}, workers)
 		q.reattach = make(chan struct{})
-		q.queueReady = make(chan struct{}, workers)
 		for i := 0; i < workers; i++ {
 			go q.workOnQueue()
 		}
@@ -102,8 +105,8 @@ func (q *Queue[K, T]) GetOrSubmitAll(keys ...K) TaskList[T] {
 // The behavior of any method of the queue (including CloseSubmit) after a call
 // to CloseSubmit is undefined.
 func (q *Queue[K, T]) CloseSubmit() {
-	if q.queueReady != nil {
-		close(q.queueReady)
+	if q.ready != nil {
+		close(q.ready)
 	}
 }
 
@@ -127,7 +130,7 @@ func (q *Queue[K, T]) getOrCreateTasks(keys []K) (tasks TaskList[T], newKeys []K
 }
 
 func (q *Queue[K, T]) scheduleNewKeys(keys []K) {
-	if q.queueReady == nil {
+	if q.ready == nil {
 		q.scheduleUnqueued(keys)
 	} else {
 		q.scheduleQueued(keys)
@@ -147,7 +150,7 @@ func (q *Queue[K, T]) scheduleQueued(keys []K) {
 
 	for range keys {
 		select {
-		case q.queueReady <- struct{}{}:
+		case q.ready <- struct{}{}:
 		default:
 			return
 		}
@@ -159,7 +162,7 @@ func (q *Queue[K, T]) workOnQueue() {
 		key, ok := q.tryPop()
 		if !ok {
 			select {
-			case _, ok := <-q.queueReady:
+			case _, ok := <-q.ready:
 				if ok {
 					continue
 				} else {
@@ -177,7 +180,6 @@ func (q *Queue[K, T]) workOnQueue() {
 		if taskCtx.detached {
 			return
 		}
-
 		select {
 		case <-q.ctx.Done():
 			return
@@ -187,10 +189,22 @@ func (q *Queue[K, T]) workOnQueue() {
 		}
 
 		select {
-		case <-q.queueReady:
+		case <-q.ready:
 		default:
 		}
 	}
+}
+
+func (q *Queue[K, T]) tryPop() (key K, ok bool) {
+	q.queueMu.Lock()
+	defer q.queueMu.Unlock()
+
+	if len(q.queue) > 0 {
+		key = q.queue[0]
+		ok = true
+		q.queue = q.queue[1:]
+	}
+	return
 }
 
 func (q *Queue[K, T]) completeTask(key K) *taskContext {
@@ -211,33 +225,21 @@ func (q *Queue[K, T]) completeTask(key K) *taskContext {
 }
 
 func (q *Queue[K, T]) handleDetach() {
-	if q.queueReady != nil {
+	if q.ready != nil {
 		go q.workOnQueue()
 	}
 }
 
 func (q *Queue[K, T]) handleReattach(ctx context.Context) error {
-	if q.queueReady == nil {
+	if q.ready == nil {
 		return nil
 	}
 	select {
-	case <-ctx.Done():
-		return ctx.Err()
 	case q.reattach <- struct{}{}:
 		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-}
-
-func (q *Queue[K, T]) tryPop() (key K, ok bool) {
-	q.queueMu.Lock()
-	defer q.queueMu.Unlock()
-
-	if len(q.queue) > 0 {
-		key = q.queue[0]
-		ok = true
-		q.queue = q.queue[1:]
-	}
-	return
 }
 
 // Task represents the eventual result of a queued work item, which may produce
@@ -279,22 +281,32 @@ type taskContext struct {
 	reattach func(context.Context) error
 }
 
+func getTaskContext(ctx context.Context) (taskCtx *taskContext, err error) {
+	if v := ctx.Value(taskContextKey{}); v != nil {
+		taskCtx = v.(*taskContext)
+	} else {
+		err = errors.New("context not associated with any queue")
+	}
+	return
+}
+
 // Detach unbounds the calling [Handler] from the concurrency limit of the
 // [Queue] that invoked it, allowing the queue to immediately start work on
 // another task. It returns an error if ctx is not associated with a [Queue].
 //
 // The corresponding [Reattach] function permits a detached handler to
-// reestablish itself within the queue's concurrency limit ahead of any pending
-// submissions. A typical use for detaching is to temporarily block on the
-// completion of another task in the same queue, so that the current task may
-// take advantage of caching or other side effects associated with that task to
-// improve its performance.
+// reestablish itself within the queue's concurrency limit ahead of submitted
+// tasks whose handlers have not yet started.
+//
+// A typical use for detaching is to temporarily block on the completion of
+// another task in the same queue, so that the current task may take advantage
+// of caching or other side effects of the sibling task to improve performance.
+// [KeyMutex] facilitates this pattern by automatically detaching from a queue
+// while it waits for the lock on a key.
 func Detach(ctx context.Context) error {
-	var taskCtx *taskContext
-	if v := ctx.Value(taskContextKey{}); v != nil {
-		taskCtx = v.(*taskContext)
-	} else {
-		return errors.New("context not associated with any queue")
+	taskCtx, err := getTaskContext(ctx)
+	if err != nil {
+		return err
 	}
 
 	taskCtx.detach()
@@ -308,22 +320,20 @@ func Detach(ctx context.Context) error {
 // the handler did not previously [Detach] from the queue. When ctx is canceled
 // before the handler reattaches, the returned error is ctx.Err().
 //
-// See [Detach] for additional information.
+// See [Detach] for more information.
 func Reattach(ctx context.Context) error {
-	var taskCtx *taskContext
-	if v := ctx.Value(taskContextKey{}); v != nil {
-		taskCtx = v.(*taskContext)
-	} else {
-		return errors.New("context not associated with any queue")
+	taskCtx, err := getTaskContext(ctx)
+	if err != nil {
+		return err
 	}
 
 	if !taskCtx.detached {
 		return errors.New("task not detached from queue")
 	}
 
-	err := taskCtx.reattach(ctx)
-	if err == nil {
-		taskCtx.detached = false
+	if err := taskCtx.reattach(ctx); err != nil {
+		return err
 	}
-	return err
+	taskCtx.detached = false
+	return nil
 }
