@@ -18,8 +18,8 @@ type KeyMutex[K comparable] struct {
 // provided key is released, or until ctx is canceled. It returns nil if the
 // lock was successfully acquired, or ctx.Err() if ctx was canceled before
 // locking could finish. A non-nil error indicates that the lock is not held,
-// and that the caller must not [Unlock] the key or violate any invariant that
-// the lock protects.
+// and that the caller must not unlock the key or violate any invariant that the
+// lock protects.
 //
 // If ctx is associated with a [Queue], LockDetached will [Detach] the caller
 // from the queue until it acquires the lock, and will attempt to [Reattach]
