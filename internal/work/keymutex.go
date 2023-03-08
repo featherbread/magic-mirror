@@ -15,13 +15,16 @@ type KeyMutex[K comparable] struct {
 }
 
 // LockDetached blocks the calling goroutine until any other lock on the
-// provided key has been released, or until ctx is canceled.
+// provided key has been released, or until ctx is canceled. It returns nil if
+// the lock was successfully acquired, or ctx.Err() if ctx was canceled before
+// locking could finish. A non-nil error indicates that the lock is not held,
+// and that the caller must not [Unlock] the key or violate any invariant that
+// the mutex protects.
 //
 // If ctx is associated with a [Queue], LockDetached will [Detach] the caller
-// from the queue until it is able to lock the key, and will attempt to
-// [Reattach] before returning.
-//
-// LockDetached returns ctx.Err() if ctx is canceled before the key is locked.
+// from the queue until it acquires the lock, and will attempt to [Reattach]
+// before returning. It will hold the lock while waiting to reattach, and will
+// release the lock if ctx is canceled before Reattach completes.
 func (km *KeyMutex[K]) LockDetached(ctx context.Context, key K) (err error) {
 	var (
 		locked      bool
@@ -76,6 +79,8 @@ func (km *KeyMutex[K]) LockDetached(ctx context.Context, key K) (err error) {
 	}
 }
 
+// Unlock releases the lock on the provided key. It panics if the key is not
+// currently locked.
 func (km *KeyMutex[K]) Unlock(key K) {
 	km.chansMu.Lock()
 	defer km.chansMu.Unlock()
