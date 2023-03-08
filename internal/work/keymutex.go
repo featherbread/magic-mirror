@@ -36,9 +36,8 @@ func (km *KeyMutex[K]) LockDetached(ctx context.Context, key K) (err error) {
 	defer func() {
 		if detached {
 			// This won't lose any information. The only error we can return is
-			// ctx.Err(), and since we know we detached from a queue that's also the
-			// only error Reattach can return. (TODO: Only true if multiple Detach
-			// calls result in an error, which is not yet the case.)
+			// ctx.Err(), and since we know we successfully detached from a queue
+			// that's also the only error Reattach can return.
 			err = Reattach(ctx)
 		}
 	}()

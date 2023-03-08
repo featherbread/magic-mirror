@@ -292,7 +292,8 @@ func getTaskContext(ctx context.Context) (taskCtx *taskContext, err error) {
 
 // Detach unbounds the calling [Handler] from the concurrency limit of the
 // [Queue] that invoked it, allowing the queue to immediately start work on
-// another task. It returns an error if ctx is not associated with a [Queue].
+// another task. It returns an error if ctx is not associated with a [Queue], or
+// if the handler has already detached.
 //
 // The corresponding [Reattach] function permits a detached handler to
 // reestablish itself within the queue's concurrency limit ahead of submitted
@@ -307,6 +308,10 @@ func Detach(ctx context.Context) error {
 	taskCtx, err := getTaskContext(ctx)
 	if err != nil {
 		return err
+	}
+
+	if taskCtx.detached {
+		return errors.New("task already detached from queue")
 	}
 
 	taskCtx.detach()
