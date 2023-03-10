@@ -168,8 +168,6 @@ func (q *Queue[K, T]) workOnQueue() {
 				} else {
 					return
 				}
-			case <-q.ctx.Done():
-				return
 			case <-q.reattach:
 				return
 			}
@@ -181,8 +179,6 @@ func (q *Queue[K, T]) workOnQueue() {
 			return
 		}
 		select {
-		case <-q.ctx.Done():
-			return
 		case <-q.reattach:
 			return
 		default:
