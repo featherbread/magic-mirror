@@ -178,6 +178,7 @@ func (q *Queue[K, T]) workOnQueue() {
 		if taskCtx.detached {
 			return
 		}
+
 		select {
 		case <-q.reattach:
 			return
