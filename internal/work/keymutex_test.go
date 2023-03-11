@@ -59,11 +59,12 @@ func TestKeyMutexBasic(t *testing.T) {
 }
 
 func TestKeyMutexDetach(t *testing.T) {
+	const submitCount = 5
+
 	var (
-		km       KeyMutex[NoValue]
-		taskKeys = []int{0, 1, 2, 3, 4}
-		started  = make(chan struct{}, len(taskKeys))
-		locked   atomic.Bool
+		km      KeyMutex[NoValue]
+		started = make(chan struct{}, submitCount)
+		locked  atomic.Bool
 	)
 	q := NewQueue(1, func(ctx context.Context, x int) (int, error) {
 		started <- struct{}{}
@@ -84,7 +85,8 @@ func TestKeyMutexDetach(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tasks := q.GetOrSubmitAll(taskKeys...)
+	keys := makeIntKeys(submitCount)
+	tasks := q.GetOrSubmitAll(keys...)
 	timeout := time.After(2 * time.Second)
 	for i := range tasks {
 		select {
@@ -95,5 +97,5 @@ func TestKeyMutexDetach(t *testing.T) {
 	}
 
 	km.Unlock(NoValue{})
-	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, taskKeys)
+	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, keys)
 }

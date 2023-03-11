@@ -2,12 +2,9 @@ package work
 
 import (
 	"context"
-	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/google/go-cmp/cmp"
 )
 
 func TestQueueBasicUnlimited(t *testing.T) {
@@ -37,26 +34,23 @@ func TestQueueDeduplication(t *testing.T) {
 	})
 	defer q.CloseSubmit()
 
-	want := make([]int, count)
-	for i := range want {
-		want[i] = i
-	}
+	keys := makeIntKeys(count)
 
 	close(unblock)
-	halfTasks := q.GetOrSubmitAll(want[:half]...)
-	assertTaskSucceedsWithin[[]int](t, 2*time.Second, halfTasks, want[:half])
+	halfTasks := q.GetOrSubmitAll(keys[:half]...)
+	assertTaskSucceedsWithin[[]int](t, 2*time.Second, halfTasks, keys[:half])
 
 	unblock = make(chan struct{})
-	tasks := q.GetOrSubmitAll(want...)
-	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks[:half], want[:half])
+	tasks := q.GetOrSubmitAll(keys...)
+	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks[:half], keys[:half])
 	assertTaskBlocked(t, tasks[half])
 
 	close(unblock)
-	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, want)
+	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, keys)
 
 	unblock = make(chan struct{})
-	tasksAgain := q.GetOrSubmitAll(want...)
-	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasksAgain, want)
+	tasksAgain := q.GetOrSubmitAll(keys...)
+	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasksAgain, keys)
 }
 
 func TestQueueConcurrencyLimit(t *testing.T) {
@@ -81,15 +75,12 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 	})
 	defer q.CloseSubmit()
 
-	values := make([]int, submitCount)
-	for i := range values {
-		values[i] = i
-	}
-	tasks := q.GetOrSubmitAll(values...)
+	keys := makeIntKeys(submitCount)
+	tasks := q.GetOrSubmitAll(keys...)
 
 	forceRuntimeProgress(workerCount + 1)
 	close(unblock)
-	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, values)
+	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, keys)
 	if breached.Load() {
 		t.Errorf("queue breached limit of %d workers in flight", workerCount)
 	}
@@ -108,12 +99,9 @@ func TestQueueDetachReattachUnlimited(t *testing.T) {
 		return x, nil
 	})
 
-	want := make([]int, submitCount)
-	for i := range want {
-		want[i] = i
-	}
-	tasks := q.GetOrSubmitAll(want...)
-	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, want)
+	keys := makeIntKeys(submitCount)
+	tasks := q.GetOrSubmitAll(keys...)
+	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, keys)
 }
 
 func TestQueueDetachReattachLimited(t *testing.T) {
@@ -151,11 +139,8 @@ func TestQueueDetachReattachLimited(t *testing.T) {
 		return x, nil
 	})
 
-	want := make([]int, submitCount)
-	for i := range want {
-		want[i] = i
-	}
-	tasks := q.GetOrSubmitAll(want...)
+	keys := makeIntKeys(submitCount)
+	tasks := q.GetOrSubmitAll(keys...)
 
 	timeout := time.After(2 * time.Second)
 	for i := 0; i < submitCount; i++ {
@@ -169,70 +154,9 @@ func TestQueueDetachReattachLimited(t *testing.T) {
 	close(unblockReattach)
 	forceRuntimeProgress(workerCount + 1)
 	close(unblockReturn)
-	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, want)
+	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, keys)
 
 	if breachedReattach.Load() {
 		t.Errorf("queue breached limit of %d workers in flight during reattach", workerCount)
-	}
-}
-
-type awaitable[T any] interface {
-	Wait() (T, error)
-}
-
-func assertTaskSucceedsWithin[T any](t *testing.T, d time.Duration, task awaitable[T], want T) {
-	t.Helper()
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		task.Wait()
-	}()
-
-	select {
-	case <-done:
-		got, err := task.Wait()
-		if err != nil {
-			t.Errorf("unexpected error from task: %v", err)
-		}
-		if diff := cmp.Diff(want, got); diff != "" {
-			t.Errorf("unexpected result from task (-want +got): %s", diff)
-		}
-
-	case <-time.After(d):
-		t.Fatalf("task did not finish within %v", d)
-	}
-}
-
-func assertTaskBlocked[T any](t *testing.T, task *Task[T]) {
-	t.Helper()
-
-	// Make an effort to ensure the task is scheduled.
-	runtime.Gosched()
-
-	select {
-	case <-task.done:
-		// TODO: Can we do this without touching Task internals?
-		t.Errorf("task was not blocked")
-	default:
-	}
-}
-
-// forceRuntimeProgress attempts to force the Go runtime to make progress on at
-// least n other goroutines before resuming the current one.
-//
-// This function is intended to help reveal issues with concurrency limits by
-// forcing the goroutines subject to those limits to hit some kind of blocking
-// condition simultaneously. When the only other live goroutines in a test are
-// those spawned by the test itself, this approach appears in practice to work
-// just as well as other strategies that may be at least an order of magnitude
-// more expensive (e.g. time.Sleep calls). However, there is some inherent
-// non-determinism in this strategy that could reveal itself if some other test
-// leaks runnable goroutines.
-func forceRuntimeProgress(n int) {
-	gomaxprocs := runtime.GOMAXPROCS(1)
-	defer runtime.GOMAXPROCS(gomaxprocs)
-	for i := 0; i < n; i++ {
-		runtime.Gosched()
 	}
 }
