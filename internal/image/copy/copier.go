@@ -10,12 +10,15 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
-func CopyAll(workers int, compareMode CompareMode, specs ...Spec) error {
+// CopyAll performs a bulk copy between OCI image registries based on the
+// provided copy specs, using the provided concurrency for each component of the
+// overall operation.
+func CopyAll(concurrency int, compareMode CompareMode, specs ...Spec) error {
 	keys, err := keyifyRequests(specs)
 	if err != nil {
 		return err
 	}
-	copier := newCopier(workers, compareMode)
+	copier := newCopier(concurrency, compareMode)
 	defer copier.CloseSubmit()
 	return copier.CopyAll(keys...)
 }

@@ -9,12 +9,14 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/image"
 )
 
+// Spec represents a single request to copy a particular source image to a
+// particular destination.
 type Spec struct {
 	Src image.Image
 	Dst image.Image
 }
 
-func (s Spec) ToKey() specKey {
+func (s Spec) toKey() specKey {
 	return specKey(s)
 }
 
@@ -52,7 +54,7 @@ func keyifyRequests(specs []Spec) ([]specKey, error) {
 	coalesced := make([]specKey, 0, len(specs))
 	requestsByDst := make(map[image.Image]specKey)
 	for _, currentSpec := range specs {
-		currentKey := currentSpec.ToKey()
+		currentKey := currentSpec.toKey()
 		previousKey, ok := requestsByDst[currentSpec.Dst]
 		if !ok {
 			coalesced = append(coalesced, currentKey)

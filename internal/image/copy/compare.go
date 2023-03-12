@@ -8,6 +8,10 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/image"
 )
 
+// CompareMode represents how a copy operation compares source and destination
+// manifests to determine whether they are already in sync.
+//
+// This will go away as the functionality and interface of package copy improve.
 type CompareMode int
 
 const (
