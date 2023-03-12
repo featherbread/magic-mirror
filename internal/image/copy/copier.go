@@ -112,7 +112,7 @@ func (c *copier) handleRequest(_ context.Context, spec Spec) error {
 	srcMediaType := srcManifest.GetMediaType()
 	switch {
 	case srcMediaType.IsIndex():
-		err = c.copyIndex(srcManifest.(image.Index), spec.Src, spec.Dst)
+		err = c.copyIndex(spec, srcManifest.(image.Index))
 	case srcMediaType.IsManifest():
 		_, err = c.platforms.Copy(spec.Src, spec.Dst)
 	default:
@@ -126,7 +126,10 @@ func (c *copier) handleRequest(_ context.Context, spec Spec) error {
 	return nil
 }
 
-func (c *copier) copyIndex(srcIndex image.Index, src, dst image.Image) error {
+func (c *copier) copyIndex(spec Spec, srcIndex image.Index) error {
+	src := spec.Src
+	dst := spec.Dst
+
 	if err := srcIndex.Validate(); err != nil {
 		return err
 	}
