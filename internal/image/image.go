@@ -94,3 +94,16 @@ func (i Image) String() string {
 	}
 	return result
 }
+
+func (i Image) MarshalText() ([]byte, error) {
+	return []byte(i.String()), nil
+}
+
+func (i *Image) UnmarshalText(b []byte) error {
+	result, err := Parse(string(b))
+	if err != nil {
+		return err
+	}
+	*i = result
+	return nil
+}

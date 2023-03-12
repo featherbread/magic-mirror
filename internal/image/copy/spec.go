@@ -13,15 +13,19 @@ import (
 // Spec represents a single request to copy a particular source image to a
 // particular destination.
 type Spec struct {
-	Src       image.Image
-	Dst       image.Image
-	Transform Transform
+	Src       image.Image `json:"src"`
+	Dst       image.Image `json:"dst"`
+	Transform Transform   `json:"transform,omitempty"`
 }
 
 // Transform represents an optional set of transformations to perform while
 // mirroring a source image to a destination.
 type Transform struct {
-	SelectPlatforms stringkeyed.Set
+	// LimitPlatforms limits the set of platforms copied from a multi-platform
+	// source image to those listed. If it is empty, all platforms from the source
+	// image will be copied. If the source image is a single-platform image, this
+	// setting will be ignored and the image will be copied as-is.
+	LimitPlatforms stringkeyed.Set `json:"limitPlatforms,omitempty"`
 }
 
 type specKey Spec // TODO: Left over from previous implementation, consider removing.

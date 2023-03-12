@@ -8,7 +8,6 @@ import (
 	"os"
 	"time"
 
-	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/image/copy"
 	"go.alexhamlin.co/magic-mirror/internal/log"
 )
@@ -61,52 +60,38 @@ func main() {
 	}
 }
 
-type requestSpec struct {
-	Src string `json:"src"`
-	Dst string `json:"dst"`
-}
-
 func readAllCopySpecs(r io.Reader) ([]copy.Spec, error) {
 	decoder := json.NewDecoder(r)
-	var requests []copy.Spec
+	var allSpecs []copy.Spec
 	for {
 		specs, err := readNextCopySpecs(decoder)
 		switch {
 		case errors.Is(err, io.EOF):
-			return requests, nil
+			return allSpecs, nil
 		case err != nil:
 			return nil, err
-		}
-
-		for _, spec := range specs {
-			var req copy.Spec
-			if req.Src, err = image.Parse(spec.Src); err != nil {
-				return nil, err
-			}
-			if req.Dst, err = image.Parse(spec.Dst); err != nil {
-				return nil, err
-			}
-			requests = append(requests, req)
+		default:
+			allSpecs = append(allSpecs, specs...)
 		}
 	}
 }
 
-func readNextCopySpecs(decoder *json.Decoder) ([]requestSpec, error) {
+func readNextCopySpecs(decoder *json.Decoder) ([]copy.Spec, error) {
 	var next json.RawMessage
 	if err := decoder.Decode(&next); err != nil {
 		return nil, err
 	}
 
-	var nextSlice []requestSpec
+	var nextSlice []copy.Spec
 	var sliceErr error
 	if sliceErr = json.Unmarshal(next, &nextSlice); sliceErr == nil {
 		return nextSlice, nil
 	}
 
-	var nextValue requestSpec
+	var nextValue copy.Spec
 	var valueErr error
 	if valueErr = json.Unmarshal(next, &nextValue); valueErr == nil {
-		return []requestSpec{nextValue}, nil
+		return []copy.Spec{nextValue}, nil
 	}
 
 	return nil, errors.Join(sliceErr, valueErr)
