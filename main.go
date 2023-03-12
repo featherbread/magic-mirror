@@ -5,16 +5,17 @@ import (
 	"errors"
 	"flag"
 	"io"
-	"log"
 	"os"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/image/copy"
+	"go.alexhamlin.co/magic-mirror/internal/log"
 )
 
 var (
 	flagCompareMode = flag.String("compare", "equal", `Mode for comparing manifests ("equal" or "annotated")`)
 	flagConcurrency = flag.Int("concurrency", 10, "Number of simultaneous blob and manifest operations")
+	flagVerbose     = flag.Bool("verbose", false, "Enable verbose logging of all operations")
 )
 
 func main() {
@@ -46,6 +47,10 @@ func main() {
 	default:
 		log.Printf("[main] invalid -compare mode %s", *flagCompareMode)
 		os.Exit(2)
+	}
+
+	if *flagVerbose {
+		log.EnableVerbose()
 	}
 
 	copier := copy.NewCopier(*flagConcurrency, compareMode)

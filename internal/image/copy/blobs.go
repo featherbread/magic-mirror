@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,6 +14,7 @@ import (
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/image/registry"
+	"go.alexhamlin.co/magic-mirror/internal/log"
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
@@ -84,7 +84,7 @@ func (c *blobCopier) copyOneBlob(ctx context.Context, req blobCopyRequest) (err 
 
 	srcSet := c.sources(req.Digest)
 	if srcSet.Contains(req.Dst) {
-		log.Printf("[blob]\tknown %s@%s", req.Dst, req.Digest)
+		log.Verbosef("[blob]\tknown %s@%s", req.Dst, req.Digest)
 		return nil
 	}
 
@@ -99,7 +99,7 @@ func (c *blobCopier) copyOneBlob(ctx context.Context, req blobCopyRequest) (err 
 		return err
 	}
 	if hasBlob {
-		log.Printf("[blob]\tfound %s@%s", req.Dst, req.Digest)
+		log.Verbosef("[blob]\tfound %s@%s", req.Dst, req.Digest)
 		return nil
 	}
 
@@ -117,7 +117,7 @@ func (c *blobCopier) copyOneBlob(ctx context.Context, req blobCopyRequest) (err 
 		return err
 	}
 	if mounted {
-		log.Printf("[blob]\tmounted %s@%s to %s", mountRepo, req.Digest, req.Dst)
+		log.Verbosef("[blob]\tmounted %s@%s to %s", mountRepo, req.Digest, req.Dst)
 		return nil
 	}
 
@@ -155,7 +155,7 @@ func (c *blobCopier) copyOneBlob(ctx context.Context, req blobCopyRequest) (err 
 		return err
 	}
 
-	log.Printf("[blob]\tcopied %s@%s to %s", sources[0], req.Digest, req.Dst)
+	log.Verbosef("[blob]\tcopied %s@%s to %s", sources[0], req.Digest, req.Dst)
 	return nil
 }
 

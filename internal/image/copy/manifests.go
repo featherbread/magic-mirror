@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/image/registry"
+	"go.alexhamlin.co/magic-mirror/internal/log"
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
@@ -69,7 +69,7 @@ func (d *manifestCache) handleRequest(_ context.Context, img image.Image) (resp 
 		reference = img.Tag
 	}
 
-	log.Printf("[manifest]\tdownloading %s", img)
+	log.Verbosef("[manifest]\tdownloading %s", img)
 
 	client, err := registry.GetClient(img.Repository, registry.PullScope)
 	if err != nil {

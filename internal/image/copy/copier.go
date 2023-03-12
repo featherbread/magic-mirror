@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	mapset "github.com/deckarep/golang-set/v2"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
+	"go.alexhamlin.co/magic-mirror/internal/log"
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
@@ -94,6 +94,7 @@ func NewCopier(workers int, compareMode CompareMode) *Copier {
 
 func (c *Copier) Copy(src, dst image.Image) error {
 	_, err := c.Queue.GetOrSubmit(Request{Src: src, Dst: dst}).Wait()
+	c.printStats()
 	return err
 }
 
@@ -103,6 +104,7 @@ func (c *Copier) CopyAll(reqs ...Request) error {
 		return err
 	}
 	_, err = c.Queue.GetOrSubmitAll(reqs...).Wait()
+	c.printStats()
 	return err
 }
 
@@ -135,7 +137,7 @@ func (c *Copier) printStats() {
 }
 
 func (c *Copier) handleRequest(_ context.Context, req Request) error {
-	log.Printf("[image]\tstarting copy from %s to %s", req.Src, req.Dst)
+	log.Verbosef("[image]\tstarting copy from %s to %s", req.Src, req.Dst)
 
 	srcTask := c.srcManifests.GetOrSubmit(req.Src)
 	dstTask := c.dstManifests.GetOrSubmit(req.Dst)
@@ -149,7 +151,7 @@ func (c *Copier) handleRequest(_ context.Context, req Request) error {
 	if err == nil {
 		c.dstIndexer.Submit(req.Dst.Repository, dstManifest)
 		if c.comparer.IsMirrored(srcManifest, dstManifest) {
-			log.Printf("[image]\tno change from %s to %s", req.Src, req.Dst)
+			log.Verbosef("[image]\tno change from %s to %s", req.Src, req.Dst)
 			return nil
 		}
 	}
@@ -167,7 +169,7 @@ func (c *Copier) handleRequest(_ context.Context, req Request) error {
 		return err
 	}
 
-	log.Printf("[image]\tfully mirrored %s to %s", req.Src, req.Dst)
+	log.Verbosef("[image]\tfully mirrored %s to %s", req.Src, req.Dst)
 	return nil
 }
 

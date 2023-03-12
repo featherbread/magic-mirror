@@ -3,11 +3,11 @@ package copy
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/opencontainers/go-digest"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
+	"go.alexhamlin.co/magic-mirror/internal/log"
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
@@ -85,7 +85,7 @@ func (c *platformCopier) handleRequest(_ context.Context, req platformCopyReques
 	}
 	err = uploadManifest(dstImg, dstManifest)
 	if err == nil {
-		log.Printf("[platform]\tmirrored %s to %s", req.Src, dstImg)
+		log.Verbosef("[platform]\tmirrored %s to %s", req.Src, dstImg)
 	}
 	return dstManifest.(image.Manifest), err
 }

@@ -1,12 +1,11 @@
 package copy
 
 import (
-	"log"
-
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/opencontainers/go-digest"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
+	"go.alexhamlin.co/magic-mirror/internal/log"
 )
 
 // blobIndexer discovers the existence of blobs in a repository using manifest
@@ -52,7 +51,7 @@ func (bi *blobIndexer) Submit(repo image.Repository, manifest image.ManifestKind
 	for _, layer := range parsed.Layers {
 		bi.blobs.RegisterSource(layer.Digest, repo)
 	}
-	log.Printf("[dstindex]\tindexed blobs referenced by %s@%s", repo, dgst)
+	log.Verbosef("[dstindex]\tindexed blobs referenced by %s@%s", repo, dgst)
 }
 
 func (bi *blobIndexer) queueManifestsFromIndex(repo image.Repository, index image.Index) {
