@@ -2,64 +2,16 @@ package copy
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
-
-	mapset "github.com/deckarep/golang-set/v2"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/log"
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
-type Request struct {
-	Src image.Image
-	Dst image.Image
-}
-
-func ValidateRequests(reqs ...Request) error {
-	// TODO: Validate that destinations do not contain digests in annotation
-	// comparison mode.
-
-	// TODO: Validate that source and destination digests do not mismatch.
-
-	_, err := coalesceRequests(reqs)
-	return err
-}
-
-func coalesceRequests(reqs []Request) ([]Request, error) {
-	var errs []error
-
-	srcs := mapset.NewThreadUnsafeSet[image.Image]()
-	for _, req := range reqs {
-		srcs.Add(req.Src)
-	}
-	for _, req := range reqs {
-		if srcs.Contains(req.Dst) {
-			errs = append(errs, fmt.Errorf("%s is both a source and a destination", req.Dst))
-		}
-	}
-
-	coalesced := make([]Request, 0, len(reqs))
-	requestsByDst := make(map[image.Image]Request)
-	for _, current := range reqs {
-		previous, ok := requestsByDst[current.Dst]
-		if !ok {
-			coalesced = append(coalesced, current)
-			requestsByDst[current.Dst] = current
-			continue
-		}
-		if previous != current {
-			errs = append(errs, fmt.Errorf("%s requests inconsistent copies from %s and %s", current.Dst, current.Src, previous.Src))
-		}
-	}
-
-	return coalesced, errors.Join(errs...)
-}
-
 type Copier struct {
-	*work.Queue[Request, work.NoValue]
+	queue *work.Queue[specKey, work.NoValue]
 
 	comparer     comparer
 	blobs        *blobCopier
@@ -87,23 +39,17 @@ func NewCopier(workers int, compareMode CompareMode) *Copier {
 		dstManifests: dstManifests,
 		dstIndexer:   dstIndexer,
 	}
-	c.Queue = work.NewQueue(0, work.NoValueHandler(c.handleRequest))
+	c.queue = work.NewQueue(0, work.NoValueHandler(c.handleRequest))
 	c.statsTimer = time.AfterFunc(statsInterval, c.printStats)
 	return c
 }
 
-func (c *Copier) Copy(src, dst image.Image) error {
-	_, err := c.Queue.GetOrSubmit(Request{Src: src, Dst: dst}).Wait()
-	c.printStats()
-	return err
-}
-
-func (c *Copier) CopyAll(reqs ...Request) error {
-	reqs, err := coalesceRequests(reqs)
+func (c *Copier) CopyAll(specs ...Spec) error {
+	keys, err := keyifyRequests(specs)
 	if err != nil {
 		return err
 	}
-	_, err = c.Queue.GetOrSubmitAll(reqs...).Wait()
+	_, err = c.queue.GetOrSubmitAll(keys...).Wait()
 	c.printStats()
 	return err
 }
@@ -112,7 +58,7 @@ func (c *Copier) CloseSubmit() {
 	// TODO: This is only safe after all Copier tasks are finished.
 	// TODO: There is no way to cleanly stop destination blob indexing.
 	// TODO: Should really stop the stats timer too.
-	c.Queue.CloseSubmit()
+	c.queue.CloseSubmit()
 	c.platforms.CloseSubmit()
 	c.srcManifests.CloseSubmit()
 	c.dstManifests.CloseSubmit()
@@ -125,7 +71,7 @@ func (c *Copier) printStats() {
 	var (
 		blobsDone, blobsTotal         = c.blobs.Stats()
 		platformsDone, platformsTotal = c.platforms.Stats()
-		imagesDone, imagesTotal       = c.Queue.Stats()
+		imagesDone, imagesTotal       = c.queue.Stats()
 	)
 	log.Printf(
 		"[stats] blobs: %d of %d copied; platforms: %d of %d mirrored; images: %d of %d in sync",
@@ -136,7 +82,7 @@ func (c *Copier) printStats() {
 	c.statsTimer.Reset(statsInterval)
 }
 
-func (c *Copier) handleRequest(_ context.Context, req Request) error {
+func (c *Copier) handleRequest(_ context.Context, req specKey) error {
 	log.Verbosef("[image]\tstarting copy from %s to %s", req.Src, req.Dst)
 
 	srcTask := c.srcManifests.GetOrSubmit(req.Src)

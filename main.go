@@ -34,7 +34,7 @@ func main() {
 		defer specFile.Close()
 		specReader = specFile
 	}
-	requests, err := readRequests(specReader)
+	copySpecs, err := readAllCopySpecs(specReader)
 	if err != nil {
 		log.Printf("[main] invalid copy spec: %v", err)
 		os.Exit(2)
@@ -58,7 +58,7 @@ func main() {
 	copier := copy.NewCopier(*flagConcurrency, compareMode)
 	defer copier.CloseSubmit()
 
-	if err := copier.CopyAll(requests...); err != nil {
+	if err := copier.CopyAll(copySpecs...); err != nil {
 		log.Printf("[main] some copies failed:\n%v", err)
 		os.Exit(1)
 	}
@@ -69,11 +69,11 @@ type requestSpec struct {
 	Dst string `json:"dst"`
 }
 
-func readRequests(r io.Reader) ([]copy.Request, error) {
+func readAllCopySpecs(r io.Reader) ([]copy.Spec, error) {
 	decoder := json.NewDecoder(r)
-	var requests []copy.Request
+	var requests []copy.Spec
 	for {
-		specs, err := readRequestSpecs(decoder)
+		specs, err := readNextCopySpecs(decoder)
 		switch {
 		case errors.Is(err, io.EOF):
 			return requests, nil
@@ -82,7 +82,7 @@ func readRequests(r io.Reader) ([]copy.Request, error) {
 		}
 
 		for _, spec := range specs {
-			var req copy.Request
+			var req copy.Spec
 			if req.Src, err = image.Parse(spec.Src); err != nil {
 				return nil, err
 			}
@@ -94,7 +94,7 @@ func readRequests(r io.Reader) ([]copy.Request, error) {
 	}
 }
 
-func readRequestSpecs(decoder *json.Decoder) ([]requestSpec, error) {
+func readNextCopySpecs(decoder *json.Decoder) ([]requestSpec, error) {
 	var next json.RawMessage
 	if err := decoder.Decode(&next); err != nil {
 		return nil, err
