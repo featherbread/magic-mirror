@@ -4,6 +4,7 @@ import (
 	"encoding/ascii85"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 
@@ -81,21 +82,31 @@ func encodeAll(elems []string) {
 		// (which conflicts with the higher-level Set representation) or starts with
 		// a Shift Out (which conflicts with the Ascii85 marker in the encoding).
 		if strings.Contains(elem, unitSeparator) || strings.HasPrefix(elem, shiftOut) {
-			encoded := make([]byte, ascii85.MaxEncodedLen(len(elem)))
-			len := ascii85.Encode(encoded, []byte(elem))
-			elems[i] = shiftOut + string(encoded[:len])
+			elems[i] = encodeAscii85Element(elem)
 		}
 	}
 }
 
+func encodeAscii85Element(elem string) string {
+	out := make([]byte, 1+ascii85.MaxEncodedLen(len(elem)))
+	out[0] = shiftOut[0]
+	outlen := ascii85.Encode(out[1:], []byte(elem))
+	return string(out[:1+outlen])
+}
+
 func decodeAll(elems []string) {
-	var builder strings.Builder
 	for i, elem := range elems {
 		if strings.HasPrefix(elem, shiftOut) {
-			dec := ascii85.NewDecoder(strings.NewReader(elem[1:]))
-			io.Copy(&builder, dec)
-			elems[i] = builder.String()
-			builder.Reset()
+			elems[i] = decodeAscii85Element(elem)
 		}
 	}
+}
+
+func decodeAscii85Element(elem string) string {
+	var builder strings.Builder
+	_, err := io.Copy(&builder, ascii85.NewDecoder(strings.NewReader(elem[1:])))
+	if err != nil {
+		panic(fmt.Errorf("invalid stringkeyed.Set encoding %q: %v", elem, err))
+	}
+	return builder.String()
 }
