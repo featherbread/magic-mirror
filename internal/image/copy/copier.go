@@ -1,6 +1,7 @@
 package copy
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"time"
@@ -13,12 +14,12 @@ import (
 // CopyAll performs a bulk copy between OCI image registries based on the
 // provided copy specs, using the provided concurrency for each component of the
 // overall operation.
-func CopyAll(concurrency int, compareMode CompareMode, specs ...Spec) error {
+func CopyAll(concurrency int, specs ...Spec) error {
 	keys, err := coalesceRequests(specs)
 	if err != nil {
 		return err
 	}
-	copier := newCopier(concurrency, compareMode)
+	copier := newCopier(concurrency)
 	defer copier.CloseSubmit()
 	return copier.CopyAll(keys...)
 }
@@ -26,7 +27,6 @@ func CopyAll(concurrency int, compareMode CompareMode, specs ...Spec) error {
 type copier struct {
 	queue *work.Queue[Spec, work.NoValue]
 
-	comparer     comparer
 	blobs        *blobCopier
 	srcManifests *manifestCache
 	platforms    *platformCopier
@@ -36,16 +36,14 @@ type copier struct {
 	statsTimer *time.Timer
 }
 
-func newCopier(workers int, compareMode CompareMode) *copier {
-	comparer := comparers[compareMode]
+func newCopier(workers int) *copier {
 	blobs := newBlobCopier(workers)
 	srcManifests := newManifestCache(workers)
-	platforms := newPlatformCopier(comparer, srcManifests, blobs)
+	platforms := newPlatformCopier(srcManifests, blobs)
 	dstManifests := newManifestCache(workers)
 	dstIndexer := newBlobIndexer(workers, blobs)
 
 	c := &copier{
-		comparer:     comparer,
 		blobs:        blobs,
 		srcManifests: srcManifests,
 		platforms:    platforms,
@@ -105,7 +103,7 @@ func (c *copier) handleRequest(_ context.Context, spec Spec) error {
 	dstManifest, err := dstTask.Wait()
 	if err == nil {
 		c.dstIndexer.Submit(spec.Dst.Repository, dstManifest)
-		if c.comparer.IsMirrored(srcManifest, dstManifest) {
+		if bytes.Equal(srcManifest.Encoded(), dstManifest.Encoded()) {
 			log.Verbosef("[image]\tno change from %s to %s", spec.Src, spec.Dst)
 			return nil
 		}
@@ -166,7 +164,5 @@ func (c *copier) copyIndex(srcIndex image.Index, src, dst image.Image) error {
 	if dstIndexCopied {
 		uploadIndex = dstIndex
 	}
-
-	markedIndex := c.comparer.MarkSource(uploadIndex, srcIndex.Descriptor().Digest)
-	return uploadManifest(dst, markedIndex)
+	return uploadManifest(dst, uploadIndex)
 }

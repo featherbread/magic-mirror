@@ -13,7 +13,6 @@ import (
 )
 
 var (
-	flagCompareMode = flag.String("compare", "equal", `Mode for comparing manifests ("equal" or "annotated")`)
 	flagConcurrency = flag.Int("concurrency", 10, "Number of simultaneous blob and manifest operations")
 	flagVerbose     = flag.Bool("verbose", false, "Enable verbose logging of all operations")
 )
@@ -39,22 +38,11 @@ func main() {
 		os.Exit(2)
 	}
 
-	var compareMode copy.CompareMode
-	switch *flagCompareMode {
-	case "equal":
-		compareMode = copy.CompareModeEqual
-	case "annotated":
-		compareMode = copy.CompareModeAnnotation
-	default:
-		log.Printf("[main] invalid -compare mode %s", *flagCompareMode)
-		os.Exit(2)
-	}
-
 	if *flagVerbose {
 		log.EnableVerbose()
 	}
 
-	if err := copy.CopyAll(*flagConcurrency, compareMode, copySpecs...); err != nil {
+	if err := copy.CopyAll(*flagConcurrency, copySpecs...); err != nil {
 		log.Printf("[main] some copies failed:\n%v", err)
 		os.Exit(1)
 	}
