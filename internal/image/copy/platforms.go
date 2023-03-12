@@ -14,9 +14,9 @@ import (
 type platformCopier struct {
 	*work.Queue[platformCopyRequest, image.Manifest]
 
-	compareMode CompareMode
-	manifests   *manifestCache
-	blobs       *blobCopier
+	comparer  comparer
+	manifests *manifestCache
+	blobs     *blobCopier
 }
 
 type platformCopyRequest struct {
@@ -24,11 +24,11 @@ type platformCopyRequest struct {
 	Dst image.Image
 }
 
-func newPlatformCopier(compareMode CompareMode, manifests *manifestCache, blobs *blobCopier) *platformCopier {
+func newPlatformCopier(comparer comparer, manifests *manifestCache, blobs *blobCopier) *platformCopier {
 	c := &platformCopier{
-		compareMode: compareMode,
-		manifests:   manifests,
-		blobs:       blobs,
+		comparer:  comparer,
+		manifests: manifests,
+		blobs:     blobs,
 	}
 	c.Queue = work.NewQueue(0, c.handleRequest)
 	return c
@@ -77,28 +77,15 @@ func (c *platformCopier) handleRequest(_ context.Context, req platformCopyReques
 		return
 	}
 
-	if c.compareMode == CompareModeEqual {
-		err := uploadManifest(req.Dst, srcManifest)
-		if err == nil {
-			log.Printf("[platform]\tcopied %s to %s", req.Src, req.Dst)
-		}
-		return manifest, err
-	}
-
-	newManifest := manifest.Parsed()
-	newManifest.MediaType = string(image.OCIManifestMediaType)
-	if newManifest.Annotations == nil {
-		newManifest.Annotations = make(map[string]string)
-	}
-	newManifest.Annotations[annotationSourceDigest] = srcManifest.Descriptor().Digest.String()
-
-	newImg := image.Image{
+	dstManifest := c.comparer.MarkSource(srcManifest, srcManifest.Descriptor().Digest)
+	dstImg := image.Image{
 		Repository: req.Dst.Repository,
 		Tag:        req.Dst.Tag,
+		Digest:     dstManifest.Descriptor().Digest,
 	}
-	err = uploadManifest(newImg, newManifest)
+	err = uploadManifest(dstImg, dstManifest)
 	if err == nil {
-		log.Printf("[platform]\tcopied %s to %s", req.Src, req.Dst)
+		log.Printf("[platform]\tmirrored %s to %s", req.Src, dstImg)
 	}
-	return newManifest, err
+	return dstManifest.(image.Manifest), err
 }

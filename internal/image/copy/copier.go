@@ -60,7 +60,7 @@ func coalesceRequests(reqs []Request) ([]Request, error) {
 type Copier struct {
 	*work.Queue[Request, work.NoValue]
 
-	compareMode  CompareMode
+	comparer     comparer
 	blobs        *blobCopier
 	srcManifests *manifestCache
 	platforms    *platformCopier
@@ -69,14 +69,15 @@ type Copier struct {
 }
 
 func NewCopier(workers int, compareMode CompareMode) *Copier {
+	comparer := comparers[compareMode]
 	blobs := newBlobCopier(workers)
 	srcManifests := newManifestCache(workers)
-	platforms := newPlatformCopier(compareMode, srcManifests, blobs)
+	platforms := newPlatformCopier(comparer, srcManifests, blobs)
 	dstManifests := newManifestCache(workers)
 	dstIndexer := newBlobIndexer(workers, blobs)
 
 	c := &Copier{
-		compareMode:  compareMode,
+		comparer:     comparer,
 		blobs:        blobs,
 		srcManifests: srcManifests,
 		platforms:    platforms,
@@ -125,7 +126,7 @@ func (c *Copier) handleRequest(_ context.Context, req Request) error {
 	dstManifest, err := dstTask.Wait()
 	if err == nil {
 		c.dstIndexer.Submit(req.Dst.Repository, dstManifest)
-		if comparisons[c.compareMode](srcManifest, dstManifest) {
+		if c.comparer.IsMirrored(srcManifest, dstManifest) {
 			log.Printf("[image]\tno change from %s to %s", req.Src, req.Dst)
 			return nil
 		}
@@ -144,7 +145,7 @@ func (c *Copier) handleRequest(_ context.Context, req Request) error {
 		return err
 	}
 
-	log.Printf("[image]\tfully copied %s to %s", req.Src, req.Dst)
+	log.Printf("[image]\tfully mirrored %s to %s", req.Src, req.Dst)
 	return nil
 }
 
@@ -163,22 +164,18 @@ func (c *Copier) copyIndex(srcIndex image.Index, src, dst image.Image) error {
 		return err
 	}
 
-	if c.compareMode == CompareModeEqual {
-		return uploadManifest(dst, srcIndex)
+	uploadIndex := srcIndex
+	dstIndex := srcIndex.Parsed() // TODO: This is racy when the same index is mirrored more than once.
+	for i, dstManifest := range dstManifests {
+		desc := dstManifest.Descriptor()
+		if desc.Digest != srcDescriptors[i].Digest {
+			uploadIndex = dstIndex
+			dstIndex.Manifests[i] = desc
+			dstIndex.Manifests[i].Annotations = srcDescriptors[i].Annotations
+			dstIndex.Manifests[i].Platform = srcDescriptors[i].Platform
+		}
 	}
 
-	newIndex := srcIndex.Parsed()
-	newIndex.MediaType = string(image.OCIIndexMediaType)
-	if newIndex.Annotations == nil {
-		newIndex.Annotations = make(map[string]string)
-	}
-	newIndex.Annotations[annotationSourceDigest] = srcIndex.Descriptor().Digest.String()
-	for i, dstManifest := range dstManifests {
-		old := newIndex.Manifests[i]
-		new := dstManifest.Descriptor()
-		new.Annotations = old.Annotations
-		new.Platform = old.Platform
-		newIndex.Manifests[i] = new
-	}
-	return uploadManifest(dst, newIndex)
+	markedIndex := c.comparer.MarkSource(uploadIndex, srcIndex.Descriptor().Digest)
+	return uploadManifest(dst, markedIndex)
 }
