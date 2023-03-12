@@ -12,26 +12,60 @@ import (
 // Spec represents a single request to copy a particular source image to a
 // particular destination.
 type Spec struct {
-	Src image.Image
-	Dst image.Image
+	Src       image.Image
+	Dst       image.Image
+	Transform Transform
 }
 
 func (s Spec) toKey() specKey {
-	return specKey(s)
+	return specKey{
+		Src:       s.Src,
+		Dst:       s.Dst,
+		Transform: s.Transform.toKey(),
+	}
 }
 
-type specKey struct {
-	Src image.Image
-	Dst image.Image
+// Transform represents an optional set of transformations to perform while
+// mirroring a source image to a destination.
+type Transform struct {
+	SelectPlatforms struct{}
+}
+
+func (t Transform) toKey() transformKey {
+	return transformKey{
+		SelectPlatforms: stringListKey(""),
+	}
 }
 
 type requireComparable[K comparable] struct{}
 
 var _ requireComparable[specKey]
 
-func (k specKey) ToSpec() Spec {
-	return Spec(k)
+type specKey struct {
+	Src       image.Image
+	Dst       image.Image
+	Transform transformKey
 }
+
+func (k specKey) ToSpec() Spec {
+	return Spec{
+		Src:       k.Src,
+		Dst:       k.Dst,
+		Transform: k.Transform.ToSpec(),
+	}
+}
+
+type transformKey struct {
+	SelectPlatforms stringListKey
+}
+
+func (k transformKey) ToSpec() Transform {
+	return Transform{
+		SelectPlatforms: struct{}{},
+	}
+}
+
+type stringListKey string
 
 func keyifyRequests(specs []Spec) ([]specKey, error) {
 	// TODO: Validate that destinations do not contain digests in annotation
