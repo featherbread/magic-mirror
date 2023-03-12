@@ -106,7 +106,7 @@ func (c *copier) handleRequest(_ context.Context, spec Spec) error {
 	dstManifest, err := dstTask.Wait()
 	if err == nil {
 		c.dstIndexer.Submit(spec.Dst.Repository, dstManifest)
-		if bytes.Equal(srcManifest.Encoded(), dstManifest.Encoded()) {
+		if bytes.Equal(srcManifest.Encoded(), dstManifest.Encoded()) && (spec.Transform == Transform{}) {
 			log.Verbosef("[image]\tno change from %s to %s", spec.Src, spec.Dst)
 			return nil
 		}
