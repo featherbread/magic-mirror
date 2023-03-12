@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 )
 
 // NoValue is the canonical empty value type for a queue.
@@ -24,8 +25,9 @@ type Queue[K comparable, T any] struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	tasks   map[K]*Task[T]
-	tasksMu sync.Mutex
+	tasks     map[K]*Task[T]
+	tasksMu   sync.Mutex
+	tasksDone atomic.Uint64
 
 	queue   []K
 	queueMu sync.Mutex
@@ -96,6 +98,18 @@ func (q *Queue[K, T]) GetOrSubmitAll(keys ...K) TaskList[T] {
 		q.scheduleNewKeys(newKeys)
 	}
 	return tasks
+}
+
+// Stats returns information about the number of tasks in the queue:
+//
+//   - done represents the number of tasks whose handlers have finished executing.
+//   - submitted represents the total number of unique tasks in the queue.
+func (q *Queue[K, T]) Stats() (done, submitted uint64) {
+	q.tasksMu.Lock()
+	defer q.tasksMu.Unlock()
+	done = q.tasksDone.Load()
+	submitted = uint64(len(q.tasks))
+	return
 }
 
 // CloseSubmit indicates that no more requests will be submitted to the queue,
@@ -217,6 +231,7 @@ func (q *Queue[K, T]) completeTask(key K) *taskContext {
 
 	task.value, task.err = q.handle(ctx, key)
 	close(task.done)
+	q.tasksDone.Add(1)
 
 	return taskCtx
 }

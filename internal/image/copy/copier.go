@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	mapset "github.com/deckarep/golang-set/v2"
 
@@ -66,6 +67,8 @@ type Copier struct {
 	platforms    *platformCopier
 	dstManifests *manifestCache
 	dstIndexer   *blobIndexer
+
+	statsTimer *time.Timer
 }
 
 func NewCopier(workers int, compareMode CompareMode) *Copier {
@@ -85,6 +88,7 @@ func NewCopier(workers int, compareMode CompareMode) *Copier {
 		dstIndexer:   dstIndexer,
 	}
 	c.Queue = work.NewQueue(0, work.NoValueHandler(c.handleRequest))
+	c.statsTimer = time.AfterFunc(statsInterval, c.printStats)
 	return c
 }
 
@@ -110,6 +114,23 @@ func (c *Copier) CloseSubmit() {
 	c.srcManifests.CloseSubmit()
 	c.dstManifests.CloseSubmit()
 	c.blobs.CloseSubmit()
+}
+
+const statsInterval = 5 * time.Second
+
+func (c *Copier) printStats() {
+	var (
+		blobsDone, blobsTotal         = c.blobs.Stats()
+		platformsDone, platformsTotal = c.platforms.Stats()
+		imagesDone, imagesTotal       = c.Queue.Stats()
+	)
+	log.Printf(
+		"[stats]\tblobs: %d of %d copied; platforms: %d of %d copied; images: %d of %d copied",
+		blobsDone, blobsTotal,
+		platformsDone, platformsTotal,
+		imagesDone, imagesTotal,
+	)
+	c.statsTimer.Reset(statsInterval)
 }
 
 func (c *Copier) handleRequest(_ context.Context, req Request) error {
