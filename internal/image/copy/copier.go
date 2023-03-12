@@ -81,7 +81,7 @@ func (c *copier) printStats() {
 		imagesDone, imagesTotal       = c.queue.Stats()
 	)
 	log.Printf(
-		"[stats] blobs: %d of %d copied; platforms: %d of %d mirrored; images: %d of %d in sync",
+		"[stats] blobs: %d of %d copied; platforms: %d of %d copied; images: %d of %d in sync",
 		blobsDone, blobsTotal,
 		platformsDone, platformsTotal,
 		imagesDone, imagesTotal,
