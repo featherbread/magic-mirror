@@ -14,7 +14,7 @@ import (
 // provided copy specs, using the provided concurrency for each component of the
 // overall operation.
 func CopyAll(concurrency int, compareMode CompareMode, specs ...Spec) error {
-	keys, err := keyifyRequests(specs)
+	keys, err := coalesceRequests(specs)
 	if err != nil {
 		return err
 	}
@@ -24,7 +24,7 @@ func CopyAll(concurrency int, compareMode CompareMode, specs ...Spec) error {
 }
 
 type copier struct {
-	queue *work.Queue[specKey, work.NoValue]
+	queue *work.Queue[Spec, work.NoValue]
 
 	comparer     comparer
 	blobs        *blobCopier
@@ -57,8 +57,8 @@ func newCopier(workers int, compareMode CompareMode) *copier {
 	return c
 }
 
-func (c *copier) CopyAll(keys ...specKey) error {
-	_, err := c.queue.GetOrSubmitAll(keys...).Wait()
+func (c *copier) CopyAll(specs ...Spec) error {
+	_, err := c.queue.GetOrSubmitAll(specs...).Wait()
 	c.printStats()
 	return err
 }
@@ -91,11 +91,11 @@ func (c *copier) printStats() {
 	c.statsTimer.Reset(statsInterval)
 }
 
-func (c *copier) handleRequest(_ context.Context, req specKey) error {
-	log.Verbosef("[image]\tstarting copy from %s to %s", req.Src, req.Dst)
+func (c *copier) handleRequest(_ context.Context, spec Spec) error {
+	log.Verbosef("[image]\tstarting copy from %s to %s", spec.Src, spec.Dst)
 
-	srcTask := c.srcManifests.GetOrSubmit(req.Src)
-	dstTask := c.dstManifests.GetOrSubmit(req.Dst)
+	srcTask := c.srcManifests.GetOrSubmit(spec.Src)
+	dstTask := c.dstManifests.GetOrSubmit(spec.Dst)
 
 	srcManifest, err := srcTask.Wait()
 	if err != nil {
@@ -104,9 +104,9 @@ func (c *copier) handleRequest(_ context.Context, req specKey) error {
 
 	dstManifest, err := dstTask.Wait()
 	if err == nil {
-		c.dstIndexer.Submit(req.Dst.Repository, dstManifest)
+		c.dstIndexer.Submit(spec.Dst.Repository, dstManifest)
 		if c.comparer.IsMirrored(srcManifest, dstManifest) {
-			log.Verbosef("[image]\tno change from %s to %s", req.Src, req.Dst)
+			log.Verbosef("[image]\tno change from %s to %s", spec.Src, spec.Dst)
 			return nil
 		}
 	}
@@ -114,17 +114,17 @@ func (c *copier) handleRequest(_ context.Context, req specKey) error {
 	srcMediaType := srcManifest.GetMediaType()
 	switch {
 	case srcMediaType.IsIndex():
-		err = c.copyIndex(srcManifest.(image.Index), req.Src, req.Dst)
+		err = c.copyIndex(srcManifest.(image.Index), spec.Src, spec.Dst)
 	case srcMediaType.IsManifest():
-		_, err = c.platforms.Copy(req.Src, req.Dst)
+		_, err = c.platforms.Copy(spec.Src, spec.Dst)
 	default:
-		err = fmt.Errorf("unknown manifest type for %s: %s", req.Src, srcMediaType)
+		err = fmt.Errorf("unknown manifest type for %s: %s", spec.Src, srcMediaType)
 	}
 	if err != nil {
 		return err
 	}
 
-	log.Verbosef("[image]\tfully mirrored %s to %s", req.Src, req.Dst)
+	log.Verbosef("[image]\tfully mirrored %s to %s", spec.Src, spec.Dst)
 	return nil
 }
 

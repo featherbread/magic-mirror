@@ -28,9 +28,7 @@ type Transform struct {
 	LimitPlatforms stringkeyed.Set `json:"limitPlatforms,omitempty"`
 }
 
-type specKey Spec // TODO: Left over from previous implementation, consider removing.
-
-func keyifyRequests(specs []Spec) ([]specKey, error) {
+func coalesceRequests(specs []Spec) ([]Spec, error) {
 	// TODO: Validate that destinations do not contain digests in annotation
 	// comparison mode.
 
@@ -48,18 +46,17 @@ func keyifyRequests(specs []Spec) ([]specKey, error) {
 		}
 	}
 
-	coalesced := make([]specKey, 0, len(specs))
-	requestsByDst := make(map[image.Image]specKey)
-	for _, currentSpec := range specs {
-		currentKey := specKey(currentSpec)
-		previousKey, ok := requestsByDst[currentSpec.Dst]
+	coalesced := make([]Spec, 0, len(specs))
+	requestsByDst := make(map[image.Image]Spec)
+	for _, current := range specs {
+		previous, ok := requestsByDst[current.Dst]
 		if !ok {
-			coalesced = append(coalesced, currentKey)
-			requestsByDst[currentSpec.Dst] = currentKey
+			coalesced = append(coalesced, current)
+			requestsByDst[current.Dst] = current
 			continue
 		}
-		if previousKey != currentKey {
-			errs = append(errs, fmt.Errorf("%s requests inconsistent copies from %s and %s", currentSpec.Dst, currentSpec.Src, previousKey.Src))
+		if previous != current {
+			errs = append(errs, fmt.Errorf("%s requests inconsistent copies from %s and %s", current.Dst, current.Src, previous.Src))
 		}
 	}
 
