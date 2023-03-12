@@ -109,6 +109,7 @@ func (c *Copier) CopyAll(reqs ...Request) error {
 func (c *Copier) CloseSubmit() {
 	// TODO: This is only safe after all Copier tasks are finished.
 	// TODO: There is no way to cleanly stop destination blob indexing.
+	// TODO: Should really stop the stats timer too.
 	c.Queue.CloseSubmit()
 	c.platforms.CloseSubmit()
 	c.srcManifests.CloseSubmit()
@@ -125,7 +126,7 @@ func (c *Copier) printStats() {
 		imagesDone, imagesTotal       = c.Queue.Stats()
 	)
 	log.Printf(
-		"[stats]\tblobs: %d of %d copied; platforms: %d of %d copied; images: %d of %d copied",
+		"[stats]\tblobs: %d of %d copied; platforms: %d of %d mirrored; images: %d of %d mirrored",
 		blobsDone, blobsTotal,
 		platformsDone, platformsTotal,
 		imagesDone, imagesTotal,
