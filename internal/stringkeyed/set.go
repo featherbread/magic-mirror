@@ -30,6 +30,13 @@ func (s *Set) Add(elems ...string) {
 	s.joined = strings.Join(all, unitSeparator)
 }
 
+func (s Set) Len() int {
+	if len(s.joined) == 0 {
+		return 0
+	}
+	return 1 + strings.Count(s.joined, unitSeparator)
+}
+
 func (s Set) ToSlice() []string {
 	if len(s.joined) == 0 {
 		return nil

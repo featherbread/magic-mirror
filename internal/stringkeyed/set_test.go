@@ -8,25 +8,37 @@ import (
 )
 
 func TestSet(t *testing.T) {
-	want := []string{
-		"a",
-		"one \u001f test",
-		"z",
+	testCases := []struct {
+		Description string
+		Elements    []string
+	}{
+		{
+			Description: "empty set",
+			Elements:    nil,
+		},
+		{
+			Description: "one element",
+			Elements:    []string{"one"},
+		},
+		{
+			Description: "multiple elements including separator",
+			Elements:    []string{"a", "one \u001f test", "z"},
+		},
 	}
+	for _, tc := range testCases {
+		t.Run(tc.Description, func(t *testing.T) {
+			var s Set
+			s.Add(tc.Elements...)
 
-	var s Set
-	s.Add(want...)
-	got := s.ToSlice()
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("got back a different slice than was put in (-want +got):\n%s", diff)
-	}
-}
+			if s.Len() != len(tc.Elements) {
+				t.Errorf("incorrect length: got %d, want %d", s.Len(), len(tc.Elements))
+			}
 
-func TestEmptySet(t *testing.T) {
-	var s Set
-	got := s.ToSlice()
-	if len(got) > 0 {
-		t.Errorf("got elements from an empty set: %#v", got)
+			got := s.ToSlice()
+			if diff := cmp.Diff(tc.Elements, got); diff != "" {
+				t.Errorf("got back different elements than put in (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
