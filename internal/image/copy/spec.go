@@ -1,10 +1,13 @@
 package copy
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
+	"github.com/containerd/containerd/platforms"
 	mapset "github.com/deckarep/golang-set/v2"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/stringkeyed"
@@ -25,7 +28,34 @@ type Transform struct {
 	// source image to those listed. If it is empty, all platforms from the source
 	// image will be copied. If the source image is a single-platform image, this
 	// setting will be ignored and the image will be copied as-is.
-	LimitPlatforms stringkeyed.Set `json:"limitPlatforms,omitempty"`
+	LimitPlatforms platformSet `json:"limitPlatforms,omitempty"`
+}
+
+type platformSet struct {
+	stringkeyed.Set
+}
+
+func (ps platformSet) ToPlatforms() []v1.Platform {
+	rawPlatforms := ps.ToSlice()
+	result := make([]v1.Platform, len(rawPlatforms))
+	for i, rawPlatform := range rawPlatforms {
+		result[i] = platforms.MustParse(rawPlatform)
+	}
+	return result
+}
+
+func (ps *platformSet) UnmarshalJSON(b []byte) error {
+	var raw stringkeyed.Set
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	for _, rawPlatform := range raw.ToSlice() {
+		if _, err := platforms.Parse(rawPlatform); err != nil {
+			return err
+		}
+	}
+	ps.Set = raw
+	return nil
 }
 
 func coalesceRequests(specs []Spec) ([]Spec, error) {
