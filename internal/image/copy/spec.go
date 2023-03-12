@@ -59,20 +59,21 @@ func (ps *platformSet) UnmarshalJSON(b []byte) error {
 }
 
 func coalesceRequests(specs []Spec) ([]Spec, error) {
-	// TODO: Validate that destinations do not contain digests in annotation
-	// comparison mode.
-
-	// TODO: Validate that source and destination digests do not mismatch.
-
 	var errs []error
 
 	srcs := mapset.NewThreadUnsafeSet[image.Image]()
-	for _, req := range specs {
-		srcs.Add(req.Src)
+	for _, spec := range specs {
+		srcs.Add(spec.Src)
 	}
-	for _, req := range specs {
-		if srcs.Contains(req.Dst) {
-			errs = append(errs, fmt.Errorf("%s is both a source and a destination", req.Dst))
+	for _, spec := range specs {
+		if srcs.Contains(spec.Dst) {
+			errs = append(errs, fmt.Errorf("%s is both a source and a destination", spec.Dst))
+		}
+		if spec.Dst.Digest != "" && spec.Dst.Digest != spec.Src.Digest {
+			errs = append(errs, fmt.Errorf("explicit digest on destination %s is inconsistent with source %s", spec.Dst, spec.Src))
+		}
+		if spec.Dst.Digest != "" && (spec.Transform != Transform{}) {
+			errs = append(errs, fmt.Errorf("destination %s has an explicit digest, but also requests transforms", spec.Dst))
 		}
 	}
 
@@ -86,7 +87,7 @@ func coalesceRequests(specs []Spec) ([]Spec, error) {
 			continue
 		}
 		if previous != current {
-			errs = append(errs, fmt.Errorf("%s requests inconsistent copies from %s and %s", current.Dst, current.Src, previous.Src))
+			errs = append(errs, fmt.Errorf("destination %s requests inconsistent copies from %s and %s", current.Dst, current.Src, previous.Src))
 		}
 	}
 
