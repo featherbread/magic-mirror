@@ -16,7 +16,10 @@
 
 {
   "src": "ghcr.io/ahamlinman/hypcast:latest",
-  "dst": "localhost:5000/alsoimported/hypcast:latest"
+  "dst": "localhost:5000/alsoimported/hypcast:latest",
+  "transform": {
+    "limitPlatforms": ["linux/amd64"]
+  }
 }
 
 [
