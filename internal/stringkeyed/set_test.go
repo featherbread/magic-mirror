@@ -2,6 +2,7 @@ package stringkeyed
 
 import (
 	"encoding/json"
+	"math/rand"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -21,22 +22,37 @@ func TestSet(t *testing.T) {
 			Elements:    []string{"one"},
 		},
 		{
-			Description: "multiple elements including separator",
-			Elements:    []string{"a", "one \u001f test", "z"},
+			Description: "multiple normal elements",
+			Elements:    []string{"one", "three", "two"},
+		},
+		{
+			Description: "multiple elements including controls",
+			Elements:    []string{"\u000e x", "\u000e y", "a \u000e b", "p \u001f q", "z"},
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.Description, func(t *testing.T) {
-			var s Set
-			s.Add(tc.Elements...)
-
-			if s.Len() != len(tc.Elements) {
-				t.Errorf("incorrect length: got %d, want %d", s.Len(), len(tc.Elements))
+			elements := make([]string, len(tc.Elements))
+			copy(elements, tc.Elements)
+			shuffleElements := func() {
+				rand.Shuffle(len(elements), func(i, j int) { elements[i], elements[j] = elements[j], elements[i] })
 			}
+			shuffleElements()
+
+			var s Set
+			s.Add(elements...)
+			t.Logf("encoded set: %q", s.joined)
 
 			got := s.ToSlice()
 			if diff := cmp.Diff(tc.Elements, got); diff != "" {
 				t.Errorf("got back different elements than put in (-want +got):\n%s", diff)
+			}
+
+			var x Set
+			shuffleElements()
+			x.Add(elements...)
+			if s != x {
+				t.Errorf("sets with the same content compared unequal: %q vs. %q", s.joined, x.joined)
 			}
 		})
 	}

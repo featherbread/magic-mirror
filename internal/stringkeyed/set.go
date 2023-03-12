@@ -10,18 +10,32 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-const unitSeparator = "\u001f"
+const (
+	shiftOut      = "\u000e"
+	unitSeparator = "\u001f"
+)
 
 type assertComparable[T comparable] struct{}
 
 var _ assertComparable[Set]
 
-// Set is a set of strings that is encoded internally as a Go comparable value.
-// The zero value is a valid and empty set.
+// Set is a set of strings that is comparable with == and !=. The zero value is
+// a valid and empty set.
 type Set struct {
+	// The internal representation of a Set is formed by sorting its raw elements,
+	// encoding each one, and concatenating them with the ASCII Unit Separator
+	// character U+001F.
+	//
+	// The per-element encoding has two forms. If the encoded element begins with
+	// the ASCII Shift Out character U+000E, the remaining characters of the
+	// encoded element are the Ascii85 encoding of the original raw element.
+	// Otherwise, the encoded element is equivalent to the original raw element.
 	joined string
 }
 
+// Add adds the provided elements to s if it does not already contain them. In
+// other words, it makes s the union of the elements already in s and the
+// elements provided.
 func (s *Set) Add(elems ...string) {
 	all := append(s.ToSlice(), elems...)
 	slices.Sort(all)
@@ -30,13 +44,7 @@ func (s *Set) Add(elems ...string) {
 	s.joined = strings.Join(all, unitSeparator)
 }
 
-func (s Set) Len() int {
-	if len(s.joined) == 0 {
-		return 0
-	}
-	return 1 + strings.Count(s.joined, unitSeparator)
-}
-
+// ToSlice returns a sorted slice of the elements in s.
 func (s Set) ToSlice() []string {
 	if len(s.joined) == 0 {
 		return nil
@@ -65,23 +73,27 @@ func (s *Set) UnmarshalJSON(b []byte) error {
 }
 
 func encodeAll(elems []string) {
-	// TODO: There is probably a more efficient way to do this.
 	var builder strings.Builder
-	for i := range elems {
-		enc := ascii85.NewEncoder(&builder)
-		enc.Write([]byte(elems[i]))
-		enc.Close()
-		elems[i] = builder.String()
-		builder.Reset()
+	for i, elem := range elems {
+		if strings.Contains(elem, unitSeparator) || strings.HasPrefix(elem, shiftOut) {
+			builder.WriteString(shiftOut)
+			enc := ascii85.NewEncoder(&builder)
+			enc.Write([]byte(elem))
+			enc.Close()
+			elems[i] = builder.String()
+			builder.Reset()
+		}
 	}
 }
 
 func decodeAll(elems []string) {
 	var builder strings.Builder
-	for i := range elems {
-		dec := ascii85.NewDecoder(strings.NewReader(elems[i]))
-		io.Copy(&builder, dec)
-		elems[i] = builder.String()
-		builder.Reset()
+	for i, elem := range elems {
+		if strings.HasPrefix(elem, shiftOut) {
+			dec := ascii85.NewDecoder(strings.NewReader(elem[1:]))
+			io.Copy(&builder, dec)
+			elems[i] = builder.String()
+			builder.Reset()
+		}
 	}
 }
