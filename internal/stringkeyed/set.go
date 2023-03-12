@@ -75,6 +75,12 @@ func (s *Set) UnmarshalJSON(b []byte) error {
 func encodeAll(elems []string) {
 	var builder strings.Builder
 	for i, elem := range elems {
+		// Note that the per-element encoding is defined only in terms of the final
+		// encoded form, so we can be flexible about when we choose to encode. For
+		// now, we only encode in the two cases where the properties of the encoding
+		// absolutely require it: when the raw element contains a Unit Separator
+		// (which conflicts with the higher-level Set representation) or starts with
+		// a Shift Out (which conflicts with the Ascii85 marker in the encoding).
 		if strings.Contains(elem, unitSeparator) || strings.HasPrefix(elem, shiftOut) {
 			builder.WriteString(shiftOut)
 			enc := ascii85.NewEncoder(&builder)
