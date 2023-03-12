@@ -73,7 +73,6 @@ func (s *Set) UnmarshalJSON(b []byte) error {
 }
 
 func encodeAll(elems []string) {
-	var builder strings.Builder
 	for i, elem := range elems {
 		// Note that the per-element encoding is defined only in terms of the final
 		// encoded form, so we can be flexible about when we choose to encode. For
@@ -82,12 +81,9 @@ func encodeAll(elems []string) {
 		// (which conflicts with the higher-level Set representation) or starts with
 		// a Shift Out (which conflicts with the Ascii85 marker in the encoding).
 		if strings.Contains(elem, unitSeparator) || strings.HasPrefix(elem, shiftOut) {
-			builder.WriteString(shiftOut)
-			enc := ascii85.NewEncoder(&builder)
-			enc.Write([]byte(elem))
-			enc.Close()
-			elems[i] = builder.String()
-			builder.Reset()
+			encoded := make([]byte, ascii85.MaxEncodedLen(len(elem)))
+			len := ascii85.Encode(encoded, []byte(elem))
+			elems[i] = shiftOut + string(encoded[:len])
 		}
 	}
 }

@@ -27,7 +27,18 @@ func TestSet(t *testing.T) {
 		},
 		{
 			Description: "multiple elements including controls",
-			Elements:    []string{"\u000e x", "\u000e y", "a \u000e b", "p \u001f q", "z"},
+			Elements: []string{
+				"\u000e x",
+				"\u000e y",
+				"\u001f",
+				"a \u000e b",
+				"p \u001f ",
+				"p \u001f q",
+				"p \u001f qq",
+				"p \u001f qqq",
+				"p \u001f qqqq",
+				"z",
+			},
 		},
 	}
 	for _, tc := range testCases {
