@@ -2,6 +2,8 @@ package stringkeyed
 
 import (
 	"encoding/ascii85"
+	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 
@@ -35,6 +37,24 @@ func (s Set) ToSlice() []string {
 	all := strings.Split(s.joined, unitSeparator)
 	decodeAll(all)
 	return all
+}
+
+func (s Set) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.ToSlice())
+}
+
+func (s *Set) UnmarshalJSON(b []byte) error {
+	var elems []string
+	if err := json.Unmarshal(b, &elems); err != nil {
+		return err
+	}
+	slices.Sort(elems)
+	if len(slices.Compact(elems)) < len(elems) {
+		return errors.New("cannot unmarshal duplicate elements in a set")
+	}
+	*s = Set{}
+	s.Add(elems...)
+	return nil
 }
 
 func encodeAll(elems []string) {
