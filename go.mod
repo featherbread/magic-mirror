@@ -9,6 +9,7 @@ require (
 	github.com/mitchellh/copystructure v1.2.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc2
+	golang.org/x/exp v0.0.0-20230310171629-522b1b587ee0
 )
 
 require (
