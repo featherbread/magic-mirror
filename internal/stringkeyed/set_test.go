@@ -31,6 +31,7 @@ func TestSet(t *testing.T) {
 				"\u000e x",
 				"\u000e y",
 				"\u001f",
+				"\u001fabc\x00\x00\x00\x00x",
 				"a \u000e b",
 				"p \u001f ",
 				"p \u001f q",
