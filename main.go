@@ -6,6 +6,7 @@ import (
 	"flag"
 	"io"
 	"os"
+	"time"
 
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/image/copy"
@@ -21,8 +22,10 @@ var (
 func main() {
 	flag.Parse()
 
-	var specReader io.Reader = os.Stdin
-	if flag.NArg() >= 1 {
+	var specReader io.Reader
+	if flag.NArg() == 0 {
+		specReader = newStdinWarningReader()
+	} else {
 		specFile, err := os.Open(flag.Arg(0))
 		if err != nil {
 			log.Printf("[main] cannot open %s: %v", os.Args[1], err)
@@ -31,7 +34,6 @@ func main() {
 		defer specFile.Close()
 		specReader = specFile
 	}
-
 	requests, err := readRequests(specReader)
 	if err != nil {
 		log.Printf("[main] invalid copy spec: %v", err)
@@ -111,4 +113,26 @@ func readRequestSpecs(decoder *json.Decoder) ([]requestSpec, error) {
 	}
 
 	return nil, errors.Join(sliceErr, valueErr)
+}
+
+type stdinWarningReader struct {
+	*time.Timer
+}
+
+func newStdinWarningReader() *stdinWarningReader {
+	return &stdinWarningReader{
+		Timer: time.AfterFunc(2*time.Second, func() {
+			log.Printf("[main] still waiting to read JSON copy specs from standard input")
+		}),
+	}
+}
+
+func (r *stdinWarningReader) Read(b []byte) (n int, err error) {
+	n, err = os.Stdin.Read(b)
+	r.Timer.Stop()
+	return
+}
+
+func (r *stdinWarningReader) Close() error {
+	return os.Stdin.Close()
 }
