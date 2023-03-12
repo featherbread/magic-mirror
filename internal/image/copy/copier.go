@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/containerd/containerd/platforms"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/log"
 	"go.alexhamlin.co/magic-mirror/internal/work"
@@ -134,16 +137,6 @@ func (c *copier) copyIndex(spec Spec, srcIndex image.Index) error {
 		return err
 	}
 
-	srcDescriptors := srcIndex.Parsed().Manifests
-	imgs := make([]image.Image, len(srcDescriptors))
-	for i, m := range srcDescriptors {
-		imgs[i] = image.Image{Repository: src.Repository, Digest: m.Digest}
-	}
-	dstManifests, err := c.platforms.CopyAll(dst.Repository, imgs...)
-	if err != nil {
-		return err
-	}
-
 	var (
 		uploadIndex    = srcIndex
 		dstIndex       image.ParsedIndex
@@ -155,15 +148,51 @@ func (c *copier) copyIndex(spec Spec, srcIndex image.Index) error {
 			dstIndexCopied = true
 		}
 	}
-	for i, dstManifest := range dstManifests {
-		desc := dstManifest.Descriptor()
-		if desc.Digest != srcDescriptors[i].Digest {
-			ensureNewDstIndex()
-			dstIndex.Manifests[i] = desc
-			dstIndex.Manifests[i].Annotations = srcDescriptors[i].Annotations
-			dstIndex.Manifests[i].Platform = srcDescriptors[i].Platform
+
+	selectedDescriptors := srcIndex.Parsed().Manifests
+	limitPlatforms := spec.Transform.LimitPlatforms.ToPlatforms()
+	if len(limitPlatforms) > 0 {
+		ensureNewDstIndex()
+		selectedDescriptors = []v1.Descriptor{}
+		matcher := platforms.Any(limitPlatforms...)
+		for _, descriptor := range dstIndex.Manifests {
+			if matcher.Match(*descriptor.Platform) {
+				selectedDescriptors = append(selectedDescriptors, descriptor)
+			}
+		}
+		dstIndex.Manifests = selectedDescriptors
+	}
+
+	imgsToCopy := make([]image.Image, len(selectedDescriptors))
+	for i, descriptor := range selectedDescriptors {
+		imgsToCopy[i] = image.Image{
+			Repository: src.Repository,
+			Digest:     descriptor.Digest,
 		}
 	}
+
+	if len(imgsToCopy) == 0 {
+		return fmt.Errorf("could not find any requested platforms in %s", src)
+	}
+	if len(imgsToCopy) == 1 {
+		_, err := c.platforms.Copy(imgsToCopy[0], dst)
+		return err
+	}
+
+	dstManifests, err := c.platforms.CopyAll(dst.Repository, imgsToCopy...)
+	if err != nil {
+		return err
+	}
+	for i, dstManifest := range dstManifests {
+		desc := dstManifest.Descriptor()
+		if desc.Digest != selectedDescriptors[i].Digest {
+			ensureNewDstIndex()
+			dstIndex.Manifests[i] = desc
+			dstIndex.Manifests[i].Annotations = selectedDescriptors[i].Annotations
+			dstIndex.Manifests[i].Platform = selectedDescriptors[i].Platform
+		}
+	}
+
 	if dstIndexCopied {
 		uploadIndex = dstIndex
 	}
