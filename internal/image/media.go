@@ -26,3 +26,11 @@ func (mt MediaType) IsIndex() bool {
 func (mt MediaType) IsManifest() bool {
 	return mt == OCIManifestMediaType || mt == DockerManifestMediaType
 }
+
+func (mt MediaType) IsOCI() bool {
+	return mt == OCIIndexMediaType || mt == OCIManifestMediaType
+}
+
+func (mt MediaType) IsDocker() bool {
+	return mt == DockerIndexMediaType || mt == DockerManifestMediaType
+}
