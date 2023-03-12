@@ -3,6 +3,7 @@ package image
 import (
 	"encoding/json"
 
+	"github.com/mitchellh/copystructure"
 	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -12,6 +13,10 @@ type ManifestKind interface {
 	Encoded() json.RawMessage
 	GetMediaType() MediaType
 	Validate() error
+}
+
+func DeepCopy(src ManifestKind) ManifestKind {
+	return copystructure.Must(copystructure.Copy(src)).(ManifestKind)
 }
 
 type Index interface {

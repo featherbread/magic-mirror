@@ -164,16 +164,28 @@ func (c *Copier) copyIndex(srcIndex image.Index, src, dst image.Image) error {
 		return err
 	}
 
-	uploadIndex := srcIndex
-	dstIndex := srcIndex.Parsed() // TODO: This is racy when the same index is mirrored more than once.
+	var (
+		uploadIndex    = srcIndex
+		dstIndex       image.ParsedIndex
+		dstIndexCopied bool
+	)
+	ensureNewDstIndex := func() {
+		if !dstIndexCopied {
+			dstIndex = image.DeepCopy(srcIndex).(image.Index).Parsed()
+			dstIndexCopied = true
+		}
+	}
 	for i, dstManifest := range dstManifests {
 		desc := dstManifest.Descriptor()
 		if desc.Digest != srcDescriptors[i].Digest {
-			uploadIndex = dstIndex
+			ensureNewDstIndex()
 			dstIndex.Manifests[i] = desc
 			dstIndex.Manifests[i].Annotations = srcDescriptors[i].Annotations
 			dstIndex.Manifests[i].Platform = srcDescriptors[i].Platform
 		}
+	}
+	if dstIndexCopied {
+		uploadIndex = dstIndex
 	}
 
 	markedIndex := c.comparer.MarkSource(uploadIndex, srcIndex.Descriptor().Digest)

@@ -20,10 +20,10 @@ type comparer interface {
 	// up-to-date mirroring of the image represented by the source manifest.
 	IsMirrored(src, dst image.ManifestKind) bool
 
-	// MarkSource updates a destination manifest if necessary to indicate that it
-	// mirrors the manifest with the provided source digest. It may modify
-	// elements of dst; callers should treat dst as logically invalid after
-	// MarkSource returns.
+	// MarkSource returns a destination manifest that is marked as necessary to
+	// indicate that it mirrors the manifest with the provided source digest.
+	//
+	// Implementations of MarkSource must not modify dst in place.
 	MarkSource(dst image.ManifestKind, src digest.Digest) image.ManifestKind
 }
 
@@ -75,16 +75,16 @@ func (c compareAnnotation) MarkSource(dst image.ManifestKind, src digest.Digest)
 	mediaType := dst.GetMediaType()
 	switch {
 	case mediaType.IsIndex():
-		return c.patchIndex(dst.(image.Index), src)
+		return c.markIndex(dst.(image.Index), src)
 	case mediaType.IsManifest():
-		return c.patchManifest(dst.(image.Manifest), src)
+		return c.markManifest(dst.(image.Manifest), src)
 	default:
 		return dst
 	}
 }
 
-func (compareAnnotation) patchIndex(dst image.Index, src digest.Digest) image.ManifestKind {
-	patched := dst.Parsed()
+func (compareAnnotation) markIndex(dst image.Index, src digest.Digest) image.ManifestKind {
+	patched := image.DeepCopy(dst.Parsed()).(image.Index).Parsed()
 	patched.MediaType = string(image.OCIIndexMediaType)
 	if patched.Annotations == nil {
 		patched.Annotations = make(map[string]string)
@@ -93,8 +93,8 @@ func (compareAnnotation) patchIndex(dst image.Index, src digest.Digest) image.Ma
 	return patched
 }
 
-func (compareAnnotation) patchManifest(dst image.Manifest, src digest.Digest) image.ManifestKind {
-	patched := dst.Parsed()
+func (compareAnnotation) markManifest(dst image.Manifest, src digest.Digest) image.ManifestKind {
+	patched := image.DeepCopy(dst.Parsed()).(image.Manifest).Parsed()
 	patched.MediaType = string(image.OCIManifestMediaType)
 	if patched.Annotations == nil {
 		patched.Annotations = make(map[string]string)
