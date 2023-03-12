@@ -10,7 +10,17 @@ import (
 	"go.alexhamlin.co/magic-mirror/internal/work"
 )
 
-type Copier struct {
+func CopyAll(workers int, compareMode CompareMode, specs ...Spec) error {
+	keys, err := keyifyRequests(specs)
+	if err != nil {
+		return err
+	}
+	copier := newCopier(workers, compareMode)
+	defer copier.CloseSubmit()
+	return copier.CopyAll(keys...)
+}
+
+type copier struct {
 	queue *work.Queue[specKey, work.NoValue]
 
 	comparer     comparer
@@ -23,7 +33,7 @@ type Copier struct {
 	statsTimer *time.Timer
 }
 
-func NewCopier(workers int, compareMode CompareMode) *Copier {
+func newCopier(workers int, compareMode CompareMode) *copier {
 	comparer := comparers[compareMode]
 	blobs := newBlobCopier(workers)
 	srcManifests := newManifestCache(workers)
@@ -31,7 +41,7 @@ func NewCopier(workers int, compareMode CompareMode) *Copier {
 	dstManifests := newManifestCache(workers)
 	dstIndexer := newBlobIndexer(workers, blobs)
 
-	c := &Copier{
+	c := &copier{
 		comparer:     comparer,
 		blobs:        blobs,
 		srcManifests: srcManifests,
@@ -44,17 +54,13 @@ func NewCopier(workers int, compareMode CompareMode) *Copier {
 	return c
 }
 
-func (c *Copier) CopyAll(specs ...Spec) error {
-	keys, err := keyifyRequests(specs)
-	if err != nil {
-		return err
-	}
-	_, err = c.queue.GetOrSubmitAll(keys...).Wait()
+func (c *copier) CopyAll(keys ...specKey) error {
+	_, err := c.queue.GetOrSubmitAll(keys...).Wait()
 	c.printStats()
 	return err
 }
 
-func (c *Copier) CloseSubmit() {
+func (c *copier) CloseSubmit() {
 	// TODO: This is only safe after all Copier tasks are finished.
 	// TODO: There is no way to cleanly stop destination blob indexing.
 	// TODO: Should really stop the stats timer too.
@@ -67,7 +73,7 @@ func (c *Copier) CloseSubmit() {
 
 const statsInterval = 5 * time.Second
 
-func (c *Copier) printStats() {
+func (c *copier) printStats() {
 	var (
 		blobsDone, blobsTotal         = c.blobs.Stats()
 		platformsDone, platformsTotal = c.platforms.Stats()
@@ -82,7 +88,7 @@ func (c *Copier) printStats() {
 	c.statsTimer.Reset(statsInterval)
 }
 
-func (c *Copier) handleRequest(_ context.Context, req specKey) error {
+func (c *copier) handleRequest(_ context.Context, req specKey) error {
 	log.Verbosef("[image]\tstarting copy from %s to %s", req.Src, req.Dst)
 
 	srcTask := c.srcManifests.GetOrSubmit(req.Src)
@@ -119,7 +125,7 @@ func (c *Copier) handleRequest(_ context.Context, req specKey) error {
 	return nil
 }
 
-func (c *Copier) copyIndex(srcIndex image.Index, src, dst image.Image) error {
+func (c *copier) copyIndex(srcIndex image.Index, src, dst image.Image) error {
 	if err := srcIndex.Validate(); err != nil {
 		return err
 	}

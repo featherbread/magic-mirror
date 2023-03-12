@@ -55,10 +55,7 @@ func main() {
 		log.EnableVerbose()
 	}
 
-	copier := copy.NewCopier(*flagConcurrency, compareMode)
-	defer copier.CloseSubmit()
-
-	if err := copier.CopyAll(copySpecs...); err != nil {
+	if err := copy.CopyAll(*flagConcurrency, compareMode, copySpecs...); err != nil {
 		log.Printf("[main] some copies failed:\n%v", err)
 		os.Exit(1)
 	}
