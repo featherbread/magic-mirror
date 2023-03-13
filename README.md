@@ -75,3 +75,53 @@ use Magic Mirror with private registries, even though Magic Mirror does not
 touch the Docker daemon in any way.
 
 [authn docs]: https://pkg.go.dev/github.com/google/go-containerregistry@v0.13.0/pkg/authn#section-readme
+
+## How It Works
+
+To fully understand what Magic Mirror is doing (and in particular the progress
+statistics that it reports every few seconds), it helps to understand how
+container images and registries work under the hood. When you `docker push` an
+image to a registry, the registry receives two different kinds of objects:
+
+- **Blobs** can be any arbitrary file, like a `.tar.gz` of an image layer or a
+  JSON file containing default entrypoint and environment settings. A key
+  feature of blobs is that you can only download them from a registry when you
+  know the hash of their content (typically SHA-256) in advance.
+- **Manifests** are relatively small JSON files listing the hashes of all of the
+  blobs (filesystem layers and configuration data) that make up a single image.
+  Multi-platform images use a special **index** (or "manifest list") format that
+  instead lists the hashes of the individual manifests for different platforms.
+  Unlike blobs, manifests can be stored and downloaded using human-readable tags
+  in addition to their SHA-256 hashes.
+
+Later on, to `docker pull` an image, the Docker daemon will:
+
+1. Download the **manifest** matching your requested tag.
+2. Check if the manifest is actually an **index**, and if so download the
+   underlying manifest for the current platform.
+3. Download the image configuration and filesystem layers in parallel using the
+   **blob** hashes from the manifest.
+
+Since Magic Mirror works with sets of images instead of a single image at a
+time, it can work on several different parts of a large transfer operation at
+the same time, including:
+
+- Downloading image manifests from source registries to determine which blobs
+  will need to exist in the destination.
+- Downloading image manifests from destination registries, both to compare them
+  with the source manifests to see if the destination is already up to date, and
+  to discover which blobs already exist at the destination.
+- Transferring blobs that a destination repository doesn't already have, either
+  by copying over the network from the source, or by asking the registry to copy
+  blobs that Magic Mirror knows it already has for other images (which will be
+  faster and save network bandwidth).
+- Writing manifests to destination registries as soon as the required blobs are
+  known to exist there.
+
+As Magic Mirror discovers which blobs and platform-specific manifests it will
+need to copy, you may see the total blob and platform counts in the progress
+output continuously increase at the start of the operation and eventually level
+off. Even though Magic Mirror can have copies for many different images in
+flight at the same time, it will try to group blobs and platforms together to
+increase the number of full images that finish copying in the event that things
+get interrupted.
