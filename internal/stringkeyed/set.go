@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	shiftOut      = "\u000e"
-	unitSeparator = "\u001f"
+	shiftOut      = "\x0e"
+	unitSeparator = "\x1f"
 )
 
 type assertComparable[T comparable] struct{}
@@ -24,12 +24,12 @@ var _ assertComparable[Set]
 // a valid and empty set.
 type Set struct {
 	// The internal representation of a Set is formed by sorting its raw elements,
-	// encoding each one, and concatenating them with the ASCII Unit Separator
-	// character U+001F.
+	// encoding each one, and concatenating them with the byte 0x1F (the ASCII
+	// Unit Separator character) as a separator.
 	//
 	// The per-element encoding has two forms. If the encoded element begins with
-	// the ASCII Shift Out character U+000E, the remaining characters of the
-	// encoded element are an Ascii85 encoding of the original raw element.
+	// the byte 0x0E (the ASCII Shift Out character), the remaining characters of
+	// the encoded element are an Ascii85 encoding of the original raw element.
 	// Otherwise, the encoded element is equivalent to the original raw element.
 	joined string
 }
