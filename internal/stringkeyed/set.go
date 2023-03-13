@@ -28,8 +28,8 @@ type Set struct {
 	// Unit Separator character) as a separator.
 	//
 	// The per-element encoding has two forms. If the encoded element begins with
-	// the byte 0x0E (the ASCII Shift Out character), the remaining characters of
-	// the encoded element are an Ascii85 encoding of the original raw element.
+	// the byte 0x0E (the ASCII Shift Out character), the remaining bytes of the
+	// encoded element are an Ascii85 encoding of the original raw element.
 	// Otherwise, the encoded element is equivalent to the original raw element.
 	joined string
 }
