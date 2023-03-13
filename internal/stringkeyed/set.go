@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"golang.org/x/exp/slices"
@@ -28,9 +29,8 @@ type Set struct {
 	//
 	// The per-element encoding has two forms. If the encoded element begins with
 	// the ASCII Shift Out character U+000E, the remaining characters of the
-	// encoded element are the Ascii85 encoding of the original raw element with
-	// no additional control or whitespace characters. Otherwise, the encoded
-	// element is equivalent to the original raw element.
+	// encoded element are an Ascii85 encoding of the original raw element.
+	// Otherwise, the encoded element is equivalent to the original raw element.
 	joined string
 }
 
@@ -103,27 +103,11 @@ func decodeAll(elems []string) {
 }
 
 func decodeAscii85Element(elem string) string {
-	// We must strip off the Shift Out byte used to mark the Ascii85 encoding.
-	encoded := elem[1:]
-
-	// Ascii85 produces 5 bytes of output for every 4 bytes of input, with two
-	// exceptions: the last block of 5 bytes may be truncated, and runs of 4 zero
-	// bytes are encoded with a single "z". The decoder needs enough space in the
-	// destination slice to handle every input block, including all 4 of the bytes
-	// corresponding to a truncated block at the end. This formula will allocate a
-	// large enough slice as long as the encoding does not contain any extraneous
-	// whitespace characters. These are allowed by Ascii85 itself, but prohibited
-	// by our own specification of the element encoding.
-	zeroExpandedLen := len(encoded) + 4*strings.Count(encoded, "z")
-	blocks := 1 + zeroExpandedLen/5
-	decoded := make([]byte, 4*blocks)
-
-	decodelen, srclen, err := ascii85.Decode(decoded, []byte(encoded), true)
+	var builder strings.Builder
+	encoded := elem[1:] // Strip off the Shift Out byte used to mark the Ascii85 encoding.
+	_, err := io.Copy(&builder, ascii85.NewDecoder(strings.NewReader(encoded)))
 	if err != nil {
 		panic(fmt.Errorf("invalid stringkeyed.Set encoding: %q: %v", elem, err))
 	}
-	if srclen < len(encoded) {
-		panic(fmt.Errorf("stringkeyed.Set element not fully decoded: %q", elem))
-	}
-	return string(decoded[:decodelen])
+	return builder.String()
 }
