@@ -55,6 +55,10 @@ func TestSet(t *testing.T) {
 			s.Add(elements...)
 			t.Logf("encoded set: %q", s.joined)
 
+			if s.Cardinality() != len(elements) {
+				t.Errorf("incorrect cardinality: got %d, want %d", s.Cardinality(), len(elements))
+			}
+
 			got := s.ToSlice()
 			if diff := cmp.Diff(tc.Elements, got); diff != "" {
 				t.Errorf("got back different elements than put in (-want +got):\n%s", diff)

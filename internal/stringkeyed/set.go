@@ -45,6 +45,16 @@ func (s *Set) Add(elems ...string) {
 	s.joined = strings.Join(all, unitSeparator)
 }
 
+// Cardinality returns the cardinality of s; that is, the number of elements it
+// contains. It is more efficient than computing the length of the slice
+// returned by ToSlice.
+func (s Set) Cardinality() int {
+	if len(s.joined) == 0 {
+		return 0
+	}
+	return 1 + strings.Count(s.joined, unitSeparator)
+}
+
 // ToSlice returns a sorted slice of the elements in s.
 func (s Set) ToSlice() []string {
 	if len(s.joined) == 0 {
@@ -64,12 +74,12 @@ func (s *Set) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &elems); err != nil {
 		return err
 	}
-	slices.Sort(elems)
-	if len(slices.Compact(elems)) < len(elems) {
+	var newset Set
+	newset.Add(elems...)
+	if newset.Cardinality() < len(elems) {
 		return errors.New("cannot unmarshal duplicate elements in a set")
 	}
-	*s = Set{}
-	s.Add(elems...)
+	*s = newset
 	return nil
 }
 
