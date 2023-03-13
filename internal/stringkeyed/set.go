@@ -31,6 +31,11 @@ type Set struct {
 	// the byte 0x0E (the ASCII Shift Out character), the remaining bytes of the
 	// encoded element are an Ascii85 encoding of the original raw element.
 	// Otherwise, the encoded element is equivalent to the original raw element.
+	//
+	// The representation of a particular set of elements is not guaranteed to
+	// remain stable over time, as the choice to encode a particular element as
+	// raw or Ascii85 may change. This internal representation must not be stored
+	// or transmitted outside of the process that created it.
 	joined string
 }
 
