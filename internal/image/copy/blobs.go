@@ -123,6 +123,7 @@ func (c *blobCopier) copyOneBlob(ctx context.Context, req blobCopyRequest) (err 
 
 	blob, size, err := downloadBlob(sources[0], req.Digest)
 	if err != nil {
+		// TODO: DELETE the upload request to cancel it.
 		return err
 	}
 	defer blob.Close()
