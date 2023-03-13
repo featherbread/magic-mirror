@@ -68,6 +68,8 @@ func TestSet(t *testing.T) {
 			var x Set
 			shuffleElements()
 			x.Add(elements...)
+			shuffleElements()
+			x.Add(elements...)
 			if s != x {
 				t.Errorf("sets with the same content compared unequal: %q vs. %q", s.joined, x.joined)
 			}
