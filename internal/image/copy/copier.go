@@ -39,12 +39,12 @@ type copier struct {
 	statsTimer *time.Timer
 }
 
-func newCopier(workers int) *copier {
-	blobs := newBlobCopier(workers)
-	srcManifests := newManifestCache(workers)
+func newCopier(concurrency int) *copier {
+	blobs := newBlobCopier(concurrency)
+	srcManifests := newManifestCache(concurrency)
 	platforms := newPlatformCopier(srcManifests, blobs)
-	dstManifests := newManifestCache(workers)
-	dstIndexer := newBlobIndexer(workers, blobs)
+	dstManifests := newManifestCache(concurrency)
+	dstIndexer := newBlobIndexer(concurrency, blobs)
 
 	c := &copier{
 		blobs:        blobs,

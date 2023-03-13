@@ -13,12 +13,17 @@ import (
 )
 
 var (
-	flagConcurrency = flag.Int("concurrency", 10, "Number of simultaneous blob and manifest operations")
+	flagConcurrency = flag.Int("concurrency", 10, "Number of concurrent operations for each task")
 	flagVerbose     = flag.Bool("verbose", false, "Enable verbose logging of all operations")
 )
 
 func main() {
 	flag.Parse()
+
+	if *flagConcurrency < 1 {
+		log.Printf("[main] concurrency must be at least 1")
+		os.Exit(2)
+	}
 
 	var specReader io.Reader
 	if flag.NArg() == 0 {

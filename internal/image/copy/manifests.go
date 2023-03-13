@@ -49,9 +49,9 @@ type manifestCache struct {
 	*work.Queue[image.Image, image.ManifestKind]
 }
 
-func newManifestCache(workers int) *manifestCache {
+func newManifestCache(concurrency int) *manifestCache {
 	d := &manifestCache{}
-	d.Queue = work.NewQueue(workers, d.handleRequest)
+	d.Queue = work.NewQueue(concurrency, d.handleRequest)
 	return d
 }
 

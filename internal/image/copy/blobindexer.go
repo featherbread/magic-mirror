@@ -22,10 +22,10 @@ type blobIndexer struct {
 	blobs     *blobCopier
 }
 
-func newBlobIndexer(workers int, blobs *blobCopier) *blobIndexer {
+func newBlobIndexer(concurrency int, blobs *blobCopier) *blobIndexer {
 	return &blobIndexer{
 		indexed:   mapset.NewSet[digest.Digest](),
-		manifests: newManifestCache(workers),
+		manifests: newManifestCache(concurrency),
 		blobs:     blobs,
 	}
 }

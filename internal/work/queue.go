@@ -52,9 +52,9 @@ type Queue[K comparable, T any] struct {
 // NewQueue creates a queue that uses the provided handler function to complete
 // tasks.
 //
-// If workers > 0, the queue will run up to that number of tasks concurrently.
-// If workers <= 0, the queue's concurrency is unbounded.
-func NewQueue[K comparable, T any](workers int, handle Handler[K, T]) *Queue[K, T] {
+// If concurrency > 0, the queue will run up to that number of tasks concurrently.
+// If concurrency <= 0, the queue's concurrency is unbounded.
+func NewQueue[K comparable, T any](concurrency int, handle Handler[K, T]) *Queue[K, T] {
 	ctx, cancel := context.WithCancel(context.TODO())
 	q := &Queue[K, T]{
 		handle: handle,
@@ -62,10 +62,10 @@ func NewQueue[K comparable, T any](workers int, handle Handler[K, T]) *Queue[K, 
 		cancel: cancel, // TODO: Call this somewhere.
 		tasks:  make(map[K]*Task[T]),
 	}
-	if workers > 0 {
-		q.ready = make(chan struct{}, workers)
+	if concurrency > 0 {
+		q.ready = make(chan struct{}, concurrency)
 		q.reattach = make(chan struct{})
-		for i := 0; i < workers; i++ {
+		for i := 0; i < concurrency; i++ {
 			go q.workOnQueue()
 		}
 	}
