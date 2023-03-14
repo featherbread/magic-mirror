@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	pflag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"go.alexhamlin.co/magic-mirror/internal/image/copy"
 	"go.alexhamlin.co/magic-mirror/internal/log"
