@@ -10,6 +10,7 @@ require (
 	github.com/mitchellh/copystructure v1.2.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b
+	github.com/spf13/pflag v1.0.5
 	golang.org/x/exp v0.0.0-20230310171629-522b1b587ee0
 )
 

@@ -59,10 +59,6 @@ func (d *manifestCache) Get(img image.Image) (image.ManifestKind, error) {
 	return d.Queue.GetOrSubmit(img).Wait()
 }
 
-func (d *manifestCache) GetOrSubmit(img image.Image) *work.Task[image.ManifestKind] {
-	return d.Queue.GetOrSubmit(img)
-}
-
 func (d *manifestCache) handleRequest(_ context.Context, img image.Image) (resp image.ManifestKind, err error) {
 	reference := img.Digest.String()
 	if reference == "" {

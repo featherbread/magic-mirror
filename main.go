@@ -3,22 +3,23 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"flag"
 	"io"
 	"os"
 	"time"
+
+	pflag "github.com/spf13/pflag"
 
 	"go.alexhamlin.co/magic-mirror/internal/image/copy"
 	"go.alexhamlin.co/magic-mirror/internal/log"
 )
 
 var (
-	flagConcurrency = flag.Int("concurrency", 10, "Number of concurrent operations for each task")
-	flagVerbose     = flag.Bool("verbose", false, "Enable verbose logging of all operations")
+	flagConcurrency = pflag.Int("concurrency", 10, "Number of concurrent operations for each task")
+	flagVerbose     = pflag.Bool("verbose", false, "Enable verbose logging of all operations")
 )
 
 func main() {
-	flag.Parse()
+	pflag.Parse()
 
 	if *flagConcurrency < 1 {
 		log.Printf("[main] concurrency must be at least 1")
@@ -26,10 +27,10 @@ func main() {
 	}
 
 	var specReader io.Reader
-	if flag.NArg() == 0 {
+	if pflag.NArg() == 0 {
 		specReader = newStdinWarningReader()
 	} else {
-		specFile, err := os.Open(flag.Arg(0))
+		specFile, err := os.Open(pflag.Arg(0))
 		if err != nil {
 			log.Printf("[main] cannot open %s: %v", os.Args[1], err)
 			os.Exit(2)
