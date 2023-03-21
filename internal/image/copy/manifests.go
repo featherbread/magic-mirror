@@ -92,6 +92,16 @@ func (d *manifestCache) handleRequest(_ context.Context, img image.Image) (resp 
 
 	contentType := image.MediaType(downloadResp.Header.Get("Content-Type"))
 	body, err := io.ReadAll(downloadResp.Body)
+
+	if img.Digest != "" {
+		verifier := img.Digest.Verifier()
+		io.Copy(verifier, bytes.NewReader(body))
+		if !verifier.Verified() {
+			err = fmt.Errorf("content of %s does not match specified digest", img)
+			return
+		}
+	}
+
 	switch {
 	case contentType.IsIndex():
 		var index image.RawIndex
