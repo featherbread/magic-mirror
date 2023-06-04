@@ -11,6 +11,13 @@ layers changed since the last copy. It can also perform some lightweight
 transformations during the copy process, such as mirroring only a subset of the
 platforms in a multi-platform source image.
 
+**Magic Mirror is not actively maintained.** While it is not known to have any
+correctness issues (e.g. corrupting the contents of images that it mirrors), it
+is known to have implementation deficiencies that limit its effectiveness in
+certain use cases (for example, treating HTTP 429 responses as hard errors
+rather than backing off and retrying). It is provided in the hope that it may be
+useful as a reference or basis for other work.
+
 ## Usage
 
 ### Copy Specs
