@@ -57,24 +57,46 @@ func (km *KeyMutex[K]) LockDetached(ctx context.Context, key K) (err error) {
 	for {
 		km.chansMu.Lock()
 		ch, ok := km.chans[key]
-		if ok {
-			km.chansMu.Unlock()
-			tryDetach()
-			select {
-			case <-ch:
-				continue
-			case <-ctx.Done():
-				return ctx.Err()
+		if !ok {
+			// We are the only ones currently trying to lock this key, and will
+			// initialize a channel for future waiters to block on.
+			if km.chans == nil {
+				km.chans = make(map[K]chan struct{})
 			}
+			km.chans[key] = make(chan struct{})
+			km.chansMu.Unlock()
+			locked = true
+			return nil
 		}
 
-		if km.chans == nil {
-			km.chans = make(map[K]chan struct{})
-		}
-		km.chans[key] = make(chan struct{})
+		// Someone else currently holds the lock on this key. We'll detach from the
+		// parent queue and start waiting on their channel. At this point, one of
+		// three things can happen:
+		//
+		// 1. Our context expires before the key is unlocked. We break out without
+		//    ever obtaining the lock.
+		//
+		// 2. We enter the `select` before the key is unlocked. The unlocker will
+		//    see that we're waiting and directly pass a single token that grants
+		//    the lock. This limits new channel allocations, and takes advantage of
+		//    whatever mechanisms the Go runtime provides to ensure fairness and
+		//    limit starvation among waiters.
+		//
+		// 3. The key is unlocked before we can enter the `select`. If no other
+		//    waiters are ready to receive a token, the unlocker will close the
+		//    channel and remove it from the map. When this happens, we need to loop
+		//    back and try to create or obtain a fresh channel.
 		km.chansMu.Unlock()
-		locked = true
-		return nil
+		tryDetach()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case _, passed := <-ch:
+			if passed {
+				locked = true
+				return nil
+			}
+		}
 	}
 }
 
@@ -88,6 +110,15 @@ func (km *KeyMutex[K]) Unlock(key K) {
 	if !ok {
 		panic("key is already unlocked")
 	}
-	close(ch)
-	delete(km.chans, key)
+	select {
+	case ch <- struct{}{}:
+		// This is case 2 of 3 in LockDetached: we successfully passed the lock to
+		// another waiter.
+	default:
+		// This is case 3 of 3 in LockDetached: there are no other waiters at this
+		// time. If a waiter got this channel and hasn't yet blocked on it, they'll
+		// need to detect that it's closed and get a new one.
+		close(ch)
+		delete(km.chans, key)
+	}
 }
