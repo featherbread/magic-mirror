@@ -1,9 +1,6 @@
 package copy
 
 import (
-	mapset "github.com/deckarep/golang-set/v2"
-	"github.com/opencontainers/go-digest"
-
 	"go.alexhamlin.co/magic-mirror/internal/image"
 	"go.alexhamlin.co/magic-mirror/internal/log"
 )
@@ -17,14 +14,12 @@ import (
 // destination registry. Blob indexing is performed on a best-effort basis even
 // when the image manifest at the destination is up to date.
 type blobIndexer struct {
-	indexed   mapset.Set[digest.Digest]
 	manifests *manifestCache
 	blobs     *blobCopier
 }
 
 func newBlobIndexer(concurrency int, blobs *blobCopier) *blobIndexer {
 	return &blobIndexer{
-		indexed:   mapset.NewSet[digest.Digest](),
 		manifests: newManifestCache(concurrency),
 		blobs:     blobs,
 	}
@@ -32,11 +27,6 @@ func newBlobIndexer(concurrency int, blobs *blobCopier) *blobIndexer {
 
 // Submit begins the process of indexing the provided image.
 func (bi *blobIndexer) Submit(repo image.Repository, manifest image.ManifestKind) {
-	dgst := manifest.Descriptor().Digest
-	if !bi.indexed.Add(dgst) {
-		return
-	}
-
 	manifestType := manifest.GetMediaType()
 	if manifestType.IsIndex() {
 		bi.queueManifestsFromIndex(repo, manifest.(image.Index))
@@ -51,6 +41,7 @@ func (bi *blobIndexer) Submit(repo image.Repository, manifest image.ManifestKind
 	for _, layer := range parsed.Layers {
 		bi.blobs.RegisterSource(layer.Digest, repo)
 	}
+	dgst := manifest.Descriptor().Digest
 	log.Verbosef("[dstindex]\tindexed blobs referenced by %s@%s", repo, dgst)
 }
 
