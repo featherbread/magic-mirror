@@ -11,14 +11,14 @@ func TestQueueBasicUnlimited(t *testing.T) {
 	q := NewQueue(0, func(_ context.Context, x int) (int, error) { return x, nil })
 	defer q.CloseSubmit()
 
-	assertTaskSucceedsWithin[int](t, 2*time.Second, q.GetOrSubmit(42), 42)
+	assertTaskSucceedsWithin(t, 2*time.Second, q.GetOrSubmit(42), 42)
 }
 
 func TestQueueBasicLimited(t *testing.T) {
 	q := NewQueue(1, func(_ context.Context, x int) (int, error) { return x, nil })
 	defer q.CloseSubmit()
 
-	assertTaskSucceedsWithin[int](t, 2*time.Second, q.GetOrSubmit(42), 42)
+	assertTaskSucceedsWithin(t, 2*time.Second, q.GetOrSubmit(42), 42)
 }
 
 func TestQueueDeduplication(t *testing.T) {
@@ -38,19 +38,19 @@ func TestQueueDeduplication(t *testing.T) {
 
 	close(unblock)
 	halfTasks := q.GetOrSubmitAll(keys[:half]...)
-	assertTaskSucceedsWithin[[]int](t, 2*time.Second, halfTasks, keys[:half])
+	assertTaskSucceedsWithin(t, 2*time.Second, halfTasks, keys[:half])
 
 	unblock = make(chan struct{})
 	tasks := q.GetOrSubmitAll(keys...)
-	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks[:half], keys[:half])
+	assertTaskSucceedsWithin(t, 2*time.Second, tasks[:half], keys[:half])
 	assertTaskBlocked(t, tasks[half])
 
 	close(unblock)
-	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, keys)
+	assertTaskSucceedsWithin(t, 2*time.Second, tasks, keys)
 
 	unblock = make(chan struct{})
 	tasksAgain := q.GetOrSubmitAll(keys...)
-	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasksAgain, keys)
+	assertTaskSucceedsWithin(t, 2*time.Second, tasksAgain, keys)
 }
 
 func TestQueueConcurrencyLimit(t *testing.T) {
@@ -80,7 +80,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 
 	forceRuntimeProgress(workerCount + 1)
 	close(unblock)
-	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, keys)
+	assertTaskSucceedsWithin(t, 2*time.Second, tasks, keys)
 	if breached.Load() {
 		t.Errorf("queue breached limit of %d workers in flight", workerCount)
 	}
@@ -101,7 +101,7 @@ func TestQueueDetachReattachUnlimited(t *testing.T) {
 
 	keys := makeIntKeys(submitCount)
 	tasks := q.GetOrSubmitAll(keys...)
-	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, keys)
+	assertTaskSucceedsWithin(t, 2*time.Second, tasks, keys)
 }
 
 func TestQueueDetachReattachLimited(t *testing.T) {
@@ -154,7 +154,7 @@ func TestQueueDetachReattachLimited(t *testing.T) {
 	close(unblockReattach)
 	forceRuntimeProgress(workerCount + 1)
 	close(unblockReturn)
-	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, keys)
+	assertTaskSucceedsWithin(t, 2*time.Second, tasks, keys)
 
 	if breachedReattach.Load() {
 		t.Errorf("queue breached limit of %d workers in flight during reattach", workerCount)

@@ -97,5 +97,5 @@ func TestKeyMutexDetach(t *testing.T) {
 	}
 
 	km.Unlock(NoValue{})
-	assertTaskSucceedsWithin[[]int](t, 2*time.Second, tasks, keys)
+	assertTaskSucceedsWithin(t, 2*time.Second, tasks, keys)
 }
