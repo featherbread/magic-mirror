@@ -1,6 +1,6 @@
 module go.alexhamlin.co/magic-mirror
 
-go 1.20
+go 1.21
 
 require (
 	github.com/containerd/containerd v1.7.2
@@ -11,7 +11,6 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc3
 	github.com/spf13/pflag v1.0.5
-	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1
 )
 
 require (
