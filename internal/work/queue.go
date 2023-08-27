@@ -45,13 +45,13 @@ type Queue[K comparable, V any] struct {
 	//
 	// Queues with unlimited concurrency are represented by the absence of a state
 	// channel.
-	state      chan workState[K]
-	maxWorkers int
+	state     chan workState[K]
+	maxGrants int
 }
 
 type workState[K comparable] struct {
+	grants      int
 	keys        []K
-	workers     int
 	reattachers []chan bool
 }
 
@@ -71,7 +71,7 @@ func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue
 		tasks:  make(map[K]*task[V]),
 	}
 	if concurrency > 0 {
-		q.maxWorkers = concurrency
+		q.maxGrants = concurrency
 		q.state = make(chan workState[K], 1)
 		q.state <- workState[K]{}
 	}
@@ -171,10 +171,10 @@ func (q *Queue[K, V]) scheduleLimited(keys []K) {
 	// that we spawn to process new keys.
 	state := <-q.state
 	state.keys = append(state.keys, keys...)
-	newWorkers := min(q.maxWorkers-state.workers, len(keys))
-	state.workers += newWorkers
+	newGrants := min(q.maxGrants-state.grants, len(keys))
+	state.grants += newGrants
 	q.state <- state
-	for i := 0; i < newWorkers; i++ {
+	for i := 0; i < newGrants; i++ {
 		go q.work()
 	}
 }
@@ -203,7 +203,7 @@ func (q *Queue[K, V]) work() {
 			// With no reattachers and no keys, we may safely retire the work grant.
 			// The party that next queues a key or attempts to reattach must issue a
 			// new work grant to consume any available capacity.
-			state.workers -= 1
+			state.grants -= 1
 			q.state <- state
 			return
 		}
@@ -251,7 +251,7 @@ func (q *Queue[K, V]) handleDetach() {
 		go q.work()
 	} else {
 		// Otherwise, we may safely retire the work grant.
-		state.workers -= 1
+		state.grants -= 1
 	}
 	q.state <- state
 }
@@ -271,9 +271,9 @@ func (q *Queue[K, V]) handleReattach(ctx context.Context) error {
 		return ctx.Err()
 	}
 
-	if state.workers < q.maxWorkers {
+	if state.grants < q.maxGrants {
 		// We have the capacity to self-issue a work grant.
-		state.workers += 1
+		state.grants += 1
 		q.state <- state
 		return nil
 	}
