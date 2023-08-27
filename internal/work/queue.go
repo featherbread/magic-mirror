@@ -132,27 +132,27 @@ func (q *Queue[K, T]) getOrCreateTasks(keys []K) (tasks TaskList[T], newKeys []K
 
 func (q *Queue[K, T]) scheduleNewKeys(keys []K) {
 	if q.state == nil {
-		q.scheduleUnqueued(keys)
+		q.scheduleUnlimited(keys)
 	} else {
-		q.scheduleQueued(keys)
+		q.scheduleLimited(keys)
 	}
 }
 
-func (q *Queue[K, T]) scheduleUnqueued(keys []K) {
+func (q *Queue[K, T]) scheduleUnlimited(keys []K) {
 	for _, key := range keys {
 		go q.completeTask(key)
 	}
 }
 
-func (q *Queue[K, T]) scheduleQueued(keys []K) {
+func (q *Queue[K, T]) scheduleLimited(keys []K) {
 	state := <-q.state
 	state.Keys = append(state.Keys, keys...)
 	newWorkers := min(q.maxWorkers-state.Workers, len(keys))
 	state.Workers += newWorkers
+	q.state <- state
 	for i := 0; i < newWorkers; i++ {
 		go q.work()
 	}
-	q.state <- state
 }
 
 func (q *Queue[K, T]) work() {
