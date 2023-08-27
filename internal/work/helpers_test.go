@@ -1,6 +1,7 @@
 package work
 
 import (
+	"reflect"
 	"runtime"
 	"testing"
 	"time"
@@ -18,6 +19,38 @@ func makeIntKeys(n int) (keys []int) {
 
 type awaitable[T any] interface {
 	Wait() (T, error)
+}
+
+func assertSucceedsWithin[K comparable, V any](t *testing.T, timeout time.Duration, q *Queue[K, V], keys any, want any) {
+	t.Helper()
+
+	var (
+		keysKind = reflect.ValueOf(keys).Kind()
+		done     = make(chan struct{})
+		got      any
+		err      error
+	)
+	go func() {
+		defer close(done)
+		if keysKind == reflect.Slice {
+			got, err = q.GetAll(keys.([]K)...)
+		} else {
+			got, err = q.Get(keys.(K))
+		}
+	}()
+
+	select {
+	case <-done:
+		if err != nil {
+			t.Errorf("unexpected error from task: %v", err)
+		}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("unexpected result from task (-want +got): %s", diff)
+		}
+
+	case <-time.After(timeout):
+		t.Fatalf("did not get result for key within %v", timeout)
+	}
 }
 
 func assertTaskSucceedsWithin[T any](t *testing.T, timeout time.Duration, task awaitable[T], want T) {
