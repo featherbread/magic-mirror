@@ -16,10 +16,6 @@ func makeIntKeys(n int) (keys []int) {
 	return
 }
 
-type awaitable[T any] interface {
-	Wait() (T, error)
-}
-
 func assertSucceedsWithin[K comparable, V any](t *testing.T, timeout time.Duration, q *Queue[K, V], keys []K, want []V) {
 	t.Helper()
 
@@ -44,30 +40,6 @@ func assertSucceedsWithin[K comparable, V any](t *testing.T, timeout time.Durati
 
 	case <-time.After(timeout):
 		t.Fatalf("did not get result for key within %v", timeout)
-	}
-}
-
-func assertTaskSucceedsWithin[T any](t *testing.T, timeout time.Duration, task awaitable[T], want T) {
-	t.Helper()
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		task.Wait()
-	}()
-
-	select {
-	case <-done:
-		got, err := task.Wait()
-		if err != nil {
-			t.Errorf("unexpected error from task: %v", err)
-		}
-		if diff := cmp.Diff(want, got); diff != "" {
-			t.Errorf("unexpected result from task (-want +got): %s", diff)
-		}
-
-	case <-time.After(timeout):
-		t.Fatalf("task did not finish within %v", timeout)
 	}
 }
 
