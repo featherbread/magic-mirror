@@ -11,7 +11,7 @@ import (
 type NoValue = struct{}
 
 // Handler is the type for a queue's handler function.
-type Handler[K comparable, T any] func(context.Context, K) (T, error)
+type Handler[K comparable, V any] func(context.Context, K) (V, error)
 
 // Queue is a deduplicating work queue. It maps each unique key provided to
 // GetOrSubmit[All] to a single [Task], which acts as a promise for the result
@@ -19,13 +19,13 @@ type Handler[K comparable, T any] func(context.Context, K) (T, error)
 // error; when a task produces an error, the queue does not retry it. After all
 // keys have been submitted to a queue, CloseSubmit should be called to permit
 // the release of resources associated with it.
-type Queue[K comparable, T any] struct {
-	handle Handler[K, T]
+type Queue[K comparable, V any] struct {
+	handle Handler[K, V]
 
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	tasks     map[K]*Task[T]
+	tasks     map[K]*Task[V]
 	tasksMu   sync.Mutex
 	tasksDone atomic.Uint64
 
@@ -44,13 +44,13 @@ type workState[K comparable] struct {
 //
 // If concurrency > 0, the queue will run up to that number of tasks concurrently.
 // If concurrency <= 0, the queue's concurrency is unbounded.
-func NewQueue[K comparable, T any](concurrency int, handle Handler[K, T]) *Queue[K, T] {
+func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue[K, V] {
 	ctx, cancel := context.WithCancel(context.TODO())
-	q := &Queue[K, T]{
+	q := &Queue[K, V]{
 		handle: handle,
 		ctx:    ctx,
 		cancel: cancel, // TODO: Call this somewhere.
-		tasks:  make(map[K]*Task[T]),
+		tasks:  make(map[K]*Task[V]),
 	}
 	if concurrency > 0 {
 		q.maxWorkers = concurrency
@@ -72,7 +72,7 @@ func NoValueHandler[K comparable](handle func(context.Context, K) error) Handler
 // GetOrSubmit returns the unique task for the provided key. If the key has not
 // previously been submitted, the new task will be scheduled for execution after
 // all existing tasks in the queue.
-func (q *Queue[K, T]) GetOrSubmit(key K) *Task[T] {
+func (q *Queue[K, V]) GetOrSubmit(key K) *Task[V] {
 	return q.GetOrSubmitAll(key)[0]
 }
 
@@ -80,7 +80,7 @@ func (q *Queue[K, T]) GetOrSubmit(key K) *Task[T] {
 // keys not previously submitted, the new tasks will be scheduled for execution
 // after all existing tasks in the queue, in the order of their corresponding
 // keys, without interleaving tasks from any other call to GetOrSubmit[All].
-func (q *Queue[K, T]) GetOrSubmitAll(keys ...K) TaskList[T] {
+func (q *Queue[K, V]) GetOrSubmitAll(keys ...K) TaskList[V] {
 	tasks, newKeys := q.getOrCreateTasks(keys)
 	if len(newKeys) > 0 {
 		q.scheduleNewKeys(newKeys)
@@ -92,7 +92,7 @@ func (q *Queue[K, T]) GetOrSubmitAll(keys ...K) TaskList[T] {
 //
 //   - done represents the number of tasks whose handlers have finished executing.
 //   - submitted represents the total number of unique tasks in the queue.
-func (q *Queue[K, T]) Stats() (done, submitted uint64) {
+func (q *Queue[K, V]) Stats() (done, submitted uint64) {
 	q.tasksMu.Lock()
 	defer q.tasksMu.Unlock()
 	done = q.tasksDone.Load()
@@ -100,8 +100,8 @@ func (q *Queue[K, T]) Stats() (done, submitted uint64) {
 	return
 }
 
-func (q *Queue[K, T]) getOrCreateTasks(keys []K) (tasks TaskList[T], newKeys []K) {
-	tasks = make(TaskList[T], len(keys))
+func (q *Queue[K, V]) getOrCreateTasks(keys []K) (tasks TaskList[V], newKeys []K) {
+	tasks = make(TaskList[V], len(keys))
 
 	q.tasksMu.Lock()
 	defer q.tasksMu.Unlock()
@@ -111,7 +111,7 @@ func (q *Queue[K, T]) getOrCreateTasks(keys []K) (tasks TaskList[T], newKeys []K
 			tasks[i] = task
 			continue
 		}
-		task := &Task[T]{done: make(chan struct{})}
+		task := &Task[V]{done: make(chan struct{})}
 		q.tasks[key] = task
 		tasks[i] = task
 		newKeys = append(newKeys, key)
@@ -119,7 +119,7 @@ func (q *Queue[K, T]) getOrCreateTasks(keys []K) (tasks TaskList[T], newKeys []K
 	return
 }
 
-func (q *Queue[K, T]) scheduleNewKeys(keys []K) {
+func (q *Queue[K, V]) scheduleNewKeys(keys []K) {
 	if q.state == nil {
 		q.scheduleUnlimited(keys)
 	} else {
@@ -127,13 +127,13 @@ func (q *Queue[K, T]) scheduleNewKeys(keys []K) {
 	}
 }
 
-func (q *Queue[K, T]) scheduleUnlimited(keys []K) {
+func (q *Queue[K, V]) scheduleUnlimited(keys []K) {
 	for _, key := range keys {
 		go q.completeTask(key)
 	}
 }
 
-func (q *Queue[K, T]) scheduleLimited(keys []K) {
+func (q *Queue[K, V]) scheduleLimited(keys []K) {
 	state := <-q.state
 	state.keys = append(state.keys, keys...)
 	newWorkers := min(q.maxWorkers-state.workers, len(keys))
@@ -144,7 +144,7 @@ func (q *Queue[K, T]) scheduleLimited(keys []K) {
 	}
 }
 
-func (q *Queue[K, T]) work() {
+func (q *Queue[K, V]) work() {
 	for {
 		state := <-q.state
 
@@ -175,7 +175,7 @@ func (q *Queue[K, T]) work() {
 	}
 }
 
-func (q *Queue[K, T]) completeTask(key K) *taskContext {
+func (q *Queue[K, V]) completeTask(key K) *taskContext {
 	q.tasksMu.Lock()
 	task := q.tasks[key]
 	q.tasksMu.Unlock()
@@ -193,7 +193,7 @@ func (q *Queue[K, T]) completeTask(key K) *taskContext {
 	return taskCtx
 }
 
-func (q *Queue[K, T]) handleDetach() {
+func (q *Queue[K, V]) handleDetach() {
 	if q.state == nil {
 		return
 	}
@@ -206,7 +206,7 @@ func (q *Queue[K, T]) handleDetach() {
 	q.state <- state
 }
 
-func (q *Queue[K, T]) handleReattach(ctx context.Context) error {
+func (q *Queue[K, V]) handleReattach(ctx context.Context) error {
 	if q.state == nil {
 		return nil
 	}
@@ -239,27 +239,27 @@ func (q *Queue[K, T]) handleReattach(ctx context.Context) error {
 
 // Task represents the eventual result of a queued work item, which may produce
 // both a value and an error.
-type Task[T any] struct {
+type Task[V any] struct {
 	done  chan struct{}
-	value T
+	value V
 	err   error
 }
 
 // Wait blocks until the task has completed, then returns its value and error.
-func (t *Task[T]) Wait() (T, error) {
+func (t *Task[V]) Wait() (V, error) {
 	<-t.done
 	return t.value, t.err
 }
 
 // TaskList represents a list of tasks.
-type TaskList[T any] []*Task[T]
+type TaskList[V any] []*Task[V]
 
 // Wait blocks until all of the tasks in the list have completed, then returns
 // their associated values. The returned error is the concatenation of the
 // errors from all tasks, following the semantics of [errors.Join]. To associate
 // errors with specific tasks, call Wait directly on each task in the list.
-func (ts TaskList[T]) Wait() ([]T, error) {
-	values := make([]T, len(ts))
+func (ts TaskList[V]) Wait() ([]V, error) {
+	values := make([]V, len(ts))
 	errs := make([]error, len(ts))
 	for i, task := range ts {
 		values[i], errs[i] = task.Wait()
