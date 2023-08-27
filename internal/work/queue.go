@@ -162,9 +162,11 @@ func (q *Queue[K, T]) work() {
 		if len(state.Reattachers) > 0 {
 			reattach := state.Reattachers[0]
 			state.Reattachers = state.Reattachers[1:]
-			close(reattach)
 			q.state <- state
-			return
+			if _, ok := <-reattach; ok {
+				return
+			}
+			continue
 		}
 
 		if len(state.Keys) == 0 {
@@ -238,9 +240,10 @@ func (q *Queue[K, T]) handleReattach(ctx context.Context) error {
 	q.state <- state
 
 	select {
-	case <-reattach:
+	case reattach <- struct{}{}:
 		return nil
 	case <-ctx.Done():
+		close(reattach)
 		return ctx.Err()
 	}
 }
