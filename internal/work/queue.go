@@ -30,10 +30,10 @@ type Queue[K comparable, T any] struct {
 	tasksDone atomic.Uint64
 
 	maxWorkers int
-	state      chan queueState[K]
+	state      chan workState[K]
 }
 
-type queueState[K comparable] struct {
+type workState[K comparable] struct {
 	Keys        []K
 	Workers     int
 	Reattachers []chan struct{}
@@ -54,8 +54,8 @@ func NewQueue[K comparable, T any](concurrency int, handle Handler[K, T]) *Queue
 	}
 	if concurrency > 0 {
 		q.maxWorkers = concurrency
-		q.state = make(chan queueState[K], 1)
-		q.state <- queueState[K]{}
+		q.state = make(chan workState[K], 1)
+		q.state <- workState[K]{}
 	}
 	return q
 }
@@ -150,12 +150,12 @@ func (q *Queue[K, T]) scheduleQueued(keys []K) {
 	missingWorkers := q.maxWorkers - state.Workers
 	state.Workers += missingWorkers
 	for i := 0; i < missingWorkers; i++ {
-		go q.workOnQueue()
+		go q.work()
 	}
 	q.state <- state
 }
 
-func (q *Queue[K, T]) workOnQueue() {
+func (q *Queue[K, T]) work() {
 	for {
 		state := <-q.state
 
@@ -208,7 +208,7 @@ func (q *Queue[K, T]) handleDetach() {
 	}
 	state := <-q.state
 	if len(state.Keys) > 0 || len(state.Reattachers) > 0 {
-		go q.workOnQueue()
+		go q.work()
 	} else {
 		state.Workers -= 1
 	}
@@ -220,7 +220,7 @@ func (q *Queue[K, T]) handleReattach(ctx context.Context) error {
 		return nil
 	}
 
-	var state queueState[K]
+	var state workState[K]
 	select {
 	case state = <-q.state:
 	case <-ctx.Done():
