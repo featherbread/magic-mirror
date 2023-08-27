@@ -9,15 +9,11 @@ import (
 
 func TestQueueBasicUnlimited(t *testing.T) {
 	q := NewQueue(0, func(_ context.Context, x int) (int, error) { return x, nil })
-	defer q.CloseSubmit()
-
 	assertTaskSucceedsWithin(t, 2*time.Second, q.GetOrSubmit(42), 42)
 }
 
 func TestQueueBasicLimited(t *testing.T) {
 	q := NewQueue(1, func(_ context.Context, x int) (int, error) { return x, nil })
-	defer q.CloseSubmit()
-
 	assertTaskSucceedsWithin(t, 2*time.Second, q.GetOrSubmit(42), 42)
 }
 
@@ -32,7 +28,6 @@ func TestQueueDeduplication(t *testing.T) {
 		<-unblock
 		return x, nil
 	})
-	defer q.CloseSubmit()
 
 	keys := makeIntKeys(count)
 
@@ -73,7 +68,6 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 		<-unblock
 		return x, nil
 	})
-	defer q.CloseSubmit()
 
 	keys := makeIntKeys(submitCount)
 	tasks := q.GetOrSubmitAll(keys...)

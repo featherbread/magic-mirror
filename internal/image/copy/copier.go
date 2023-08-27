@@ -23,7 +23,6 @@ func CopyAll(concurrency int, specs ...Spec) error {
 		return err
 	}
 	copier := newCopier(concurrency)
-	defer copier.CloseSubmit()
 	return copier.CopyAll(keys...)
 }
 
@@ -62,17 +61,6 @@ func (c *copier) CopyAll(specs ...Spec) error {
 	_, err := c.queue.GetOrSubmitAll(specs...).Wait()
 	c.printStats()
 	return err
-}
-
-func (c *copier) CloseSubmit() {
-	// TODO: This is only safe after all Copier tasks are finished.
-	// TODO: There is no way to cleanly stop destination blob indexing.
-	// TODO: Should really stop the stats timer too.
-	c.queue.CloseSubmit()
-	c.platforms.CloseSubmit()
-	c.srcManifests.CloseSubmit()
-	c.dstManifests.CloseSubmit()
-	c.blobs.CloseSubmit()
 }
 
 const statsInterval = 5 * time.Second

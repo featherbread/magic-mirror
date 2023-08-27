@@ -100,17 +100,6 @@ func (q *Queue[K, T]) Stats() (done, submitted uint64) {
 	return
 }
 
-// CloseSubmit indicates that no more requests will be submitted to the queue,
-// permitting the eventual cleanup of the queue's resources after all
-// outstanding tasks have completed.
-//
-// The behavior of any method of the queue (including CloseSubmit) after a call
-// to CloseSubmit is undefined.
-func (q *Queue[K, T]) CloseSubmit() {
-	// TODO: Remove this from the interface. It's a vestige of the old model of
-	// pre-creating a goroutine pool in the limited concurrency case.
-}
-
 func (q *Queue[K, T]) getOrCreateTasks(keys []K) (tasks TaskList[T], newKeys []K) {
 	tasks = make(TaskList[T], len(keys))
 
