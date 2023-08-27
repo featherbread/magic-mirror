@@ -73,11 +73,7 @@ func NoValueHandler[K comparable](handle func(context.Context, K) error) Handler
 // already computed by the queue's handler, or by scheduling a new call to the
 // handler and blocking until it is complete.
 func (q *Queue[K, V]) Get(key K) (V, error) {
-	return q.getTask(key).Wait()
-}
-
-func (q *Queue[K, V]) getTask(key K) *task[V] {
-	return q.getAllTasks(key)[0]
+	return q.getTasks(key)[0].Wait()
 }
 
 // GetAll returns the corresponding values for all of the provided keys, along
@@ -85,15 +81,7 @@ func (q *Queue[K, V]) getTask(key K) *task[V] {
 // of [errors.Join], either by reading results already computed or by scheduling
 // new handler calls and blocking until they are complete.
 func (q *Queue[K, V]) GetAll(keys ...K) ([]V, error) {
-	return q.getAllTasks(keys...).Wait()
-}
-
-func (q *Queue[K, V]) getAllTasks(keys ...K) taskList[V] {
-	tasks, newKeys := q.getOrCreateTasks(keys)
-	if len(newKeys) > 0 {
-		q.scheduleNewKeys(newKeys)
-	}
-	return tasks
+	return q.getTasks(keys...).Wait()
 }
 
 // Stats returns information about the number of tasks in the queue:
@@ -106,6 +94,14 @@ func (q *Queue[K, V]) Stats() (done, submitted uint64) {
 	done = q.tasksDone.Load()
 	submitted = uint64(len(q.tasks))
 	return
+}
+
+func (q *Queue[K, V]) getTasks(keys ...K) taskList[V] {
+	tasks, newKeys := q.getOrCreateTasks(keys)
+	if len(newKeys) > 0 {
+		q.scheduleNewKeys(newKeys)
+	}
+	return tasks
 }
 
 func (q *Queue[K, V]) getOrCreateTasks(keys []K) (tasks taskList[V], newKeys []K) {
