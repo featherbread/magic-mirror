@@ -69,6 +69,21 @@ func NoValueHandler[K comparable](handle func(context.Context, K) error) Handler
 	}
 }
 
+// Get returns the results for the provided key, either by reading the results
+// already computed by the queue's handler, or by scheduling a new call to the
+// handler and blocking until it is complete.
+func (q *Queue[K, V]) Get(key K) (V, error) {
+	return q.GetOrSubmit(key).Wait()
+}
+
+// GetAll returns the corresponding values for all of the provided keys, along
+// with the concatenation of their corresponding errors following the semantics
+// of [errors.Join], either by reading results already computed or by scheduling
+// new handler calls and blocking until they are complete.
+func (q *Queue[K, V]) GetAll(keys ...K) ([]V, error) {
+	return q.GetOrSubmitAll(keys...).Wait()
+}
+
 // GetOrSubmit returns the unique task for the provided key. If the key has not
 // previously been submitted, the new task will be scheduled for execution after
 // all existing tasks in the queue.
