@@ -36,7 +36,8 @@ func TestQueueDeduplication(t *testing.T) {
 
 	unblock = make(chan struct{})
 	assertSucceedsWithin(t, 2*time.Second, q, keys[:half], keys[:half])
-	assertTaskBlocked(t, q.getAllTasks(keys...)[half])
+	cleanup := assertBlocked(t, q, keys[half])
+	defer cleanup()
 
 	close(unblock)
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)

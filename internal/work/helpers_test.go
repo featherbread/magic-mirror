@@ -43,18 +43,26 @@ func assertSucceedsWithin[K comparable, V any](t *testing.T, timeout time.Durati
 	}
 }
 
-func assertTaskBlocked[T any](t *testing.T, task *task[T]) {
+func assertBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) (cleanup func()) {
 	t.Helper()
 
-	// Make an effort to ensure the task is scheduled.
-	runtime.Gosched()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		q.Get(key)
+	}()
+
+	// Make a best-effort attempt to force the key's handler to be in flight when
+	// it should not be.
+	forceRuntimeProgress(2)
 
 	select {
-	case <-task.done:
-		// TODO: Can we do this without touching Task internals?
-		t.Errorf("task was not blocked")
+	case <-done:
+		t.Errorf("computation of key was not blocked")
 	default:
 	}
+
+	return func() { <-done }
 }
 
 // forceRuntimeProgress attempts to force the Go runtime to make progress on at
