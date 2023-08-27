@@ -36,7 +36,7 @@ type Queue[K comparable, T any] struct {
 type workState[K comparable] struct {
 	Keys        []K
 	Workers     int
-	Reattachers []chan struct{}
+	Reattachers []chan bool
 }
 
 // NewQueue creates a queue that uses the provided handler function to complete
@@ -163,7 +163,7 @@ func (q *Queue[K, T]) work() {
 			reattach := state.Reattachers[0]
 			state.Reattachers = state.Reattachers[1:]
 			q.state <- state
-			if _, ok := <-reattach; ok {
+			if <-reattach {
 				return
 			}
 			continue
@@ -235,12 +235,12 @@ func (q *Queue[K, T]) handleReattach(ctx context.Context) error {
 		return nil
 	}
 
-	reattach := make(chan struct{})
+	reattach := make(chan bool)
 	state.Reattachers = append(state.Reattachers, reattach)
 	q.state <- state
 
 	select {
-	case reattach <- struct{}{}:
+	case reattach <- true:
 		return nil
 	case <-ctx.Done():
 		close(reattach)
