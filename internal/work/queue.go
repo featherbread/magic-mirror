@@ -13,12 +13,18 @@ type NoValue = struct{}
 // Handler is the type for a queue's handler function.
 type Handler[K comparable, V any] func(context.Context, K) (V, error)
 
-// Queue is a deduplicating work queue. It maps each unique key provided to
-// GetOrSubmit[All] to a single [Task], which acts as a promise for the result
-// of running a handler function with that key. Tasks may return a value and an
-// error; when a task produces an error, the queue does not retry it. After all
-// keys have been submitted to a queue, CloseSubmit should be called to permit
-// the release of resources associated with it.
+// Queue is a deduplicating work queue. It acts as a map that lazily computes
+// and caches results corresponding to unique keys by calling a "handler"
+// function in a new goroutine. It optionally limits the number of concurrent
+// handler calls in flight, queueing keys for handling in the order that they
+// are requested.
+//
+// The cached result for each key consists of a value and an error. Results that
+// include a non-nil error receive no special treatment from the queue; they are
+// cached as usual and their handlers are never retried.
+//
+// Handlers receive a context that allows them to [Detach] from a queue,
+// temporarily increasing its concurrency limit. The context is never canceled.
 type Queue[K comparable, V any] struct {
 	handle Handler[K, V]
 
@@ -39,11 +45,13 @@ type workState[K comparable] struct {
 	reattachers []chan bool
 }
 
-// NewQueue creates a queue that uses the provided handler to compute the value
-// corresponding to each key.
+// NewQueue creates a queue that uses the provided handler to compute the result
+// for each key.
 //
-// If concurrency > 0, the queue will run up to that number of tasks concurrently.
-// If concurrency <= 0, the queue's concurrency is unbounded.
+// If concurrency > 0, the queue will run up to that many concurrent handler
+// calls in new goroutines (and potentially more if a handler calls [Detach]).
+// If concurrency <= 0, the queue may run an unlimited number of concurrent
+// handler calls.
 func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue[K, V] {
 	ctx, cancel := context.WithCancel(context.TODO())
 	q := &Queue[K, V]{
@@ -78,19 +86,27 @@ func (q *Queue[K, V]) Get(key K) (V, error) {
 
 // GetAll returns the corresponding values for the provided keys, or the first
 // error among the results of the provided keys with respect to their ordering.
+//
 // When GetAll returns an error corresponding to one of the keys, it does not
 // wait for handler calls corresponding to subsequent keys to complete. If it is
 // necessary to associate errors with specific keys, or to wait for all handlers
 // to complete even in the presence of errors, call [Queue.Get] for each key
 // instead.
+//
+// For all keys whose results are not yet computed in a queue with limited
+// concurrency, GetAll queues those keys for handling in the order in which they
+// are presented, without interleaving keys from any other call to Get[All].
 func (q *Queue[K, V]) GetAll(keys ...K) ([]V, error) {
 	return q.getTasks(keys...).Wait()
 }
 
-// Stats returns information about the number of tasks in the queue:
+// Stats returns information about the keys and results in the queue:
 //
-//   - done represents the number of tasks whose handlers have finished executing.
-//   - submitted represents the total number of unique tasks in the queue.
+//   - done represents the number of keys whose results have been computed and
+//     cached.
+//   - submitted represents the total number of keys whose results have been
+//     requested from the queue, including keys whose results are not yet
+//     computed.
 func (q *Queue[K, V]) Stats() (done, submitted uint64) {
 	q.tasksMu.Lock()
 	defer q.tasksMu.Unlock()
@@ -287,17 +303,17 @@ func getTaskContext(ctx context.Context) (taskCtx *taskContext, err error) {
 }
 
 // Detach unbounds the calling [Handler] from the concurrency limit of the
-// [Queue] that invoked it, allowing the queue to immediately start work on
-// another task. It returns an error if ctx is not associated with a [Queue], or
-// if the handler has already detached.
+// [Queue] that invoked it, allowing the queue to immediately start handling new
+// keys. It returns an error if ctx is not associated with a [Queue], or if the
+// handler has already detached.
 //
 // The corresponding [Reattach] function permits a detached handler to
-// reestablish itself within the queue's concurrency limit ahead of submitted
-// tasks whose handlers have not yet started.
+// reestablish itself within the queue's concurrency limit ahead of the handling
+// of new keys.
 //
 // A typical use for detaching is to temporarily block on the completion of
-// another task in the same queue, so that the current task may take advantage
-// of caching or other side effects of the sibling task to improve performance.
+// another handler call for the same queue, where caching or other side effects
+// performed by that handler may improve the performance of this handler.
 // [KeyMutex] facilitates this pattern by automatically detaching from a queue
 // while it waits for the lock on a key.
 func Detach(ctx context.Context) error {
@@ -307,7 +323,7 @@ func Detach(ctx context.Context) error {
 	}
 
 	if taskCtx.detached {
-		return errors.New("task already detached from queue")
+		return errors.New("already detached from queue")
 	}
 
 	taskCtx.detach()
@@ -329,7 +345,7 @@ func Reattach(ctx context.Context) error {
 	}
 
 	if !taskCtx.detached {
-		return errors.New("task not detached from queue")
+		return errors.New("not detached from queue")
 	}
 
 	if err := taskCtx.reattach(ctx); err != nil {
