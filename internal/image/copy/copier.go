@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/containerd/containerd/platforms"
@@ -58,7 +59,7 @@ func newCopier(concurrency int) *copier {
 }
 
 func (c *copier) CopyAll(specs ...Spec) error {
-	_, err := c.queue.GetOrSubmitAll(specs...).Wait()
+	_, err := c.queue.GetAll(specs...)
 	c.printStats()
 	return err
 }
@@ -83,16 +84,24 @@ func (c *copier) printStats() {
 func (c *copier) handleRequest(_ context.Context, spec Spec) error {
 	log.Verbosef("[image]\tstarting copy from %s to %s", spec.Src, spec.Dst)
 
-	srcTask := c.srcManifests.GetOrSubmit(spec.Src)
-	dstTask := c.dstManifests.GetOrSubmit(spec.Dst)
+	var (
+		dstWait     sync.WaitGroup
+		dstManifest image.ManifestKind
+		dstErr      error
+	)
+	dstWait.Add(1)
+	go func() {
+		defer dstWait.Done()
+		dstManifest, dstErr = c.dstManifests.Get(spec.Dst)
+	}()
 
-	srcManifest, err := srcTask.Wait()
+	srcManifest, err := c.srcManifests.Get(spec.Src)
 	if err != nil {
 		return err
 	}
 
-	dstManifest, err := dstTask.Wait()
-	if err == nil {
+	dstWait.Wait()
+	if dstErr == nil {
 		c.dstIndexer.Submit(spec.Dst.Repository, dstManifest)
 		if bytes.Equal(srcManifest.Encoded(), dstManifest.Encoded()) && (spec.Transform == Transform{}) {
 			log.Verbosef("[image]\tno change from %s to %s", spec.Src, spec.Dst)

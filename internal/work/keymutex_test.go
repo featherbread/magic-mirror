@@ -86,7 +86,7 @@ func TestKeyMutexDetach(t *testing.T) {
 	}
 
 	keys := makeIntKeys(submitCount)
-	tasks := q.GetOrSubmitAll(keys...)
+	tasks := q.getAllTasks(keys...)
 	timeout := time.After(2 * time.Second)
 	for i := range tasks {
 		select {

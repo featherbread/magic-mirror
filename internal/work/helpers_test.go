@@ -44,7 +44,7 @@ func assertTaskSucceedsWithin[T any](t *testing.T, timeout time.Duration, task a
 	}
 }
 
-func assertTaskBlocked[T any](t *testing.T, task *Task[T]) {
+func assertTaskBlocked[T any](t *testing.T, task *task[T]) {
 	t.Helper()
 
 	// Make an effort to ensure the task is scheduled.

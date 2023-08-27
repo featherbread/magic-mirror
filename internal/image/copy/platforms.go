@@ -33,7 +33,7 @@ func newPlatformCopier(manifests *manifestCache, blobs *blobCopier) *platformCop
 }
 
 func (c *platformCopier) Copy(src image.Image, dst image.Image) (image.Manifest, error) {
-	return c.Queue.GetOrSubmit(platformCopyRequest{Src: src, Dst: dst}).Wait()
+	return c.Queue.Get(platformCopyRequest{Src: src, Dst: dst})
 }
 
 func (c *platformCopier) CopyAll(dst image.Repository, srcs ...image.Image) ([]image.Manifest, error) {
@@ -47,7 +47,7 @@ func (c *platformCopier) CopyAll(dst image.Repository, srcs ...image.Image) ([]i
 			},
 		}
 	}
-	return c.Queue.GetOrSubmitAll(reqs...).Wait()
+	return c.Queue.GetAll(reqs...)
 }
 
 func (c *platformCopier) handleRequest(_ context.Context, req platformCopyRequest) (m image.Manifest, err error) {

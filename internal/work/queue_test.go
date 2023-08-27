@@ -9,12 +9,12 @@ import (
 
 func TestQueueBasicUnlimited(t *testing.T) {
 	q := NewQueue(0, func(_ context.Context, x int) (int, error) { return x, nil })
-	assertTaskSucceedsWithin(t, 2*time.Second, q.GetOrSubmit(42), 42)
+	assertTaskSucceedsWithin(t, 2*time.Second, q.getTask(42), 42)
 }
 
 func TestQueueBasicLimited(t *testing.T) {
 	q := NewQueue(1, func(_ context.Context, x int) (int, error) { return x, nil })
-	assertTaskSucceedsWithin(t, 2*time.Second, q.GetOrSubmit(42), 42)
+	assertTaskSucceedsWithin(t, 2*time.Second, q.getTask(42), 42)
 }
 
 func TestQueueDeduplication(t *testing.T) {
@@ -32,11 +32,11 @@ func TestQueueDeduplication(t *testing.T) {
 	keys := makeIntKeys(count)
 
 	close(unblock)
-	halfTasks := q.GetOrSubmitAll(keys[:half]...)
+	halfTasks := q.getAllTasks(keys[:half]...)
 	assertTaskSucceedsWithin(t, 2*time.Second, halfTasks, keys[:half])
 
 	unblock = make(chan struct{})
-	tasks := q.GetOrSubmitAll(keys...)
+	tasks := q.getAllTasks(keys...)
 	assertTaskSucceedsWithin(t, 2*time.Second, tasks[:half], keys[:half])
 	assertTaskBlocked(t, tasks[half])
 
@@ -44,7 +44,7 @@ func TestQueueDeduplication(t *testing.T) {
 	assertTaskSucceedsWithin(t, 2*time.Second, tasks, keys)
 
 	unblock = make(chan struct{})
-	tasksAgain := q.GetOrSubmitAll(keys...)
+	tasksAgain := q.getAllTasks(keys...)
 	assertTaskSucceedsWithin(t, 2*time.Second, tasksAgain, keys)
 }
 
@@ -70,7 +70,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 	})
 
 	keys := makeIntKeys(submitCount)
-	tasks := q.GetOrSubmitAll(keys...)
+	tasks := q.getAllTasks(keys...)
 
 	forceRuntimeProgress(workerCount + 1)
 	close(unblock)
@@ -94,7 +94,7 @@ func TestQueueDetachReattachUnlimited(t *testing.T) {
 	})
 
 	keys := makeIntKeys(submitCount)
-	tasks := q.GetOrSubmitAll(keys...)
+	tasks := q.getAllTasks(keys...)
 	assertTaskSucceedsWithin(t, 2*time.Second, tasks, keys)
 }
 
@@ -134,7 +134,7 @@ func TestQueueDetachReattachLimited(t *testing.T) {
 	})
 
 	keys := makeIntKeys(submitCount)
-	tasks := q.GetOrSubmitAll(keys...)
+	tasks := q.getAllTasks(keys...)
 
 	timeout := time.After(2 * time.Second)
 	for i := 0; i < submitCount; i++ {
