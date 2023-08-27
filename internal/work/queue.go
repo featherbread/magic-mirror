@@ -147,9 +147,9 @@ func (q *Queue[K, T]) scheduleUnqueued(keys []K) {
 func (q *Queue[K, T]) scheduleQueued(keys []K) {
 	state := <-q.state
 	state.Keys = append(state.Keys, keys...)
-	missingWorkers := q.maxWorkers - state.Workers
-	state.Workers += missingWorkers
-	for i := 0; i < missingWorkers; i++ {
+	newWorkers := min(q.maxWorkers-state.Workers, len(keys))
+	state.Workers += newWorkers
+	for i := 0; i < newWorkers; i++ {
 		go q.work()
 	}
 	q.state <- state
