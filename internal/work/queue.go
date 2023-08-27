@@ -34,9 +34,9 @@ type Queue[K comparable, T any] struct {
 }
 
 type workState[K comparable] struct {
-	Keys        []K
-	Workers     int
-	Reattachers []chan bool
+	keys        []K
+	workers     int
+	reattachers []chan bool
 }
 
 // NewQueue creates a queue that uses the provided handler function to complete
@@ -135,9 +135,9 @@ func (q *Queue[K, T]) scheduleUnlimited(keys []K) {
 
 func (q *Queue[K, T]) scheduleLimited(keys []K) {
 	state := <-q.state
-	state.Keys = append(state.Keys, keys...)
-	newWorkers := min(q.maxWorkers-state.Workers, len(keys))
-	state.Workers += newWorkers
+	state.keys = append(state.keys, keys...)
+	newWorkers := min(q.maxWorkers-state.workers, len(keys))
+	state.workers += newWorkers
 	q.state <- state
 	for i := 0; i < newWorkers; i++ {
 		go q.work()
@@ -148,9 +148,9 @@ func (q *Queue[K, T]) work() {
 	for {
 		state := <-q.state
 
-		if len(state.Reattachers) > 0 {
-			reattach := state.Reattachers[0]
-			state.Reattachers = state.Reattachers[1:]
+		if len(state.reattachers) > 0 {
+			reattach := state.reattachers[0]
+			state.reattachers = state.reattachers[1:]
 			q.state <- state
 			if <-reattach {
 				return
@@ -158,14 +158,14 @@ func (q *Queue[K, T]) work() {
 			continue
 		}
 
-		if len(state.Keys) == 0 {
-			state.Workers -= 1
+		if len(state.keys) == 0 {
+			state.workers -= 1
 			q.state <- state
 			return
 		}
 
-		key := state.Keys[0]
-		state.Keys = state.Keys[1:]
+		key := state.keys[0]
+		state.keys = state.keys[1:]
 		q.state <- state
 
 		taskCtx := q.completeTask(key)
@@ -198,10 +198,10 @@ func (q *Queue[K, T]) handleDetach() {
 		return
 	}
 	state := <-q.state
-	if len(state.Keys) > 0 || len(state.Reattachers) > 0 {
+	if len(state.keys) > 0 || len(state.reattachers) > 0 {
 		go q.work()
 	} else {
-		state.Workers -= 1
+		state.workers -= 1
 	}
 	q.state <- state
 }
@@ -218,14 +218,14 @@ func (q *Queue[K, T]) handleReattach(ctx context.Context) error {
 		return ctx.Err()
 	}
 
-	if state.Workers < q.maxWorkers {
-		state.Workers += 1
+	if state.workers < q.maxWorkers {
+		state.workers += 1
 		q.state <- state
 		return nil
 	}
 
 	reattach := make(chan bool)
-	state.Reattachers = append(state.Reattachers, reattach)
+	state.reattachers = append(state.reattachers, reattach)
 	q.state <- state
 
 	select {
