@@ -32,20 +32,17 @@ func TestQueueDeduplication(t *testing.T) {
 	keys := makeIntKeys(count)
 
 	close(unblock)
-	halfTasks := q.getAllTasks(keys[:half]...)
-	assertTaskSucceedsWithin(t, 2*time.Second, halfTasks, keys[:half])
+	assertSucceedsWithin(t, 2*time.Second, q, keys[:half], keys[:half])
 
 	unblock = make(chan struct{})
-	tasks := q.getAllTasks(keys...)
-	assertTaskSucceedsWithin(t, 2*time.Second, tasks[:half], keys[:half])
-	assertTaskBlocked(t, tasks[half])
+	assertSucceedsWithin(t, 2*time.Second, q, keys[:half], keys[:half])
+	assertTaskBlocked(t, q.getAllTasks(keys...)[half])
 
 	close(unblock)
-	assertTaskSucceedsWithin(t, 2*time.Second, tasks, keys)
+	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 
 	unblock = make(chan struct{})
-	tasksAgain := q.getAllTasks(keys...)
-	assertTaskSucceedsWithin(t, 2*time.Second, tasksAgain, keys)
+	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 }
 
 func TestQueueConcurrencyLimit(t *testing.T) {
