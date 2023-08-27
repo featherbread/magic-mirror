@@ -39,8 +39,8 @@ type workState[K comparable] struct {
 	reattachers []chan bool
 }
 
-// NewQueue creates a queue that uses the provided handler function to complete
-// tasks.
+// NewQueue creates a queue that uses the provided handler to compute the value
+// corresponding to each key.
 //
 // If concurrency > 0, the queue will run up to that number of tasks concurrently.
 // If concurrency <= 0, the queue's concurrency is unbounded.
@@ -69,17 +69,20 @@ func NoValueHandler[K comparable](handle func(context.Context, K) error) Handler
 	}
 }
 
-// Get returns the results for the provided key, either by reading the results
-// already computed by the queue's handler, or by scheduling a new call to the
-// handler and blocking until it is complete.
+// Get returns the results for the provided key, either by immediately returning
+// a computed result or by blocking until a corresponding call to the queue's
+// handler is complete.
 func (q *Queue[K, V]) Get(key K) (V, error) {
 	return q.getTasks(key)[0].Wait()
 }
 
-// GetAll returns the corresponding values for all of the provided keys, along
-// with the concatenation of their corresponding errors following the semantics
-// of [errors.Join], either by reading results already computed or by scheduling
-// new handler calls and blocking until they are complete.
+// GetAll returns the corresponding values for the provided keys, or the first
+// error among the results of the provided keys with respect to their ordering.
+// When GetAll returns an error corresponding to one of the keys, it does not
+// wait for handler calls corresponding to subsequent keys to complete. If it is
+// necessary to associate errors with specific keys, or to wait for all handlers
+// to complete even in the presence of errors, call [Queue.Get] for each key
+// instead.
 func (q *Queue[K, V]) GetAll(keys ...K) ([]V, error) {
 	return q.getTasks(keys...).Wait()
 }
@@ -254,13 +257,15 @@ func (t *task[V]) Wait() (V, error) {
 
 type taskList[V any] []*task[V]
 
-func (ts taskList[V]) Wait() ([]V, error) {
-	values := make([]V, len(ts))
-	errs := make([]error, len(ts))
+func (ts taskList[V]) Wait() (values []V, err error) {
+	values = make([]V, len(ts))
 	for i, task := range ts {
-		values[i], errs[i] = task.Wait()
+		values[i], err = task.Wait()
+		if err != nil {
+			return nil, err
+		}
 	}
-	return values, errors.Join(errs...)
+	return values, nil
 }
 
 type taskContextKey struct{}
