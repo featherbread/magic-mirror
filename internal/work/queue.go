@@ -207,7 +207,7 @@ func (q *Queue[K, T]) handleDetach() {
 		return
 	}
 	state := <-q.state
-	if len(state.Keys) > 0 {
+	if len(state.Keys) > 0 || len(state.Reattachers) > 0 {
 		go q.workOnQueue()
 	} else {
 		state.Workers -= 1
