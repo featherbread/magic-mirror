@@ -1,7 +1,6 @@
 package work
 
 import (
-	"reflect"
 	"runtime"
 	"testing"
 	"time"
@@ -21,22 +20,17 @@ type awaitable[T any] interface {
 	Wait() (T, error)
 }
 
-func assertSucceedsWithin[K comparable, V any](t *testing.T, timeout time.Duration, q *Queue[K, V], keys any, want any) {
+func assertSucceedsWithin[K comparable, V any](t *testing.T, timeout time.Duration, q *Queue[K, V], keys []K, want []V) {
 	t.Helper()
 
 	var (
-		keysKind = reflect.ValueOf(keys).Kind()
-		done     = make(chan struct{})
-		got      any
-		err      error
+		done = make(chan struct{})
+		got  []V
+		err  error
 	)
 	go func() {
 		defer close(done)
-		if keysKind == reflect.Slice {
-			got, err = q.GetAll(keys.([]K)...)
-		} else {
-			got, err = q.Get(keys.(K))
-		}
+		got, err = q.GetAll(keys...)
 	}()
 
 	select {

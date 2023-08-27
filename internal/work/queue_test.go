@@ -9,12 +9,12 @@ import (
 
 func TestQueueBasicUnlimited(t *testing.T) {
 	q := NewQueue(0, func(_ context.Context, x int) (int, error) { return x, nil })
-	assertTaskSucceedsWithin(t, 2*time.Second, q.getTask(42), 42)
+	assertSucceedsWithin(t, 2*time.Second, q, []int{42}, []int{42})
 }
 
 func TestQueueBasicLimited(t *testing.T) {
 	q := NewQueue(1, func(_ context.Context, x int) (int, error) { return x, nil })
-	assertTaskSucceedsWithin(t, 2*time.Second, q.getTask(42), 42)
+	assertSucceedsWithin(t, 2*time.Second, q, []int{42}, []int{42})
 }
 
 func TestQueueDeduplication(t *testing.T) {
