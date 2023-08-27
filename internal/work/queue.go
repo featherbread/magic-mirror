@@ -29,24 +29,14 @@ type Queue[K comparable, T any] struct {
 	tasksMu   sync.Mutex
 	tasksDone atomic.Uint64
 
-	queue   []K
-	queueMu sync.Mutex
+	maxWorkers int
+	state      chan queueState[K]
+}
 
-	// For queues with a worker count, ready is buffered to the number of workers,
-	// and provides "readiness tokens" that activate workers who are waiting on an
-	// empty queue to fill up. Every push to the queue should attempt to send one
-	// token without blocking; if the channel's buffer is full, that's enough to
-	// eventually activate all workers. Correspondingly, workers ready to pop from
-	// the queue should try to steal an available token without blocking, and
-	// maybe keep an idle worker from having to awaken.
-	ready chan struct{}
-
-	// For queues with a worker count, reattach is an unbuffered channel that
-	// allows a detached worker to reestablish itself within the worker limit by
-	// forcing another worker to exit. Workers ready to pop from the queue should
-	// first try to handle a reattach request without blocking, and return if they
-	// receive a token.
-	reattach chan struct{}
+type queueState[K comparable] struct {
+	Keys        []K
+	Workers     int
+	Reattachers []chan struct{}
 }
 
 // NewQueue creates a queue that uses the provided handler function to complete
@@ -63,11 +53,9 @@ func NewQueue[K comparable, T any](concurrency int, handle Handler[K, T]) *Queue
 		tasks:  make(map[K]*Task[T]),
 	}
 	if concurrency > 0 {
-		q.ready = make(chan struct{}, concurrency)
-		q.reattach = make(chan struct{})
-		for i := 0; i < concurrency; i++ {
-			go q.workOnQueue()
-		}
+		q.maxWorkers = concurrency
+		q.state = make(chan queueState[K], 1)
+		q.state <- queueState[K]{}
 	}
 	return q
 }
@@ -119,9 +107,8 @@ func (q *Queue[K, T]) Stats() (done, submitted uint64) {
 // The behavior of any method of the queue (including CloseSubmit) after a call
 // to CloseSubmit is undefined.
 func (q *Queue[K, T]) CloseSubmit() {
-	if q.ready != nil {
-		close(q.ready)
-	}
+	// TODO: Remove this from the interface. It's a vestige of the old model of
+	// pre-creating a goroutine pool in the limited concurrency case.
 }
 
 func (q *Queue[K, T]) getOrCreateTasks(keys []K) (tasks TaskList[T], newKeys []K) {
@@ -144,7 +131,7 @@ func (q *Queue[K, T]) getOrCreateTasks(keys []K) (tasks TaskList[T], newKeys []K
 }
 
 func (q *Queue[K, T]) scheduleNewKeys(keys []K) {
-	if q.ready == nil {
+	if q.state == nil {
 		q.scheduleUnqueued(keys)
 	} else {
 		q.scheduleQueued(keys)
@@ -158,64 +145,43 @@ func (q *Queue[K, T]) scheduleUnqueued(keys []K) {
 }
 
 func (q *Queue[K, T]) scheduleQueued(keys []K) {
-	q.queueMu.Lock()
-	q.queue = append(q.queue, keys...)
-	q.queueMu.Unlock()
-
-	for range keys {
-		select {
-		case q.ready <- struct{}{}:
-		default:
-			return
-		}
+	state := <-q.state
+	state.Keys = append(state.Keys, keys...)
+	missingWorkers := q.maxWorkers - state.Workers
+	state.Workers += missingWorkers
+	for i := 0; i < missingWorkers; i++ {
+		go q.workOnQueue()
 	}
+	q.state <- state
 }
 
 func (q *Queue[K, T]) workOnQueue() {
 	for {
-		key, ok := q.tryPop()
-		if !ok {
-			select {
-			case _, ok := <-q.ready:
-				if ok {
-					continue
-				} else {
-					return
-				}
-			case <-q.reattach:
-				return
-			}
+		state := <-q.state
+
+		if len(state.Reattachers) > 0 {
+			reattach := state.Reattachers[0]
+			state.Reattachers = state.Reattachers[1:]
+			close(reattach)
+			q.state <- state
+			return
 		}
 
-		taskCtx := q.completeTask(key)
+		if len(state.Keys) == 0 {
+			state.Workers -= 1
+			q.state <- state
+			return
+		}
 
+		key := state.Keys[0]
+		state.Keys = state.Keys[1:]
+		q.state <- state
+
+		taskCtx := q.completeTask(key)
 		if taskCtx.detached {
 			return
 		}
-
-		select {
-		case <-q.reattach:
-			return
-		default:
-		}
-
-		select {
-		case <-q.ready:
-		default:
-		}
 	}
-}
-
-func (q *Queue[K, T]) tryPop() (key K, ok bool) {
-	q.queueMu.Lock()
-	defer q.queueMu.Unlock()
-
-	if len(q.queue) > 0 {
-		key = q.queue[0]
-		ok = true
-		q.queue = q.queue[1:]
-	}
-	return
 }
 
 func (q *Queue[K, T]) completeTask(key K) *taskContext {
@@ -237,17 +203,42 @@ func (q *Queue[K, T]) completeTask(key K) *taskContext {
 }
 
 func (q *Queue[K, T]) handleDetach() {
-	if q.ready != nil {
-		go q.workOnQueue()
+	if q.state == nil {
+		return
 	}
+	state := <-q.state
+	if len(state.Keys) > 0 {
+		go q.workOnQueue()
+	} else {
+		state.Workers -= 1
+	}
+	q.state <- state
 }
 
 func (q *Queue[K, T]) handleReattach(ctx context.Context) error {
-	if q.ready == nil {
+	if q.state == nil {
 		return nil
 	}
+
+	var state queueState[K]
 	select {
-	case q.reattach <- struct{}{}:
+	case state = <-q.state:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	if state.Workers < q.maxWorkers {
+		state.Workers += 1
+		q.state <- state
+		return nil
+	}
+
+	reattach := make(chan struct{})
+	state.Reattachers = append(state.Reattachers, reattach)
+	q.state <- state
+
+	select {
+	case <-reattach:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
