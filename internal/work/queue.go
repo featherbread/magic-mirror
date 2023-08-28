@@ -35,20 +35,36 @@ type Queue[K comparable, V any] struct {
 	tasksMu   sync.Mutex
 	tasksDone atomic.Uint64
 
-	// Queues with limited concurrency share a single workState[K] through a
-	// 1-buffered channel, which enables correct tracking and management of the
-	// number of active goroutines calling handlers. This management is based on
-	// the concept of implicit "work grants," which represent the right to perform
-	// work within the queue's concurrency limit. As work grants are not directly
-	// tracked within this state, we will comment on their handling throughout the
-	// implementation.
-	//
-	// Queues with unlimited concurrency are represented by the absence of a state
+	// Queues with limited concurrency share a workState through a 1-buffered
+	// channel. Queues with unlimited concurrency are represented by a nil state
 	// channel.
 	state     chan workState[K]
 	maxGrants int
 }
 
+// workState tracks pending work in a limited concurrency queue, along with the
+// number of outstanding "work grants" issued to execute that work. Within a
+// limited concurrency queue:
+//
+//   - Every unit of work that executes within the concurrency limit (i.e. any
+//     new or reattaching handler for a given key) must be associated with a
+//     work grant. New work grants must be issued whenever possible to permit
+//     the execution of new work units concurrently with existing work units.
+//
+//   - The number of outstanding work grants must not exceed the concurrency
+//     limit. When sufficient work grants cannot be issued to execute all
+//     outsanding units of work concurrently, some units of work must be queued
+//     within the workState for later execution.
+//
+//   - Work grants are retired if and only if no pending units of work are
+//     available to execute. If the holder of a work grant does not intend to
+//     execute pending units of work, it must transfer its work grant to a new
+//     worker.
+//
+// Work grants are an abstract concept not directly represented by any type or
+// value. While the issuance and retiring of work grants is tracked by the
+// workState's grants counter, the transfer of work grants between goroutines
+// occurs purely by convention.
 type workState[K comparable] struct {
 	grants      int
 	keys        []K
@@ -167,8 +183,9 @@ func (q *Queue[K, V]) scheduleUnlimited(keys []K) {
 }
 
 func (q *Queue[K, V]) scheduleLimited(keys []K) {
-	// Work grants first come into existence here, and are issued to the handlers
-	// that we spawn to process new keys.
+	// Because we are introducing new units of work to the queue, we must issue as
+	// many new work grants as the queue's concurrency limit allows for, and
+	// transfer them to new worker goroutines.
 	state := <-q.state
 	state.keys = append(state.keys, keys...)
 	newGrants := min(q.maxGrants-state.grants, len(keys))
@@ -179,35 +196,33 @@ func (q *Queue[K, V]) scheduleLimited(keys []K) {
 	}
 }
 
+// work, when invoked in a new goroutine, accepts ownership of a work grant and
+// discharges the duties of a work grant holder.
 func (q *Queue[K, V]) work() {
 	for {
 		state := <-q.state
 
 		if len(state.reattachers) > 0 {
-			// We must attempt to transfer our work grant to a waiting reattacher
-			// before processing any new keys.
+			// See handleReattach for details.
 			reattach := state.reattachers[0]
 			state.reattachers = state.reattachers[1:]
 			q.state <- state
 			if <-reattach {
-				// We have successfully transferred our work grant to the reattaching
-				// handler, and as such must not perform any further work.
-				return
+				return // We have successfully transferred our work grant.
 			}
-			// The reattaching handler bailed out before we could synchronize with
-			// them. We retain the work grant and must continue to use it.
-			continue
+			continue // The reattacher bailed, we retain the work grant.
 		}
 
 		if len(state.keys) == 0 {
-			// With no reattachers and no keys, we may safely retire the work grant.
-			// The party that next queues a key or attempts to reattach must issue a
-			// new work grant to consume any available capacity.
+			// With no reattachers and no keys, we have no pending work and must
+			// retire the work grant.
 			state.grants -= 1
 			q.state <- state
 			return
 		}
 
+		// We have a pending unit of work (the new key) and must use our work grant
+		// to execute it.
 		key := state.keys[0]
 		state.keys = state.keys[1:]
 		q.state <- state
@@ -237,28 +252,25 @@ func (q *Queue[K, V]) completeTask(key K) *taskContext {
 	return taskCtx
 }
 
-// handleDetach transfers or retires the work grant associated with the handler
-// that calls it. Its behavior is undefined if the handler that calls it does
-// not hold an active work grant.
+// handleDetach relinquishes the work grant held by the handler that calls it.
+// Its behavior is undefined if its caller does not hold an outstanding work
+// grant.
 func (q *Queue[K, V]) handleDetach() {
 	if q.state == nil {
 		return
 	}
 	state := <-q.state
 	if len(state.keys) > 0 || len(state.reattachers) > 0 {
-		// If our work grant is useful for any queued work, we must transfer it to a
-		// new worker, or else the queue may deadlock.
-		go q.work()
+		go q.work() // There is pending work; we must transfer the work grant.
 	} else {
-		// Otherwise, we may safely retire the work grant.
-		state.grants -= 1
+		state.grants -= 1 // There is no pending work; we must retire the work grant.
 	}
 	q.state <- state
 }
 
-// handleReattach acquires or self-issues a work grant for the handler that
-// calls it. Its behavior is undefined if the handler that calls it already
-// holds an active work grant.
+// handleReattach obtains a work grant for the handler that calls it, or returns
+// ctx.Err() if ctx is canceled before the work grant is obtained. Its behavior
+// is undefined if its caller already holds an outstanding work grant.
 func (q *Queue[K, V]) handleReattach(ctx context.Context) error {
 	if q.state == nil {
 		return nil
@@ -272,26 +284,23 @@ func (q *Queue[K, V]) handleReattach(ctx context.Context) error {
 	}
 
 	if state.grants < q.maxGrants {
-		// We have the capacity to self-issue a work grant.
+		// There is capacity available for a new work grant; we must issue one.
 		state.grants += 1
 		q.state <- state
 		return nil
 	}
 
-	// We do not have the capacity to issue a new work grant, so we must wait for
-	// another worker to transfer theirs to us. As this is an unbuffered channel,
-	// a successful send will synchronize precisely with a specific worker.
+	// There is no capacity for a new work grant; we must obtain one from an
+	// existing worker. Because this is an unbuffered channel, a successful send
+	// will synchronize perfectly with the receive from inside of work(),
+	// representing a mutual agreement to the transfer.
 	reattach := make(chan bool)
 	state.reattachers = append(state.reattachers, reattach)
 	q.state <- state
-
 	select {
 	case reattach <- true:
-		// We have successfully received a work grant.
 		return nil
 	case <-ctx.Done():
-		// We can no longer wait to receive a work grant, and instead signal to the
-		// worker that picks up our channel that they must retain their work grant.
 		close(reattach)
 		return ctx.Err()
 	}
@@ -342,9 +351,9 @@ func getTaskContext(ctx context.Context) (taskCtx *taskContext, err error) {
 }
 
 // Detach unbounds the calling [Handler] from the concurrency limit of the
-// [Queue] that invoked it, allowing the queue to immediately start handling new
-// keys. It returns an error if ctx is not associated with a [Queue], or if the
-// handler has already detached.
+// [Queue] that invoked it, allowing the queue to immediately start handling
+// other work. It returns an error if ctx is not associated with a [Queue], or
+// if the handler has already detached.
 //
 // The corresponding [Reattach] function permits a detached handler to
 // reestablish itself within the queue's concurrency limit ahead of the handling
