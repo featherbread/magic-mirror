@@ -24,8 +24,9 @@ type Handler[K comparable, V any] func(context.Context, K) (V, error)
 //
 // Handlers receive a context that allows them to [Detach] from a queue,
 // temporarily increasing its concurrency limit. The context is never canceled.
-// This is clearly a bad design, and at least one of these two things will
-// change in the future.
+// The use of a never-canceled context for this purpose is clearly a bad design;
+// in the future, this will change to a Queue-specific detacher type and/or some
+// form of context cancellation will be implemented.
 type Queue[K comparable, V any] struct {
 	handle Handler[K, V]
 
