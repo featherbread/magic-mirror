@@ -265,25 +265,8 @@ func (q *Queue[K, V]) completeTask(key K) *taskContext {
 // Its behavior is undefined if its caller does not hold an outstanding work
 // grant.
 func (q *Queue[K, V]) handleDetach() {
-	if q.state == nil {
-		return
-	}
-
-	// It is always correct to simply transfer our work grant to a new worker.
-	// However, if we can get access to the state without blocking, we'll see if
-	// we can retire the work grant without having to spawn a new goroutine.
-	select {
-	case state := <-q.state:
-		if len(state.keys) == 0 && len(state.reattachers) == 0 {
-			state.grants -= 1 // There is no pending work, so we can retire the work grant.
-			q.state <- state
-		} else {
-			q.state <- state
-			go q.work() // There is pending work, so we must transfer the work grant.
-		}
-
-	default:
-		go q.work() // Transfer the work grant immediately to avoid blocking the caller.
+	if q.state != nil {
+		go q.work() // Transfer our work grant to a new worker.
 	}
 }
 
