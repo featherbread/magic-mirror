@@ -268,15 +268,22 @@ func (q *Queue[K, V]) handleDetach() {
 	if q.state == nil {
 		return
 	}
-	state := <-q.state
-	if len(state.keys) == 0 && len(state.reattachers) == 0 {
-		// As there is no pending work, we have the option to retire the work grant.
-		state.grants -= 1
-	} else {
-		// There is pending work, so we must transfer the work grant.
-		go q.work()
+
+	// It is always correct to simply transfer our work grant to a new worker.
+	// However, if we can get access to the state without blocking, we'll see if
+	// we can retire the work grant without having to spawn a new goroutine.
+	select {
+	case state := <-q.state:
+		if len(state.keys) == 0 && len(state.reattachers) == 0 {
+			state.grants -= 1 // There is no pending work, so we can retire the work grant.
+		} else {
+			go q.work() // There is pending work, so we must transfer the work grant.
+		}
+		q.state <- state
+
+	default:
+		go q.work() // Transfer the work grant immediately to avoid blocking the caller.
 	}
-	q.state <- state
 }
 
 // handleReattach obtains a work grant for the handler that calls it, or returns
