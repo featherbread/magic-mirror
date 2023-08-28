@@ -14,10 +14,9 @@ type NoValue = struct{}
 type Handler[K comparable, V any] func(context.Context, K) (V, error)
 
 // Queue is a deduplicating work queue. It acts as a map that lazily computes
-// and caches results corresponding to unique keys by calling a "handler"
-// function in a new goroutine. It optionally limits the number of concurrent
-// handler calls in flight, queueing keys for handling in the order that they
-// are requested.
+// and caches results corresponding to unique keys by calling a [Handler] in a
+// new goroutine. It optionally limits the number of concurrent handler calls in
+// flight, queueing keys for handling in the order that they are requested.
 //
 // The cached result for each key consists of a value and an error. Results that
 // include a non-nil error receive no special treatment from the queue; they are
@@ -25,6 +24,8 @@ type Handler[K comparable, V any] func(context.Context, K) (V, error)
 //
 // Handlers receive a context that allows them to [Detach] from a queue,
 // temporarily increasing its concurrency limit. The context is never canceled.
+// This is clearly a bad design, and at least one of these two things will
+// change in the future.
 type Queue[K comparable, V any] struct {
 	handle Handler[K, V]
 
@@ -74,10 +75,10 @@ type workState[K comparable] struct {
 // NewQueue creates a queue that uses the provided handler to compute the result
 // for each key.
 //
-// If concurrency > 0, the queue will run up to that many concurrent handler
-// calls in new goroutines (and potentially more if a handler calls [Detach]).
-// If concurrency <= 0, the queue may run an unlimited number of concurrent
-// handler calls.
+// If concurrency > 0, the queue will run up to that many handler calls
+// concurrently in new goroutines (potentially more if a handler calls
+// [Detach]). If concurrency <= 0, the queue may run an unlimited number of
+// concurrent handler calls.
 func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue[K, V] {
 	ctx, cancel := context.WithCancel(context.TODO())
 	q := &Queue[K, V]{
