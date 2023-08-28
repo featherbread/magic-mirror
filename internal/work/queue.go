@@ -275,10 +275,11 @@ func (q *Queue[K, V]) handleDetach() {
 	case state := <-q.state:
 		if len(state.keys) == 0 && len(state.reattachers) == 0 {
 			state.grants -= 1 // There is no pending work, so we can retire the work grant.
+			q.state <- state
 		} else {
+			q.state <- state
 			go q.work() // There is pending work, so we must transfer the work grant.
 		}
-		q.state <- state
 
 	default:
 		go q.work() // Transfer the work grant immediately to avoid blocking the caller.
