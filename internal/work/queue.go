@@ -13,7 +13,7 @@ type NoValue = struct{}
 // Handler is the type for a queue's handler function.
 type Handler[K comparable, V any] func(context.Context, K) (V, error)
 
-// Queue is a deduplicating work queue. It acts as a map that lazily computes
+// Queue is a deduplicating work queue. It acts like a map that lazily computes
 // and caches results corresponding to unique keys by calling a [Handler] in a
 // new goroutine. It optionally limits the number of concurrent handler calls in
 // flight, queueing keys for handling in the order that they are requested.
