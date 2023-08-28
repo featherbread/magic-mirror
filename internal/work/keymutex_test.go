@@ -86,16 +86,16 @@ func TestKeyMutexDetach(t *testing.T) {
 	}
 
 	keys := makeIntKeys(submitCount)
-	tasks := q.GetOrSubmitAll(keys...)
+	go func() { q.GetAll(keys...) }()
 	timeout := time.After(2 * time.Second)
-	for i := range tasks {
+	for i := range keys {
 		select {
 		case <-started:
 		case <-timeout:
-			t.Fatalf("timed out waiting for tasks to detach: %d of %d running", i, len(tasks))
+			t.Fatalf("timed out waiting for tasks to detach: %d of %d running", i, len(keys))
 		}
 	}
 
 	km.Unlock(NoValue{})
-	assertTaskSucceedsWithin(t, 2*time.Second, tasks, keys)
+	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 }

@@ -61,7 +61,7 @@ func (c *blobCopier) CopyAll(src, dst image.Repository, dgsts ...digest.Digest) 
 		c.RegisterSource(dgst, src)
 		requests[i] = blobCopyRequest{Digest: dgst, Dst: dst}
 	}
-	_, err := c.Queue.GetOrSubmitAll(requests...).Wait()
+	_, err := c.Queue.GetAll(requests...)
 	return err
 }
 

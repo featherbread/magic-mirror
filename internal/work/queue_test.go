@@ -9,16 +9,12 @@ import (
 
 func TestQueueBasicUnlimited(t *testing.T) {
 	q := NewQueue(0, func(_ context.Context, x int) (int, error) { return x, nil })
-	defer q.CloseSubmit()
-
-	assertTaskSucceedsWithin(t, 2*time.Second, q.GetOrSubmit(42), 42)
+	assertSucceedsWithin(t, 2*time.Second, q, []int{42}, []int{42})
 }
 
 func TestQueueBasicLimited(t *testing.T) {
 	q := NewQueue(1, func(_ context.Context, x int) (int, error) { return x, nil })
-	defer q.CloseSubmit()
-
-	assertTaskSucceedsWithin(t, 2*time.Second, q.GetOrSubmit(42), 42)
+	assertSucceedsWithin(t, 2*time.Second, q, []int{42}, []int{42})
 }
 
 func TestQueueDeduplication(t *testing.T) {
@@ -32,25 +28,22 @@ func TestQueueDeduplication(t *testing.T) {
 		<-unblock
 		return x, nil
 	})
-	defer q.CloseSubmit()
 
 	keys := makeIntKeys(count)
 
 	close(unblock)
-	halfTasks := q.GetOrSubmitAll(keys[:half]...)
-	assertTaskSucceedsWithin(t, 2*time.Second, halfTasks, keys[:half])
+	assertSucceedsWithin(t, 2*time.Second, q, keys[:half], keys[:half])
 
 	unblock = make(chan struct{})
-	tasks := q.GetOrSubmitAll(keys...)
-	assertTaskSucceedsWithin(t, 2*time.Second, tasks[:half], keys[:half])
-	assertTaskBlocked(t, tasks[half])
+	assertSucceedsWithin(t, 2*time.Second, q, keys[:half], keys[:half])
+	cleanup := assertBlocked(t, q, keys[half])
+	defer cleanup()
 
 	close(unblock)
-	assertTaskSucceedsWithin(t, 2*time.Second, tasks, keys)
+	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 
 	unblock = make(chan struct{})
-	tasksAgain := q.GetOrSubmitAll(keys...)
-	assertTaskSucceedsWithin(t, 2*time.Second, tasksAgain, keys)
+	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 }
 
 func TestQueueConcurrencyLimit(t *testing.T) {
@@ -73,14 +66,13 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 		<-unblock
 		return x, nil
 	})
-	defer q.CloseSubmit()
 
 	keys := makeIntKeys(submitCount)
-	tasks := q.GetOrSubmitAll(keys...)
-
+	go func() { q.GetAll(keys...) }()
 	forceRuntimeProgress(workerCount + 1)
 	close(unblock)
-	assertTaskSucceedsWithin(t, 2*time.Second, tasks, keys)
+	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
+
 	if breached.Load() {
 		t.Errorf("queue breached limit of %d workers in flight", workerCount)
 	}
@@ -100,8 +92,7 @@ func TestQueueDetachReattachUnlimited(t *testing.T) {
 	})
 
 	keys := makeIntKeys(submitCount)
-	tasks := q.GetOrSubmitAll(keys...)
-	assertTaskSucceedsWithin(t, 2*time.Second, tasks, keys)
+	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 }
 
 func TestQueueDetachReattachLimited(t *testing.T) {
@@ -140,7 +131,7 @@ func TestQueueDetachReattachLimited(t *testing.T) {
 	})
 
 	keys := makeIntKeys(submitCount)
-	tasks := q.GetOrSubmitAll(keys...)
+	go func() { q.GetAll(keys...) }()
 
 	timeout := time.After(2 * time.Second)
 	for i := 0; i < submitCount; i++ {
@@ -153,8 +144,9 @@ func TestQueueDetachReattachLimited(t *testing.T) {
 
 	close(unblockReattach)
 	forceRuntimeProgress(workerCount + 1)
+
 	close(unblockReturn)
-	assertTaskSucceedsWithin(t, 2*time.Second, tasks, keys)
+	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 
 	if breachedReattach.Load() {
 		t.Errorf("queue breached limit of %d workers in flight during reattach", workerCount)

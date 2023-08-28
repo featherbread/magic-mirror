@@ -16,22 +16,21 @@ func makeIntKeys(n int) (keys []int) {
 	return
 }
 
-type awaitable[T any] interface {
-	Wait() (T, error)
-}
-
-func assertTaskSucceedsWithin[T any](t *testing.T, timeout time.Duration, task awaitable[T], want T) {
+func assertSucceedsWithin[K comparable, V any](t *testing.T, timeout time.Duration, q *Queue[K, V], keys []K, want []V) {
 	t.Helper()
 
-	done := make(chan struct{})
+	var (
+		done = make(chan struct{})
+		got  []V
+		err  error
+	)
 	go func() {
 		defer close(done)
-		task.Wait()
+		got, err = q.GetAll(keys...)
 	}()
 
 	select {
 	case <-done:
-		got, err := task.Wait()
 		if err != nil {
 			t.Errorf("unexpected error from task: %v", err)
 		}
@@ -40,22 +39,30 @@ func assertTaskSucceedsWithin[T any](t *testing.T, timeout time.Duration, task a
 		}
 
 	case <-time.After(timeout):
-		t.Fatalf("task did not finish within %v", timeout)
+		t.Fatalf("did not get result for key within %v", timeout)
 	}
 }
 
-func assertTaskBlocked[T any](t *testing.T, task *Task[T]) {
+func assertBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) (cleanup func()) {
 	t.Helper()
 
-	// Make an effort to ensure the task is scheduled.
-	runtime.Gosched()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		q.Get(key)
+	}()
+
+	// Make a best-effort attempt to force the key's handler to be in flight when
+	// it should not be.
+	forceRuntimeProgress(2)
 
 	select {
-	case <-task.done:
-		// TODO: Can we do this without touching Task internals?
-		t.Errorf("task was not blocked")
+	case <-done:
+		t.Errorf("computation of key was not blocked")
 	default:
 	}
+
+	return func() { <-done }
 }
 
 // forceRuntimeProgress attempts to force the Go runtime to make progress on at

@@ -56,7 +56,7 @@ func newManifestCache(concurrency int) *manifestCache {
 }
 
 func (d *manifestCache) Get(img image.Image) (image.ManifestKind, error) {
-	return d.Queue.GetOrSubmit(img).Wait()
+	return d.Queue.Get(img)
 }
 
 func (d *manifestCache) handleRequest(_ context.Context, img image.Image) (resp image.ManifestKind, err error) {
