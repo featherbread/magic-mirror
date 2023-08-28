@@ -49,30 +49,30 @@ type Queue[K comparable, V any] struct {
 //
 // Work grants are an abstract concept not directly represented by any type or
 // value. However, the issuance, transfer, and retiring of work grants is
-// critical to the correct operation of a limited concurrency queue.
-// Work grants operate as follows:
+// critical to the correct operation of a limited concurrency queue. In short,
+// work grants represent both the right and the obligation to execute work on
+// behalf of a queue. They operate as follows:
 //
-//   - In order to execute any unit of work on behalf of a queue under the
-//     concurrency limit, an outstanding work grant must be held.
+//   - In order to execute any work on behalf of a limited concurrency queue, an
+//     outstanding work grant must be held.
 //
 //   - When a new work unit is dispatched to the queue while the number of
 //     outstanding work grants is lower than the concurrency limit, the
-//     dispatcher must immediately issue itself a new work grant (increasing the
-//     number of outstanding work grants by 1) and assume responsibility for all
-//     duties associated with it. When the number of outstanding work grants is
-//     not lower than the concurrency limit, the dispatcher must queue the work
-//     unit for later execution by an existing work grant holder.
+//     dispatcher must immediately issue itself a new work grant and assume
+//     responsibility for all duties associated with it. When the number of
+//     outstanding work grants is not lower than the concurrency limit, the
+//     dispatcher must queue the work unit for later execution by an existing
+//     work grant holder.
 //
 //   - If the holder of a work grant does not intend to continue executing work
-//     units on behalf of the queue, and cannot retire the work grant as
-//     described below, it must transfer the work grant to a holder who can
-//     continue to discharge the duties associated with it, and cease to
-//     discharge any of those duties itself.
+//     on behalf of the queue, and cannot retire the work grant as described
+//     below, it must transfer the work grant to a holder who can continue to
+//     discharge the duties associated with it, and cease to discharge any of
+//     those duties itself.
 //
 //   - If the holder of a work grant cannot find any additional work units to
-//     execute on behalf of the queue, it must retire the work grant (decreasing
-//     the number of outstanding work grants by 1) and cease to discharge any
-//     duties associated with it.
+//     execute on behalf of the queue, it must retire the work grant and cease
+//     to discharge any duties associated with it.
 type workState[K comparable] struct {
 	grants      int
 	keys        []K
@@ -219,7 +219,7 @@ func (q *Queue[K, V]) work() {
 			if <-reattach {
 				return // We have successfully transferred our work grant.
 			}
-			continue // The reattacher bailed, we retain the work grant.
+			continue // The reattacher bailed, so we retain the work grant.
 		}
 
 		if len(state.keys) == 0 {
@@ -230,8 +230,7 @@ func (q *Queue[K, V]) work() {
 			return
 		}
 
-		// We have a pending work unit (the new key) and must use our work grant to
-		// execute it.
+		// We have pending work and must use our work grant to execute it.
 		key := state.keys[0]
 		state.keys = state.keys[1:]
 		q.state <- state
