@@ -14,17 +14,10 @@ type KeyMutex[K comparable] struct {
 }
 
 // LockDetached blocks the calling goroutine until any other lock on the
-// provided key is released, or until ctx is canceled. It returns nil if the
-// lock was successfully acquired, or ctx.Err() if ctx was canceled before
-// locking could finish. A non-nil error indicates that the lock is not held,
-// and that the caller must not unlock the key or violate any invariant that the
-// lock protects.
-//
-// If ctx is associated with a [Queue], LockDetached will [Detach] the caller
-// from the queue until it acquires the lock, and will attempt to [Reattach]
-// before returning. It will hold the lock while waiting to reattach, and will
-// release the lock if ctx is canceled before Reattach completes.
-func (km *KeyMutex[K]) LockDetached(wctx Context, key K) (err error) {
+// provided key is released. If the lock is not immediately available,
+// LockDetached will detach the caller from the [Queue] associated with wctx
+// while it waits for the lock, and will reattach before returning.
+func (km *KeyMutex[K]) LockDetached(wctx Context, key K) {
 	var (
 		detached    bool
 		triedDetach bool
@@ -58,7 +51,7 @@ func (km *KeyMutex[K]) LockDetached(wctx Context, key K) (err error) {
 			}
 			km.chans[key] = make(chan struct{})
 			km.chansMu.Unlock()
-			return nil
+			return
 		}
 
 		// Someone else currently holds the lock on this key. We'll detach from the
@@ -71,7 +64,7 @@ func (km *KeyMutex[K]) LockDetached(wctx Context, key K) (err error) {
 		tryDetach()
 		_, passed := <-ch
 		if passed {
-			return nil
+			return
 		}
 	}
 }

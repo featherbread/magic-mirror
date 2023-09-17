@@ -31,9 +31,7 @@ func TestKeyMutexBasic(t *testing.T) {
 			defer func() { done <- struct{}{} }()
 			<-ready
 
-			if err := km.LockDetached(wctx, key); err != nil {
-				panic(err)
-			}
+			km.LockDetached(wctx, key)
 			defer km.Unlock(key)
 
 			locked[key].Add(1)
@@ -74,9 +72,7 @@ func TestKeyMutexDetach(t *testing.T) {
 	q := NewQueue(1, func(wctx Context, x int) (int, error) {
 		started <- struct{}{}
 
-		if err := km.LockDetached(wctx, NoValue{}); err != nil {
-			return x, err
-		}
+		km.LockDetached(wctx, NoValue{})
 		defer km.Unlock(NoValue{})
 
 		if !locked.CompareAndSwap(false, true) {
@@ -91,10 +87,7 @@ func TestKeyMutexDetach(t *testing.T) {
 		detach:   func() {},
 		reattach: func() {},
 	}
-
-	if err := km.LockDetached(wctx, NoValue{}); err != nil {
-		t.Fatal(err)
-	}
+	km.LockDetached(wctx, NoValue{})
 
 	keys := makeIntKeys(submitCount)
 	go func() { q.GetAll(keys...) }()
