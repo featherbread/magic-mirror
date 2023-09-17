@@ -13,6 +13,13 @@ func TestKeyMutexBasic(t *testing.T) {
 		nWorkers = nKeys * 2
 	)
 
+	// TODO: This is weird.
+	wctx := &taskContext{
+		Context:  context.Background(),
+		detach:   func() {},
+		reattach: func(context.Context) error { return nil },
+	}
+
 	var (
 		km      KeyMutex[int]
 		ready   = make(chan struct{})
@@ -26,7 +33,7 @@ func TestKeyMutexBasic(t *testing.T) {
 			defer func() { done <- struct{}{} }()
 			<-ready
 
-			if err := km.LockDetached(context.Background(), key); err != nil {
+			if err := km.LockDetached(wctx, key); err != nil {
 				panic(err)
 			}
 			defer km.Unlock(key)
@@ -66,10 +73,10 @@ func TestKeyMutexDetach(t *testing.T) {
 		started = make(chan struct{}, submitCount)
 		locked  atomic.Bool
 	)
-	q := NewQueue(1, func(ctx context.Context, x int) (int, error) {
+	q := NewQueue(1, func(wctx Context, x int) (int, error) {
 		started <- struct{}{}
 
-		if err := km.LockDetached(ctx, NoValue{}); err != nil {
+		if err := km.LockDetached(wctx, NoValue{}); err != nil {
 			return x, err
 		}
 		defer km.Unlock(NoValue{})
@@ -81,7 +88,14 @@ func TestKeyMutexDetach(t *testing.T) {
 		return x, nil
 	})
 
-	if err := km.LockDetached(context.Background(), NoValue{}); err != nil {
+	// TODO: This is weird.
+	wctx := &taskContext{
+		Context:  context.Background(),
+		detach:   func() {},
+		reattach: func(context.Context) error { return nil },
+	}
+
+	if err := km.LockDetached(wctx, NoValue{}); err != nil {
 		t.Fatal(err)
 	}
 

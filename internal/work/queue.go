@@ -10,8 +10,36 @@ import (
 // NoValue is the canonical empty value type for a queue.
 type NoValue = struct{}
 
+// Context is a context provided to a queue's handler function to enable
+// detaching, reattaching, and cancellation.
+type Context interface {
+	context.Context
+
+	// Detach unbounds the calling [Handler] from the concurrency limit of the
+	// [Queue] that invoked it, allowing the queue to immediately start handling
+	// other work. It returns an error if the handler has already detached.
+	//
+	// The corresponding Reattach function permits a detached handler to
+	// reestablish itself within the queue's concurrency limit ahead of the
+	// handling of new keys.
+	//
+	// A typical use for detaching is to temporarily block on the completion of
+	// another handler call for the same queue, where caching or other side
+	// effects performed by that handler may improve the performance of this
+	// handler. [KeyMutex] facilitates this pattern by automatically detaching
+	// from a queue while it waits for the lock on a key.
+	Detach() error
+
+	// Reattach blocks the calling [Handler] until it can continue executing
+	// within the concurrency limit of the [Queue] that invoked it, or until ctx
+	// is canceled. It returns an error if the handler did not previously detach
+	// from the queue. When ctx is canceled before the handler reattaches, the
+	// returned error is ctx.Err().
+	Reattach(context.Context) error
+}
+
 // Handler is the type for a queue's handler function.
-type Handler[K comparable, V any] func(context.Context, K) (V, error)
+type Handler[K comparable, V any] func(Context, K) (V, error)
 
 // Queue is a deduplicating work queue. It acts like a map that lazily computes
 // and caches results corresponding to unique keys by calling a [Handler] in a
@@ -105,9 +133,9 @@ func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue
 
 // NoValueHandler wraps handlers for queues that produce [NoValue], so the
 // handler function can be written to only return an error.
-func NoValueHandler[K comparable](handle func(context.Context, K) error) Handler[K, NoValue] {
-	return func(ctx context.Context, key K) (_ NoValue, err error) {
-		err = handle(ctx, key)
+func NoValueHandler[K comparable](handle func(Context, K) error) Handler[K, NoValue] {
+	return func(wctx Context, key K) (_ NoValue, err error) {
+		err = handle(wctx, key)
 		return
 	}
 }
@@ -249,12 +277,12 @@ func (q *Queue[K, V]) completeTask(key K) *taskContext {
 	q.tasksMu.Unlock()
 
 	taskCtx := &taskContext{
+		Context:  q.ctx,
 		detach:   q.handleDetach,
 		reattach: q.handleReattach,
 	}
-	ctx := context.WithValue(q.ctx, taskContextKey{}, taskCtx)
 
-	task.value, task.err = q.handle(ctx, key)
+	task.value, task.err = q.handle(taskCtx, key)
 	close(task.done)
 	q.tasksDone.Add(1)
 
@@ -333,9 +361,9 @@ func (ts taskList[V]) Wait() (values []V, err error) {
 	return values, nil
 }
 
-type taskContextKey struct{}
-
 type taskContext struct {
+	context.Context
+
 	// detached indicates that the handler that owns this context has relinquished
 	// its work grant.
 	detached bool
@@ -344,64 +372,22 @@ type taskContext struct {
 	reattach func(context.Context) error
 }
 
-func getTaskContext(ctx context.Context) (taskCtx *taskContext, err error) {
-	if v := ctx.Value(taskContextKey{}); v != nil {
-		taskCtx = v.(*taskContext)
-	} else {
-		err = errors.New("context not associated with any queue")
-	}
-	return
-}
-
-// Detach unbounds the calling [Handler] from the concurrency limit of the
-// [Queue] that invoked it, allowing the queue to immediately start handling
-// other work. It returns an error if ctx is not associated with a [Queue], or
-// if the handler has already detached.
-//
-// The corresponding [Reattach] function permits a detached handler to
-// reestablish itself within the queue's concurrency limit ahead of the handling
-// of new keys.
-//
-// A typical use for detaching is to temporarily block on the completion of
-// another handler call for the same queue, where caching or other side effects
-// performed by that handler may improve the performance of this handler.
-// [KeyMutex] facilitates this pattern by automatically detaching from a queue
-// while it waits for the lock on a key.
-func Detach(ctx context.Context) error {
-	taskCtx, err := getTaskContext(ctx)
-	if err != nil {
-		return err
-	}
-
-	if taskCtx.detached {
+func (tctx *taskContext) Detach() error {
+	if tctx.detached {
 		return errors.New("already detached from queue")
 	}
-
-	taskCtx.detach()
-	taskCtx.detached = true
+	tctx.detach()
+	tctx.detached = true
 	return nil
 }
 
-// Reattach blocks the calling [Handler] until it can continue executing within
-// the concurrency limit of the [Queue] that invoked it, or until ctx is
-// canceled. It returns an error if ctx is not associated with a [Queue], or if
-// the handler did not previously [Detach] from the queue. When ctx is canceled
-// before the handler reattaches, the returned error is ctx.Err().
-//
-// See [Detach] for more information.
-func Reattach(ctx context.Context) error {
-	taskCtx, err := getTaskContext(ctx)
-	if err != nil {
-		return err
-	}
-
-	if !taskCtx.detached {
+func (tctx *taskContext) Reattach(ctx context.Context) error {
+	if !tctx.detached {
 		return errors.New("not detached from queue")
 	}
-
-	if err := taskCtx.reattach(ctx); err != nil {
+	if err := tctx.reattach(ctx); err != nil {
 		return err
 	}
-	taskCtx.detached = false
+	tctx.detached = false
 	return nil
 }

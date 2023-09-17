@@ -1,7 +1,6 @@
 package work
 
 import (
-	"context"
 	"sync"
 )
 
@@ -25,7 +24,7 @@ type KeyMutex[K comparable] struct {
 // from the queue until it acquires the lock, and will attempt to [Reattach]
 // before returning. It will hold the lock while waiting to reattach, and will
 // release the lock if ctx is canceled before Reattach completes.
-func (km *KeyMutex[K]) LockDetached(ctx context.Context, key K) (err error) {
+func (km *KeyMutex[K]) LockDetached(wctx Context, key K) (err error) {
 	var (
 		locked      bool
 		detached    bool
@@ -37,7 +36,7 @@ func (km *KeyMutex[K]) LockDetached(ctx context.Context, key K) (err error) {
 			return
 		}
 		triedDetach = true
-		if err := Detach(ctx); err == nil {
+		if err := wctx.Detach(); err == nil {
 			detached = true
 		}
 	}
@@ -47,7 +46,7 @@ func (km *KeyMutex[K]) LockDetached(ctx context.Context, key K) (err error) {
 			// This won't lose any information. The only error we can return is
 			// ctx.Err(), and since we know we successfully detached from a queue
 			// that's also the only error Reattach can return.
-			err = Reattach(ctx)
+			err = wctx.Reattach(wctx)
 			if err != nil && locked {
 				km.Unlock(key)
 			}
@@ -89,8 +88,8 @@ func (km *KeyMutex[K]) LockDetached(ctx context.Context, key K) (err error) {
 		km.chansMu.Unlock()
 		tryDetach()
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-wctx.Done():
+			return wctx.Err()
 		case _, passed := <-ch:
 			if passed {
 				locked = true

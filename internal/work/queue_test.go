@@ -1,19 +1,18 @@
 package work
 
 import (
-	"context"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
 func TestQueueBasicUnlimited(t *testing.T) {
-	q := NewQueue(0, func(_ context.Context, x int) (int, error) { return x, nil })
+	q := NewQueue(0, func(_ Context, x int) (int, error) { return x, nil })
 	assertSucceedsWithin(t, 2*time.Second, q, []int{42}, []int{42})
 }
 
 func TestQueueBasicLimited(t *testing.T) {
-	q := NewQueue(1, func(_ context.Context, x int) (int, error) { return x, nil })
+	q := NewQueue(1, func(_ Context, x int) (int, error) { return x, nil })
 	assertSucceedsWithin(t, 2*time.Second, q, []int{42}, []int{42})
 }
 
@@ -24,7 +23,7 @@ func TestQueueDeduplication(t *testing.T) {
 	)
 
 	unblock := make(chan struct{})
-	q := NewQueue(0, func(_ context.Context, x int) (int, error) {
+	q := NewQueue(0, func(_ Context, x int) (int, error) {
 		<-unblock
 		return x, nil
 	})
@@ -57,7 +56,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 		breached atomic.Bool
 		unblock  = make(chan struct{})
 	)
-	q := NewQueue(workerCount, func(_ context.Context, x int) (int, error) {
+	q := NewQueue(workerCount, func(_ Context, x int) (int, error) {
 		count := inflight.Add(1)
 		defer inflight.Add(-1)
 		if count > workerCount {
@@ -81,11 +80,11 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 func TestQueueDetachReattachUnlimited(t *testing.T) {
 	const submitCount = 50
 
-	q := NewQueue(0, func(ctx context.Context, x int) (int, error) {
-		if err := Detach(ctx); err != nil {
+	q := NewQueue(0, func(wctx Context, x int) (int, error) {
+		if err := wctx.Detach(); err != nil {
 			panic(err) // Not ideal, but a very fast way to fail everything.
 		}
-		if err := Reattach(ctx); err != nil {
+		if err := wctx.Reattach(wctx); err != nil {
 			panic(err)
 		}
 		return x, nil
@@ -109,15 +108,15 @@ func TestQueueDetachReattachLimited(t *testing.T) {
 		breachedReattach   atomic.Bool
 		unblockReturn      = make(chan struct{})
 	)
-	q := NewQueue(workerCount, func(ctx context.Context, x int) (int, error) {
-		if err := Detach(ctx); err != nil {
+	q := NewQueue(workerCount, func(wctx Context, x int) (int, error) {
+		if err := wctx.Detach(); err != nil {
 			panic(err)
 		}
 		countDetached.Add(1)
 		<-awaitDetached
 
 		<-unblockReattach
-		if err := Reattach(ctx); err != nil {
+		if err := wctx.Reattach(wctx); err != nil {
 			panic(err)
 		}
 		count := reattachedInflight.Add(1)

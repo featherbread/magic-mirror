@@ -1,7 +1,6 @@
 package copy
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -76,8 +75,8 @@ func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {
 	return set
 }
 
-func (c *blobCopier) copyOneBlob(ctx context.Context, req blobCopyRequest) (err error) {
-	if err := c.copyMu.LockDetached(ctx, req.Digest); err != nil {
+func (c *blobCopier) copyOneBlob(wctx work.Context, req blobCopyRequest) (err error) {
+	if err := c.copyMu.LockDetached(wctx, req.Digest); err != nil {
 		return err
 	}
 	defer c.copyMu.Unlock(req.Digest)
