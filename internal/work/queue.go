@@ -285,30 +285,6 @@ func (q *Queue[K, V]) handleReattach() {
 	<-reattach
 }
 
-type task[V any] struct {
-	done  chan struct{}
-	value V
-	err   error
-}
-
-func (t *task[V]) Wait() (V, error) {
-	<-t.done
-	return t.value, t.err
-}
-
-type taskList[V any] []*task[V]
-
-func (ts taskList[V]) Wait() (values []V, err error) {
-	values = make([]V, len(ts))
-	for i, task := range ts {
-		values[i], err = task.Wait()
-		if err != nil {
-			return nil, err
-		}
-	}
-	return values, nil
-}
-
 // QueueHandle allows a [Handler] to interact with its parent queue.
 type QueueHandle struct {
 	// detached indicates that the handler is detached from its queue. In the case
@@ -352,4 +328,28 @@ func (qh *QueueHandle) Reattach() {
 	}
 	qh.reattach()
 	qh.detached = false
+}
+
+type task[V any] struct {
+	done  chan struct{}
+	value V
+	err   error
+}
+
+func (t *task[V]) Wait() (V, error) {
+	<-t.done
+	return t.value, t.err
+}
+
+type taskList[V any] []*task[V]
+
+func (ts taskList[V]) Wait() (values []V, err error) {
+	values = make([]V, len(ts))
+	for i, task := range ts {
+		values[i], err = task.Wait()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return values, nil
 }
