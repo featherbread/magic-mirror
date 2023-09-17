@@ -1,7 +1,6 @@
 package work
 
 import (
-	"errors"
 	"sync"
 	"sync/atomic"
 )
@@ -320,7 +319,8 @@ type QueueHandle struct {
 
 // Detach unbounds the calling [Handler] from the concurrency limit of the
 // [Queue] that invoked it, allowing the queue to immediately start handling
-// other work. It returns an error if the handler has already detached.
+// other work. It returns true if the call detached the handler from the queue,
+// or false if the handler was already detached.
 //
 // The corresponding Reattach function permits a detached handler to reestablish
 // itself within the queue's concurrency limit ahead of the handling of new
@@ -331,23 +331,24 @@ type QueueHandle struct {
 // performed by that handler may improve the performance of this handler.
 // [KeyMutex] facilitates this pattern by automatically detaching from a queue
 // while it waits for the lock on a key.
-func (qh *QueueHandle) Detach() error {
+func (qh *QueueHandle) Detach() bool {
 	if qh.detached {
-		return errors.New("already detached from queue")
+		return false
 	}
 	qh.detach()
 	qh.detached = true
-	return nil
+	return true
 }
 
 // Reattach blocks the calling [Handler] until it can continue executing within
-// the concurrency limit of the [Queue] that invoked it. It returns an error if
-// the handler did not previously detach from the queue.
-func (qh *QueueHandle) Reattach() error {
+// the concurrency limit of the [Queue] that invoked it. It returns true if the
+// call attached the handler to the queue, or false if the handler was already
+// attached.
+func (qh *QueueHandle) Reattach() bool {
 	if !qh.detached {
-		return errors.New("not detached from queue")
+		return false
 	}
 	qh.reattach()
 	qh.detached = false
-	return nil
+	return true
 }

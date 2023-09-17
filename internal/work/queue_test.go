@@ -81,11 +81,11 @@ func TestQueueDetachReattachUnlimited(t *testing.T) {
 	const submitCount = 50
 
 	q := NewQueue(0, func(qh *QueueHandle, x int) (int, error) {
-		if err := qh.Detach(); err != nil {
-			panic(err) // Not ideal, but a very fast way to fail everything.
+		if !qh.Detach() {
+			panic("did not actually detach from queue") // Not ideal, but a very fast way to fail everything.
 		}
-		if err := qh.Reattach(); err != nil {
-			panic(err)
+		if !qh.Reattach() {
+			panic("did not actually reattach to queue")
 		}
 		return x, nil
 	})
@@ -109,15 +109,15 @@ func TestQueueDetachReattachLimited(t *testing.T) {
 		unblockReturn      = make(chan struct{})
 	)
 	q := NewQueue(workerCount, func(qh *QueueHandle, x int) (int, error) {
-		if err := qh.Detach(); err != nil {
-			panic(err)
+		if !qh.Detach() {
+			panic("did not actually detach from queue")
 		}
 		countDetached.Add(1)
 		<-awaitDetached
 
 		<-unblockReattach
-		if err := qh.Reattach(); err != nil {
-			panic(err)
+		if !qh.Reattach() {
+			panic("did not actually reattach to queue")
 		}
 		count := reattachedInflight.Add(1)
 		defer reattachedInflight.Add(-1)
