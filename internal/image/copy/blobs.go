@@ -75,8 +75,8 @@ func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {
 	return set
 }
 
-func (c *blobCopier) copyOneBlob(wctx work.Context, req blobCopyRequest) (err error) {
-	c.copyMu.LockDetached(wctx, req.Digest)
+func (c *blobCopier) copyOneBlob(q work.QueueHandle, req blobCopyRequest) (err error) {
+	c.copyMu.LockDetached(q, req.Digest)
 	defer c.copyMu.Unlock(req.Digest)
 
 	srcSet := c.sources(req.Digest)

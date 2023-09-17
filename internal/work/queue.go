@@ -9,9 +9,8 @@ import (
 // NoValue is the canonical empty value type for a queue.
 type NoValue = struct{}
 
-// Context is provided to a queue's handler function to enable detaching and
-// reattaching.
-type Context interface {
+// QueueHandle allows a [Handler] to interact with its parent queue.
+type QueueHandle interface {
 	// Detach unbounds the calling [Handler] from the concurrency limit of the
 	// [Queue] that invoked it, allowing the queue to immediately start handling
 	// other work. It returns an error if the handler has already detached.
@@ -34,7 +33,7 @@ type Context interface {
 }
 
 // Handler is the type for a queue's handler function.
-type Handler[K comparable, V any] func(Context, K) (V, error)
+type Handler[K comparable, V any] func(QueueHandle, K) (V, error)
 
 // Queue is a deduplicating work queue. It acts like a map that lazily computes
 // and caches results corresponding to unique keys by calling a [Handler] in a
@@ -122,9 +121,9 @@ func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue
 
 // NoValueHandler wraps handlers for queues that produce [NoValue], so the
 // handler function can be written to only return an error.
-func NoValueHandler[K comparable](handle func(Context, K) error) Handler[K, NoValue] {
-	return func(wctx Context, key K) (_ NoValue, err error) {
-		err = handle(wctx, key)
+func NoValueHandler[K comparable](handle func(QueueHandle, K) error) Handler[K, NoValue] {
+	return func(q QueueHandle, key K) (_ NoValue, err error) {
+		err = handle(q, key)
 		return
 	}
 }

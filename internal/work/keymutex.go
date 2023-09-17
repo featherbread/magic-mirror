@@ -15,9 +15,9 @@ type KeyMutex[K comparable] struct {
 
 // LockDetached blocks the calling goroutine until any other lock on the
 // provided key is released. If the lock is not immediately available,
-// LockDetached will detach the caller from the [Queue] associated with wctx
-// while it waits for the lock, and will reattach before returning.
-func (km *KeyMutex[K]) LockDetached(wctx Context, key K) {
+// LockDetached will detach the caller from the [Queue] associated with q while
+// it waits for the lock, and will reattach before returning.
+func (km *KeyMutex[K]) LockDetached(q QueueHandle, key K) {
 	var (
 		detached    bool
 		triedDetach bool
@@ -28,7 +28,7 @@ func (km *KeyMutex[K]) LockDetached(wctx Context, key K) {
 			return
 		}
 		triedDetach = true
-		if err := wctx.Detach(); err == nil {
+		if err := q.Detach(); err == nil {
 			detached = true
 		}
 	}
@@ -36,7 +36,7 @@ func (km *KeyMutex[K]) LockDetached(wctx Context, key K) {
 	defer func() {
 		if detached {
 			// This won't return an error since we know we detached from the queue.
-			wctx.Reattach()
+			q.Reattach()
 		}
 	}()
 
