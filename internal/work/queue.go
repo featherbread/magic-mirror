@@ -1,17 +1,15 @@
 package work
 
 import (
-	"context"
-	"errors"
 	"sync"
 	"sync/atomic"
 )
 
-// NoValue is the canonical empty value type for a queue.
+// NoValue is the canonical empty value type for a [Queue].
 type NoValue = struct{}
 
-// Handler is the type for a queue's handler function.
-type Handler[K comparable, V any] func(context.Context, K) (V, error)
+// Handler is the type for a [Queue]'s handler function.
+type Handler[K comparable, V any] func(*QueueHandle, K) (V, error)
 
 // Queue is a deduplicating work queue. It acts like a map that lazily computes
 // and caches results corresponding to unique keys by calling a [Handler] in a
@@ -22,16 +20,11 @@ type Handler[K comparable, V any] func(context.Context, K) (V, error)
 // include a non-nil error receive no special treatment from the queue; they are
 // cached as usual and their handlers are never retried.
 //
-// Handlers receive a context that allows them to [Detach] from a queue,
-// temporarily increasing its concurrency limit. The context is never canceled.
-// The use of a never-canceled context for this purpose is clearly a bad design;
-// in the future, this will change to a Queue-specific detacher type and/or some
-// form of context cancellation will be implemented.
+// Handlers receive a [QueueHandle] that allows them to detach from the queue,
+// temporarily increasing its concurrency limit. See [QueueHandle.Detach] for
+// details.
 type Queue[K comparable, V any] struct {
 	handle Handler[K, V]
-
-	ctx    context.Context
-	cancel context.CancelFunc
 
 	tasks     map[K]*task[V]
 	tasksMu   sync.Mutex
@@ -77,7 +70,7 @@ type Queue[K comparable, V any] struct {
 type workState[K comparable] struct {
 	grants      int
 	keys        []K
-	reattachers []chan struct{}
+	reattachers []chan<- struct{}
 }
 
 // NewQueue creates a queue that uses the provided handler to compute the result
@@ -85,14 +78,11 @@ type workState[K comparable] struct {
 //
 // If concurrency > 0, the queue will run up to that many handler calls
 // concurrently in new goroutines (potentially more if a handler calls
-// [Detach]). If concurrency <= 0, the queue may run an unlimited number of
-// concurrent handler calls.
+// [QueueHandle.Detach]). If concurrency <= 0, the queue may run an unlimited
+// number of concurrent handler calls.
 func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue[K, V] {
-	ctx, cancel := context.WithCancel(context.TODO())
 	q := &Queue[K, V]{
 		handle: handle,
-		ctx:    ctx,
-		cancel: cancel, // TODO: Call this somewhere.
 		tasks:  make(map[K]*task[V]),
 	}
 	if concurrency > 0 {
@@ -105,9 +95,9 @@ func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue
 
 // NoValueHandler wraps handlers for queues that produce [NoValue], so the
 // handler function can be written to only return an error.
-func NoValueHandler[K comparable](handle func(context.Context, K) error) Handler[K, NoValue] {
-	return func(ctx context.Context, key K) (_ NoValue, err error) {
-		err = handle(ctx, key)
+func NoValueHandler[K comparable](handle func(*QueueHandle, K) error) Handler[K, NoValue] {
+	return func(qh *QueueHandle, key K) (_ NoValue, err error) {
+		err = handle(qh, key)
 		return
 	}
 }
@@ -170,7 +160,8 @@ func (q *Queue[K, V]) getOrCreateTasks(keys []K) (tasks taskList[V], newKeys []K
 			tasks[i] = task
 			continue
 		}
-		task := &task[V]{done: make(chan struct{})}
+		task := &task[V]{}
+		task.wg.Add(1)
 		q.tasks[key] = task
 		tasks[i] = task
 		newKeys = append(newKeys, key)
@@ -217,10 +208,8 @@ func (q *Queue[K, V]) work() {
 			reattach := state.reattachers[0]
 			state.reattachers = state.reattachers[1:]
 			q.state <- state
-			if _, ok := <-reattach; ok {
-				return // We have successfully transferred our work grant.
-			}
-			continue // The reattacher bailed, so we retain the work grant.
+			close(reattach)
+			return // We have successfully transferred our work grant.
 		}
 
 		if len(state.keys) == 0 {
@@ -236,87 +225,117 @@ func (q *Queue[K, V]) work() {
 		state.keys = state.keys[1:]
 		q.state <- state
 
-		taskCtx := q.completeTask(key)
-		if taskCtx.detached {
+		detached := q.completeTask(key)
+		if detached {
 			return // We no longer have a work grant.
 		}
 	}
 }
 
-func (q *Queue[K, V]) completeTask(key K) *taskContext {
+func (q *Queue[K, V]) completeTask(key K) (detached bool) {
 	q.tasksMu.Lock()
 	task := q.tasks[key]
 	q.tasksMu.Unlock()
 
-	taskCtx := &taskContext{
+	qh := &QueueHandle{
 		detach:   q.handleDetach,
 		reattach: q.handleReattach,
 	}
-	ctx := context.WithValue(q.ctx, taskContextKey{}, taskCtx)
-
-	task.value, task.err = q.handle(ctx, key)
-	close(task.done)
+	task.value, task.err = q.handle(qh, key)
+	task.wg.Done()
 	q.tasksDone.Add(1)
-
-	return taskCtx
+	return qh.detached
 }
 
 // handleDetach relinquishes the work grant held by the handler that calls it.
 // Its behavior is undefined if its caller does not hold an outstanding work
 // grant.
-func (q *Queue[K, V]) handleDetach() {
-	if q.state != nil {
-		go q.work() // Transfer our work grant to a new worker.
+func (q *Queue[K, V]) handleDetach() bool {
+	if q.state == nil {
+		return false
 	}
+	go q.work() // Transfer our work grant to a new worker.
+	return true
 }
 
-// handleReattach obtains a work grant for the handler that calls it, or returns
-// ctx.Err() if ctx is canceled before the work grant is obtained. Its behavior
-// is undefined if its caller already holds an outstanding work grant, or if its
-// caller is not prepared to discharge all duties associated with a work grant.
-func (q *Queue[K, V]) handleReattach(ctx context.Context) error {
+// handleReattach obtains a work grant for the handler that calls it. Its
+// behavior is undefined if its caller already holds an outstanding work grant,
+// or if its caller is not prepared to discharge all duties associated with a
+// work grant.
+func (q *Queue[K, V]) handleReattach() {
 	if q.state == nil {
-		return nil
+		return
 	}
 
-	var state workState[K]
-	select {
-	case state = <-q.state:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	state := <-q.state
 
 	if state.grants < q.maxGrants {
 		// There is capacity for a new work grant, so we must issue one.
 		state.grants += 1
 		q.state <- state
-		return nil
+		return
 	}
 
-	// There is no capacity for a new work grant, so we must obtain one from an
-	// existing holder. Because this is an unbuffered channel, a successful send
-	// will synchronize perfectly with the receive from inside of work(),
-	// representing a mutual agreement to the transfer.
+	// There is no capacity for a new work grant, so we must wait for one from an
+	// existing holder, as indicated by the holder closing our channel.
 	reattach := make(chan struct{})
 	state.reattachers = append(state.reattachers, reattach)
 	q.state <- state
-	select {
-	case reattach <- struct{}{}:
-		return nil
-	case <-ctx.Done():
-		close(reattach)
-		return ctx.Err()
+	<-reattach
+}
+
+// QueueHandle allows a [Handler] to interact with its parent queue.
+type QueueHandle struct {
+	// detached indicates that the handler is detached from its queue. In the case
+	// of a limited concurrency queue, this means that the goroutine running the
+	// handler has relinquished its work grant.
+	detached bool
+	detach   func() bool
+	reattach func()
+}
+
+// Detach unbounds the calling [Handler] from any concurrency limit on the
+// [Queue] that invoked it, allowing the queue to immediately start handling
+// other work. It returns true if the call actually unbound the handler from a
+// limit it was previously subject to, or false if the handler was already
+// executing outside of a concurrency limit, either because the handler
+// previously detached or because the queue's concurrency is unlimited.
+//
+// [QueueHandle.Reattach] permits a detached handler to reestablish itself
+// within the queue's concurrency limit ahead of the handling of new keys.
+//
+// A typical use for detaching is to block on the completion of another handler
+// call for the same queue, where caching or other side effects performed by
+// that handler may improve the performance of this handler. [KeyMutex]
+// facilitates this pattern by automatically detaching from a queue while it
+// waits for the lock on a key.
+func (qh *QueueHandle) Detach() bool {
+	if qh.detached {
+		return false
+	}
+	qh.detached = qh.detach()
+	return qh.detached
+}
+
+// Reattach blocks the calling [Handler] until it can continue executing within
+// the concurrency limit of the [Queue] that invoked it. It has no effect if the
+// handler is already attached to the queue, or if the queue's concurrency is
+// unlimited.
+func (qh *QueueHandle) Reattach() {
+	if qh.detached {
+		qh.reattach()
+		qh.detached = false
 	}
 }
 
 type task[V any] struct {
-	done  chan struct{}
+	wg    sync.WaitGroup
 	value V
 	err   error
 }
 
 func (t *task[V]) Wait() (V, error) {
-	<-t.done
+	t.wg.Wait()
 	return t.value, t.err
 }
 
@@ -331,77 +350,4 @@ func (ts taskList[V]) Wait() (values []V, err error) {
 		}
 	}
 	return values, nil
-}
-
-type taskContextKey struct{}
-
-type taskContext struct {
-	// detached indicates that the handler that owns this context has relinquished
-	// its work grant.
-	detached bool
-
-	detach   func()
-	reattach func(context.Context) error
-}
-
-func getTaskContext(ctx context.Context) (taskCtx *taskContext, err error) {
-	if v := ctx.Value(taskContextKey{}); v != nil {
-		taskCtx = v.(*taskContext)
-	} else {
-		err = errors.New("context not associated with any queue")
-	}
-	return
-}
-
-// Detach unbounds the calling [Handler] from the concurrency limit of the
-// [Queue] that invoked it, allowing the queue to immediately start handling
-// other work. It returns an error if ctx is not associated with a [Queue], or
-// if the handler has already detached.
-//
-// The corresponding [Reattach] function permits a detached handler to
-// reestablish itself within the queue's concurrency limit ahead of the handling
-// of new keys.
-//
-// A typical use for detaching is to temporarily block on the completion of
-// another handler call for the same queue, where caching or other side effects
-// performed by that handler may improve the performance of this handler.
-// [KeyMutex] facilitates this pattern by automatically detaching from a queue
-// while it waits for the lock on a key.
-func Detach(ctx context.Context) error {
-	taskCtx, err := getTaskContext(ctx)
-	if err != nil {
-		return err
-	}
-
-	if taskCtx.detached {
-		return errors.New("already detached from queue")
-	}
-
-	taskCtx.detach()
-	taskCtx.detached = true
-	return nil
-}
-
-// Reattach blocks the calling [Handler] until it can continue executing within
-// the concurrency limit of the [Queue] that invoked it, or until ctx is
-// canceled. It returns an error if ctx is not associated with a [Queue], or if
-// the handler did not previously [Detach] from the queue. When ctx is canceled
-// before the handler reattaches, the returned error is ctx.Err().
-//
-// See [Detach] for more information.
-func Reattach(ctx context.Context) error {
-	taskCtx, err := getTaskContext(ctx)
-	if err != nil {
-		return err
-	}
-
-	if !taskCtx.detached {
-		return errors.New("not detached from queue")
-	}
-
-	if err := taskCtx.reattach(ctx); err != nil {
-		return err
-	}
-	taskCtx.detached = false
-	return nil
 }

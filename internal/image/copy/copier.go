@@ -2,7 +2,6 @@ package copy
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -81,7 +80,7 @@ func (c *copier) printStats() {
 	c.statsTimer.Reset(statsInterval)
 }
 
-func (c *copier) handleRequest(_ context.Context, spec Spec) error {
+func (c *copier) handleRequest(_ *work.QueueHandle, spec Spec) error {
 	log.Verbosef("[image]\tstarting copy from %s to %s", spec.Src, spec.Dst)
 
 	var (

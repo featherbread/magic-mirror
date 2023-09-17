@@ -1,7 +1,6 @@
 package work
 
 import (
-	"context"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -26,9 +25,7 @@ func TestKeyMutexBasic(t *testing.T) {
 			defer func() { done <- struct{}{} }()
 			<-ready
 
-			if err := km.LockDetached(context.Background(), key); err != nil {
-				panic(err)
-			}
+			km.Lock(key)
 			defer km.Unlock(key)
 
 			locked[key].Add(1)
@@ -66,12 +63,10 @@ func TestKeyMutexDetach(t *testing.T) {
 		started = make(chan struct{}, submitCount)
 		locked  atomic.Bool
 	)
-	q := NewQueue(1, func(ctx context.Context, x int) (int, error) {
+	q := NewQueue(1, func(qh *QueueHandle, x int) (int, error) {
 		started <- struct{}{}
 
-		if err := km.LockDetached(ctx, NoValue{}); err != nil {
-			return x, err
-		}
+		km.LockDetached(qh, NoValue{})
 		defer km.Unlock(NoValue{})
 
 		if !locked.CompareAndSwap(false, true) {
@@ -81,9 +76,7 @@ func TestKeyMutexDetach(t *testing.T) {
 		return x, nil
 	})
 
-	if err := km.LockDetached(context.Background(), NoValue{}); err != nil {
-		t.Fatal(err)
-	}
+	km.Lock(NoValue{})
 
 	keys := makeIntKeys(submitCount)
 	go func() { q.GetAll(keys...) }()

@@ -1,7 +1,6 @@
 package work
 
 import (
-	"context"
 	"sync"
 )
 
@@ -14,43 +13,34 @@ type KeyMutex[K comparable] struct {
 	chansMu sync.Mutex
 }
 
-// LockDetached blocks the calling goroutine until any other lock on the
-// provided key is released, or until ctx is canceled. It returns nil if the
-// lock was successfully acquired, or ctx.Err() if ctx was canceled before
-// locking could finish. A non-nil error indicates that the lock is not held,
-// and that the caller must not unlock the key or violate any invariant that the
-// lock protects.
-//
-// If ctx is associated with a [Queue], LockDetached will [Detach] the caller
-// from the queue until it acquires the lock, and will attempt to [Reattach]
-// before returning. It will hold the lock while waiting to reattach, and will
-// release the lock if ctx is canceled before Reattach completes.
-func (km *KeyMutex[K]) LockDetached(ctx context.Context, key K) (err error) {
-	var (
-		locked      bool
-		detached    bool
-		triedDetach bool
-	)
+// Lock blocks the calling goroutine until any other lock on the provided key is
+// released.
+func (km *KeyMutex[K]) Lock(key K) {
+	km.lock(key, noopDetach, noopReattach)
+}
 
+func noopDetach() bool { return false }
+
+func noopReattach() {}
+
+// LockDetached blocks the calling [Handler] until any other lock on the
+// provided key is released. If the lock is not immediately available,
+// LockDetached will detach the handler from its [Queue] while it waits for the
+// lock, and will reattach before returning.
+func (km *KeyMutex[K]) LockDetached(qh *QueueHandle, key K) {
+	km.lock(key, qh.Detach, qh.Reattach)
+}
+
+func (km *KeyMutex[K]) lock(key K, detach func() bool, reattach func()) {
+	var detached bool
 	tryDetach := func() {
-		if triedDetach {
-			return
-		}
-		triedDetach = true
-		if err := Detach(ctx); err == nil {
-			detached = true
+		if !detached {
+			detached = detach()
 		}
 	}
-
 	defer func() {
 		if detached {
-			// This won't lose any information. The only error we can return is
-			// ctx.Err(), and since we know we successfully detached from a queue
-			// that's also the only error Reattach can return.
-			err = Reattach(ctx)
-			if err != nil && locked {
-				km.Unlock(key)
-			}
+			reattach()
 		}
 	}()
 
@@ -65,37 +55,20 @@ func (km *KeyMutex[K]) LockDetached(ctx context.Context, key K) (err error) {
 			}
 			km.chans[key] = make(chan struct{})
 			km.chansMu.Unlock()
-			locked = true
-			return nil
+			return
 		}
 
 		// Someone else currently holds the lock on this key. We'll detach from the
-		// parent queue and start waiting on their channel. At this point, one of
-		// three things can happen:
-		//
-		// 1. Our context expires before the key is unlocked. We break out without
-		//    ever obtaining the lock.
-		//
-		// 2. We enter the `select` before the key is unlocked. The unlocker will
-		//    see that we're waiting and directly pass a single token that grants
-		//    the lock. This limits new channel allocations, and takes advantage of
-		//    whatever mechanisms the Go runtime provides to ensure fairness and
-		//    limit starvation among waiters.
-		//
-		// 3. The key is unlocked before we can enter the `select`. If no other
-		//    waiters are ready to receive a token, the unlocker will close the
-		//    channel and remove it from the map. When this happens, we need to loop
-		//    back and try to create or obtain a fresh channel.
+		// parent queue and start waiting on their channel. If possible, we'll try
+		// to receive a single token from another unlocker, to limit channel
+		// allocations and take advantage of whatever fairness mechanisms the Go
+		// runtime provides. Otherwise, we'll loop and try to get or create a fresh
+		// channel again.
 		km.chansMu.Unlock()
 		tryDetach()
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case _, passed := <-ch:
-			if passed {
-				locked = true
-				return nil
-			}
+		_, passed := <-ch
+		if passed {
+			return
 		}
 	}
 }
@@ -112,12 +85,11 @@ func (km *KeyMutex[K]) Unlock(key K) {
 	}
 	select {
 	case ch <- struct{}{}:
-		// This is case 2 of 3 in LockDetached: we successfully passed the lock to
-		// another waiter.
+		// We successfully passed the lock to another waiter.
 	default:
-		// This is case 3 of 3 in LockDetached: there are no other waiters at this
-		// time. If a waiter got this channel and hasn't yet blocked on it, they'll
-		// need to detect that it's closed and get a new one.
+		// There are no other waiters at this time. If a waiter got this channel and
+		// hasn't yet blocked on it, they'll need to detect that it's closed and get
+		// a new one.
 		close(ch)
 		delete(km.chans, key)
 	}
