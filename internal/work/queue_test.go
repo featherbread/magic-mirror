@@ -84,9 +84,7 @@ func TestQueueDetachReattachUnlimited(t *testing.T) {
 		if qh.Detach() {
 			panic("claimed to detach from unbounded queue") // Not ideal, but a very fast way to fail everything.
 		}
-		if qh.Reattach() {
-			panic("claimed to reattach to unbounded queue")
-		}
+		qh.Reattach()
 		return x, nil
 	})
 
@@ -116,9 +114,7 @@ func TestQueueDetachReattachLimited(t *testing.T) {
 		<-awaitDetached
 
 		<-unblockReattach
-		if !qh.Reattach() {
-			panic("did not actually reattach to queue")
-		}
+		qh.Reattach()
 		count := reattachedInflight.Add(1)
 		defer reattachedInflight.Add(-1)
 		if count > workerCount {

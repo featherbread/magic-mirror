@@ -344,15 +344,13 @@ func (qh *QueueHandle) Detach() bool {
 }
 
 // Reattach blocks the calling [Handler] until it can continue executing within
-// the concurrency limit of the [Queue] that invoked it. It returns true if the
-// call bound the handler to a concurrency limit it was not previously subject
-// to, or false if it did not, either because the handler is already attached or
-// because the concurrency of the queue is unbounded.
-func (qh *QueueHandle) Reattach() bool {
+// the concurrency limit of the [Queue] that invoked it. It has no effect if the
+// handler is already attached to the queue, or if the queue's concurrency is
+// unlimited.
+func (qh *QueueHandle) Reattach() {
 	if !qh.detached {
-		return false
+		return
 	}
 	qh.reattach()
 	qh.detached = false
-	return true
 }
