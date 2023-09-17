@@ -13,20 +13,34 @@ type KeyMutex[K comparable] struct {
 	chansMu sync.Mutex
 }
 
+// Lock blocks the calling goroutine until any other lock on the provided key is
+// released.
+func (km *KeyMutex[K]) Lock(key K) {
+	km.lock(key, noopDetach, noopReattach)
+}
+
+func noopDetach() bool { return false }
+
+func noopReattach() {}
+
 // LockDetached blocks the calling [Handler] until any other lock on the
 // provided key is released. If the lock is not immediately available,
 // LockDetached will detach the handler from its [Queue] while it waits for the
 // lock, and will reattach before returning.
 func (km *KeyMutex[K]) LockDetached(qh *QueueHandle, key K) {
+	km.lock(key, qh.Detach, qh.Reattach)
+}
+
+func (km *KeyMutex[K]) lock(key K, detach func() bool, reattach func()) {
 	var detached bool
 	tryDetach := func() {
 		if !detached {
-			detached = qh.Detach()
+			detached = detach()
 		}
 	}
 	defer func() {
 		if detached {
-			qh.Reattach()
+			reattach()
 		}
 	}()
 

@@ -12,12 +12,6 @@ func TestKeyMutexBasic(t *testing.T) {
 		nWorkers = nKeys * 2
 	)
 
-	// TODO: This is weird.
-	qh := &QueueHandle{
-		detach:   func() bool { return false },
-		reattach: func() {},
-	}
-
 	var (
 		km      KeyMutex[int]
 		ready   = make(chan struct{})
@@ -31,7 +25,7 @@ func TestKeyMutexBasic(t *testing.T) {
 			defer func() { done <- struct{}{} }()
 			<-ready
 
-			km.LockDetached(qh, key)
+			km.Lock(key)
 			defer km.Unlock(key)
 
 			locked[key].Add(1)
@@ -82,12 +76,7 @@ func TestKeyMutexDetach(t *testing.T) {
 		return x, nil
 	})
 
-	// TODO: This is weird.
-	qh := &QueueHandle{
-		detach:   func() bool { return false },
-		reattach: func() {},
-	}
-	km.LockDetached(qh, NoValue{})
+	km.Lock(NoValue{})
 
 	keys := makeIntKeys(submitCount)
 	go func() { q.GetAll(keys...) }()
