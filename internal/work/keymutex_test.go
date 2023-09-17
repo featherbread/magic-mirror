@@ -14,7 +14,7 @@ func TestKeyMutexBasic(t *testing.T) {
 
 	// TODO: This is weird.
 	qh := &QueueHandle{
-		detach:   func() {},
+		detach:   func() bool { return false },
 		reattach: func() {},
 	}
 
@@ -84,7 +84,7 @@ func TestKeyMutexDetach(t *testing.T) {
 
 	// TODO: This is weird.
 	qh := &QueueHandle{
-		detach:   func() {},
+		detach:   func() bool { return false },
 		reattach: func() {},
 	}
 	km.LockDetached(qh, NoValue{})

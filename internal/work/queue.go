@@ -251,10 +251,12 @@ func (q *Queue[K, V]) completeTask(key K) *QueueHandle {
 // handleDetach relinquishes the work grant held by the handler that calls it.
 // Its behavior is undefined if its caller does not hold an outstanding work
 // grant.
-func (q *Queue[K, V]) handleDetach() {
-	if q.state != nil {
-		go q.work() // Transfer our work grant to a new worker.
+func (q *Queue[K, V]) handleDetach() bool {
+	if q.state == nil {
+		return false
 	}
+	go q.work() // Transfer our work grant to a new worker.
+	return true
 }
 
 // handleReattach obtains a work grant for the handler that calls it. Its
@@ -309,22 +311,24 @@ func (ts taskList[V]) Wait() (values []V, err error) {
 
 // QueueHandle allows a [Handler] to interact with its parent queue.
 type QueueHandle struct {
-	// detached indicates that the handler that owns this context has relinquished
-	// its work grant.
+	// detached indicates that the handler is detached from its queue. In the case
+	// of a limited concurrency queue, this means that the goroutine running the
+	// handler has relinquished its work grant.
 	detached bool
-
-	detach   func()
+	detach   func() bool
 	reattach func()
 }
 
-// Detach unbounds the calling [Handler] from the concurrency limit of the
+// Detach unbounds the calling [Handler] from any concurrency limit on the
 // [Queue] that invoked it, allowing the queue to immediately start handling
-// other work. It returns true if the call detached the handler from the queue,
-// or false if the handler was already detached.
+// other work. It returns true if the call actually unbound the handler from a
+// limit it was previously subject to, or false if the handler was already
+// executing outside of a concurrency limit, either because the handler
+// previously detached or because the concurrency of the queue is unbounded.
 //
-// The corresponding Reattach function permits a detached handler to reestablish
-// itself within the queue's concurrency limit ahead of the handling of new
-// keys.
+// The corresponding [QueueHandle.Reattach] permits a detached handler to
+// reestablish itself within the queue's concurrency limit ahead of the handling
+// of new keys.
 //
 // A typical use for detaching is to temporarily block on the completion of
 // another handler call for the same queue, where caching or other side effects
@@ -335,15 +339,15 @@ func (qh *QueueHandle) Detach() bool {
 	if qh.detached {
 		return false
 	}
-	qh.detach()
-	qh.detached = true
-	return true
+	qh.detached = qh.detach()
+	return qh.detached
 }
 
 // Reattach blocks the calling [Handler] until it can continue executing within
 // the concurrency limit of the [Queue] that invoked it. It returns true if the
-// call attached the handler to the queue, or false if the handler was already
-// attached.
+// call bound the handler to a concurrency limit it was not previously subject
+// to, or false if it did not, either because the handler is already attached or
+// because the concurrency of the queue is unbounded.
 func (qh *QueueHandle) Reattach() bool {
 	if !qh.detached {
 		return false

@@ -81,11 +81,11 @@ func TestQueueDetachReattachUnlimited(t *testing.T) {
 	const submitCount = 50
 
 	q := NewQueue(0, func(qh *QueueHandle, x int) (int, error) {
-		if !qh.Detach() {
-			panic("did not actually detach from queue") // Not ideal, but a very fast way to fail everything.
+		if qh.Detach() {
+			panic("claimed to detach from unbounded queue") // Not ideal, but a very fast way to fail everything.
 		}
-		if !qh.Reattach() {
-			panic("did not actually reattach to queue")
+		if qh.Reattach() {
+			panic("claimed to reattach to unbounded queue")
 		}
 		return x, nil
 	})
