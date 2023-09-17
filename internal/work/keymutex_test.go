@@ -1,7 +1,6 @@
 package work
 
 import (
-	"context"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,9 +14,8 @@ func TestKeyMutexBasic(t *testing.T) {
 
 	// TODO: This is weird.
 	wctx := &taskContext{
-		Context:  context.Background(),
 		detach:   func() {},
-		reattach: func(context.Context) error { return nil },
+		reattach: func() {},
 	}
 
 	var (
@@ -90,9 +88,8 @@ func TestKeyMutexDetach(t *testing.T) {
 
 	// TODO: This is weird.
 	wctx := &taskContext{
-		Context:  context.Background(),
 		detach:   func() {},
-		reattach: func(context.Context) error { return nil },
+		reattach: func() {},
 	}
 
 	if err := km.LockDetached(wctx, NoValue{}); err != nil {

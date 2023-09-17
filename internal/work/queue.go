@@ -1,7 +1,6 @@
 package work
 
 import (
-	"context"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -10,11 +9,9 @@ import (
 // NoValue is the canonical empty value type for a queue.
 type NoValue = struct{}
 
-// Context is a context provided to a queue's handler function to enable
-// detaching, reattaching, and cancellation.
+// Context is provided to a queue's handler function to enable detaching and
+// reattaching.
 type Context interface {
-	context.Context
-
 	// Detach unbounds the calling [Handler] from the concurrency limit of the
 	// [Queue] that invoked it, allowing the queue to immediately start handling
 	// other work. It returns an error if the handler has already detached.
@@ -31,11 +28,9 @@ type Context interface {
 	Detach() error
 
 	// Reattach blocks the calling [Handler] until it can continue executing
-	// within the concurrency limit of the [Queue] that invoked it, or until ctx
-	// is canceled. It returns an error if the handler did not previously detach
-	// from the queue. When ctx is canceled before the handler reattaches, the
-	// returned error is ctx.Err().
-	Reattach(context.Context) error
+	// within the concurrency limit of the [Queue] that invoked it. It returns an
+	// error if the handler did not previously detach from the queue.
+	Reattach() error
 }
 
 // Handler is the type for a queue's handler function.
@@ -57,9 +52,6 @@ type Handler[K comparable, V any] func(Context, K) (V, error)
 // form of context cancellation will be implemented.
 type Queue[K comparable, V any] struct {
 	handle Handler[K, V]
-
-	ctx    context.Context
-	cancel context.CancelFunc
 
 	tasks     map[K]*task[V]
 	tasksMu   sync.Mutex
@@ -116,11 +108,8 @@ type workState[K comparable] struct {
 // [Detach]). If concurrency <= 0, the queue may run an unlimited number of
 // concurrent handler calls.
 func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue[K, V] {
-	ctx, cancel := context.WithCancel(context.TODO())
 	q := &Queue[K, V]{
 		handle: handle,
-		ctx:    ctx,
-		cancel: cancel, // TODO: Call this somewhere.
 		tasks:  make(map[K]*task[V]),
 	}
 	if concurrency > 0 {
@@ -277,7 +266,6 @@ func (q *Queue[K, V]) completeTask(key K) *taskContext {
 	q.tasksMu.Unlock()
 
 	taskCtx := &taskContext{
-		Context:  q.ctx,
 		detach:   q.handleDetach,
 		reattach: q.handleReattach,
 	}
@@ -298,27 +286,22 @@ func (q *Queue[K, V]) handleDetach() {
 	}
 }
 
-// handleReattach obtains a work grant for the handler that calls it, or returns
-// ctx.Err() if ctx is canceled before the work grant is obtained. Its behavior
-// is undefined if its caller already holds an outstanding work grant, or if its
-// caller is not prepared to discharge all duties associated with a work grant.
-func (q *Queue[K, V]) handleReattach(ctx context.Context) error {
+// handleReattach obtains a work grant for the handler that calls it. Its
+// behavior is undefined if its caller already holds an outstanding work grant,
+// or if its caller is not prepared to discharge all duties associated with a
+// work grant.
+func (q *Queue[K, V]) handleReattach() {
 	if q.state == nil {
-		return nil
+		return
 	}
 
-	var state workState[K]
-	select {
-	case state = <-q.state:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	state := <-q.state
 
 	if state.grants < q.maxGrants {
 		// There is capacity for a new work grant, so we must issue one.
 		state.grants += 1
 		q.state <- state
-		return nil
+		return
 	}
 
 	// There is no capacity for a new work grant, so we must obtain one from an
@@ -328,13 +311,7 @@ func (q *Queue[K, V]) handleReattach(ctx context.Context) error {
 	reattach := make(chan struct{})
 	state.reattachers = append(state.reattachers, reattach)
 	q.state <- state
-	select {
-	case reattach <- struct{}{}:
-		return nil
-	case <-ctx.Done():
-		close(reattach)
-		return ctx.Err()
-	}
+	reattach <- struct{}{}
 }
 
 type task[V any] struct {
@@ -362,14 +339,12 @@ func (ts taskList[V]) Wait() (values []V, err error) {
 }
 
 type taskContext struct {
-	context.Context
-
 	// detached indicates that the handler that owns this context has relinquished
 	// its work grant.
 	detached bool
 
 	detach   func()
-	reattach func(context.Context) error
+	reattach func()
 }
 
 func (tctx *taskContext) Detach() error {
@@ -381,13 +356,11 @@ func (tctx *taskContext) Detach() error {
 	return nil
 }
 
-func (tctx *taskContext) Reattach(ctx context.Context) error {
+func (tctx *taskContext) Reattach() error {
 	if !tctx.detached {
 		return errors.New("not detached from queue")
 	}
-	if err := tctx.reattach(ctx); err != nil {
-		return err
-	}
+	tctx.reattach()
 	tctx.detached = false
 	return nil
 }

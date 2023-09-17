@@ -84,7 +84,7 @@ func TestQueueDetachReattachUnlimited(t *testing.T) {
 		if err := wctx.Detach(); err != nil {
 			panic(err) // Not ideal, but a very fast way to fail everything.
 		}
-		if err := wctx.Reattach(wctx); err != nil {
+		if err := wctx.Reattach(); err != nil {
 			panic(err)
 		}
 		return x, nil
@@ -116,7 +116,7 @@ func TestQueueDetachReattachLimited(t *testing.T) {
 		<-awaitDetached
 
 		<-unblockReattach
-		if err := wctx.Reattach(wctx); err != nil {
+		if err := wctx.Reattach(); err != nil {
 			panic(err)
 		}
 		count := reattachedInflight.Add(1)
