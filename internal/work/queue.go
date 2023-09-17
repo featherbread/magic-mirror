@@ -97,7 +97,7 @@ type Queue[K comparable, V any] struct {
 type workState[K comparable] struct {
 	grants      int
 	keys        []K
-	reattachers []chan struct{}
+	reattachers []chan<- struct{}
 }
 
 // NewQueue creates a queue that uses the provided handler to compute the result
@@ -234,10 +234,8 @@ func (q *Queue[K, V]) work() {
 			reattach := state.reattachers[0]
 			state.reattachers = state.reattachers[1:]
 			q.state <- state
-			if _, ok := <-reattach; ok {
-				return // We have successfully transferred our work grant.
-			}
-			continue // The reattacher bailed, so we retain the work grant.
+			close(reattach)
+			return // We have successfully transferred our work grant.
 		}
 
 		if len(state.keys) == 0 {
@@ -304,14 +302,12 @@ func (q *Queue[K, V]) handleReattach() {
 		return
 	}
 
-	// There is no capacity for a new work grant, so we must obtain one from an
-	// existing holder. Because this is an unbuffered channel, a successful send
-	// will synchronize perfectly with the receive from inside of work(),
-	// representing a mutual agreement to the transfer.
+	// There is no capacity for a new work grant, so we must wait for one from an
+	// existing holder, as indicated by the holder closing our channel.
 	reattach := make(chan struct{})
 	state.reattachers = append(state.reattachers, reattach)
 	q.state <- state
-	reattach <- struct{}{}
+	<-reattach
 }
 
 type task[V any] struct {
