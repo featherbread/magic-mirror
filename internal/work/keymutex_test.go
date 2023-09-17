@@ -13,7 +13,7 @@ func TestKeyMutexBasic(t *testing.T) {
 	)
 
 	// TODO: This is weird.
-	taskCtx := &taskContext{
+	qh := &QueueHandle{
 		detach:   func() {},
 		reattach: func() {},
 	}
@@ -31,7 +31,7 @@ func TestKeyMutexBasic(t *testing.T) {
 			defer func() { done <- struct{}{} }()
 			<-ready
 
-			km.LockDetached(taskCtx, key)
+			km.LockDetached(qh, key)
 			defer km.Unlock(key)
 
 			locked[key].Add(1)
@@ -69,7 +69,7 @@ func TestKeyMutexDetach(t *testing.T) {
 		started = make(chan struct{}, submitCount)
 		locked  atomic.Bool
 	)
-	q := NewQueue(1, func(q QueueHandle, x int) (int, error) {
+	q := NewQueue(1, func(q *QueueHandle, x int) (int, error) {
 		started <- struct{}{}
 
 		km.LockDetached(q, NoValue{})
@@ -83,11 +83,11 @@ func TestKeyMutexDetach(t *testing.T) {
 	})
 
 	// TODO: This is weird.
-	taskCtx := &taskContext{
+	qh := &QueueHandle{
 		detach:   func() {},
 		reattach: func() {},
 	}
-	km.LockDetached(taskCtx, NoValue{})
+	km.LockDetached(qh, NoValue{})
 
 	keys := makeIntKeys(submitCount)
 	go func() { q.GetAll(keys...) }()
