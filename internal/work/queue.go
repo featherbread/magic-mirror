@@ -324,17 +324,16 @@ type QueueHandle struct {
 // other work. It returns true if the call actually unbound the handler from a
 // limit it was previously subject to, or false if the handler was already
 // executing outside of a concurrency limit, either because the handler
-// previously detached or because the concurrency of the queue is unbounded.
+// previously detached or because the queue's concurrency is unlimited.
 //
-// The corresponding [QueueHandle.Reattach] permits a detached handler to
-// reestablish itself within the queue's concurrency limit ahead of the handling
-// of new keys.
+// [QueueHandle.Reattach] permits a detached handler to reestablish itself
+// within the queue's concurrency limit ahead of the handling of new keys.
 //
-// A typical use for detaching is to temporarily block on the completion of
-// another handler call for the same queue, where caching or other side effects
-// performed by that handler may improve the performance of this handler.
-// [KeyMutex] facilitates this pattern by automatically detaching from a queue
-// while it waits for the lock on a key.
+// A typical use for detaching is to block on the completion of another handler
+// call for the same queue, where caching or other side effects performed by
+// that handler may improve the performance of this handler. [KeyMutex]
+// facilitates this pattern by automatically detaching from a queue while it
+// waits for the lock on a key.
 func (qh *QueueHandle) Detach() bool {
 	if qh.detached {
 		return false
