@@ -80,11 +80,11 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 func TestQueueDetachReattachUnlimited(t *testing.T) {
 	const submitCount = 50
 
-	q := NewQueue(0, func(q *QueueHandle, x int) (int, error) {
-		if err := q.Detach(); err != nil {
+	q := NewQueue(0, func(qh *QueueHandle, x int) (int, error) {
+		if err := qh.Detach(); err != nil {
 			panic(err) // Not ideal, but a very fast way to fail everything.
 		}
-		if err := q.Reattach(); err != nil {
+		if err := qh.Reattach(); err != nil {
 			panic(err)
 		}
 		return x, nil
@@ -108,15 +108,15 @@ func TestQueueDetachReattachLimited(t *testing.T) {
 		breachedReattach   atomic.Bool
 		unblockReturn      = make(chan struct{})
 	)
-	q := NewQueue(workerCount, func(q *QueueHandle, x int) (int, error) {
-		if err := q.Detach(); err != nil {
+	q := NewQueue(workerCount, func(qh *QueueHandle, x int) (int, error) {
+		if err := qh.Detach(); err != nil {
 			panic(err)
 		}
 		countDetached.Add(1)
 		<-awaitDetached
 
 		<-unblockReattach
-		if err := q.Reattach(); err != nil {
+		if err := qh.Reattach(); err != nil {
 			panic(err)
 		}
 		count := reattachedInflight.Add(1)

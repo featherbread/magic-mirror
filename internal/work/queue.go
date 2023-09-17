@@ -97,8 +97,8 @@ func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue
 // NoValueHandler wraps handlers for queues that produce [NoValue], so the
 // handler function can be written to only return an error.
 func NoValueHandler[K comparable](handle func(*QueueHandle, K) error) Handler[K, NoValue] {
-	return func(q *QueueHandle, key K) (_ NoValue, err error) {
-		err = handle(q, key)
+	return func(qh *QueueHandle, key K) (_ NoValue, err error) {
+		err = handle(qh, key)
 		return
 	}
 }
@@ -331,23 +331,23 @@ type QueueHandle struct {
 // performed by that handler may improve the performance of this handler.
 // [KeyMutex] facilitates this pattern by automatically detaching from a queue
 // while it waits for the lock on a key.
-func (q *QueueHandle) Detach() error {
-	if q.detached {
+func (qh *QueueHandle) Detach() error {
+	if qh.detached {
 		return errors.New("already detached from queue")
 	}
-	q.detach()
-	q.detached = true
+	qh.detach()
+	qh.detached = true
 	return nil
 }
 
 // Reattach blocks the calling [Handler] until it can continue executing within
 // the concurrency limit of the [Queue] that invoked it. It returns an error if
 // the handler did not previously detach from the queue.
-func (q *QueueHandle) Reattach() error {
-	if !q.detached {
+func (qh *QueueHandle) Reattach() error {
+	if !qh.detached {
 		return errors.New("not detached from queue")
 	}
-	q.reattach()
-	q.detached = false
+	qh.reattach()
+	qh.detached = false
 	return nil
 }

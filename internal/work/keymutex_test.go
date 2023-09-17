@@ -69,10 +69,10 @@ func TestKeyMutexDetach(t *testing.T) {
 		started = make(chan struct{}, submitCount)
 		locked  atomic.Bool
 	)
-	q := NewQueue(1, func(q *QueueHandle, x int) (int, error) {
+	q := NewQueue(1, func(qh *QueueHandle, x int) (int, error) {
 		started <- struct{}{}
 
-		km.LockDetached(q, NoValue{})
+		km.LockDetached(qh, NoValue{})
 		defer km.Unlock(NoValue{})
 
 		if !locked.CompareAndSwap(false, true) {

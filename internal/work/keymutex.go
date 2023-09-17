@@ -17,7 +17,7 @@ type KeyMutex[K comparable] struct {
 // provided key is released. If the lock is not immediately available,
 // LockDetached will detach the caller from the [Queue] associated with q while
 // it waits for the lock, and will reattach before returning.
-func (km *KeyMutex[K]) LockDetached(q *QueueHandle, key K) {
+func (km *KeyMutex[K]) LockDetached(qh *QueueHandle, key K) {
 	var (
 		detached    bool
 		triedDetach bool
@@ -28,7 +28,7 @@ func (km *KeyMutex[K]) LockDetached(q *QueueHandle, key K) {
 			return
 		}
 		triedDetach = true
-		if err := q.Detach(); err == nil {
+		if err := qh.Detach(); err == nil {
 			detached = true
 		}
 	}
@@ -36,7 +36,7 @@ func (km *KeyMutex[K]) LockDetached(q *QueueHandle, key K) {
 	defer func() {
 		if detached {
 			// This won't return an error since we know we detached from the queue.
-			q.Reattach()
+			qh.Reattach()
 		}
 	}()
 
