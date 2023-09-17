@@ -5,10 +5,10 @@ import (
 	"sync/atomic"
 )
 
-// NoValue is the canonical empty value type for a queue.
+// NoValue is the canonical empty value type for a [Queue].
 type NoValue = struct{}
 
-// Handler is the type for a queue's handler function.
+// Handler is the type for a [Queue]'s handler function.
 type Handler[K comparable, V any] func(*QueueHandle, K) (V, error)
 
 // Queue is a deduplicating work queue. It acts like a map that lazily computes
@@ -20,7 +20,7 @@ type Handler[K comparable, V any] func(*QueueHandle, K) (V, error)
 // include a non-nil error receive no special treatment from the queue; they are
 // cached as usual and their handlers are never retried.
 //
-// Handlers receive a [QueueHandle] that allows them to "detach" from a queue,
+// Handlers receive a [QueueHandle] that allows them to detach from the queue,
 // temporarily increasing its concurrency limit. See [QueueHandle.Detach] for
 // details.
 type Queue[K comparable, V any] struct {
@@ -225,28 +225,26 @@ func (q *Queue[K, V]) work() {
 		state.keys = state.keys[1:]
 		q.state <- state
 
-		taskCtx := q.completeTask(key)
-		if taskCtx.detached {
+		detached := q.completeTask(key)
+		if detached {
 			return // We no longer have a work grant.
 		}
 	}
 }
 
-func (q *Queue[K, V]) completeTask(key K) *QueueHandle {
+func (q *Queue[K, V]) completeTask(key K) (detached bool) {
 	q.tasksMu.Lock()
 	task := q.tasks[key]
 	q.tasksMu.Unlock()
 
-	taskCtx := &QueueHandle{
+	qh := &QueueHandle{
 		detach:   q.handleDetach,
 		reattach: q.handleReattach,
 	}
-
-	task.value, task.err = q.handle(taskCtx, key)
+	task.value, task.err = q.handle(qh, key)
 	task.wg.Done()
 	q.tasksDone.Add(1)
-
-	return taskCtx
+	return qh.detached
 }
 
 // handleDetach relinquishes the work grant held by the handler that calls it.
@@ -324,11 +322,10 @@ func (qh *QueueHandle) Detach() bool {
 // handler is already attached to the queue, or if the queue's concurrency is
 // unlimited.
 func (qh *QueueHandle) Reattach() {
-	if !qh.detached {
-		return
+	if qh.detached {
+		qh.reattach()
+		qh.detached = false
 	}
-	qh.reattach()
-	qh.detached = false
 }
 
 type task[V any] struct {
