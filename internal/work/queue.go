@@ -160,7 +160,8 @@ func (q *Queue[K, V]) getOrCreateTasks(keys []K) (tasks taskList[V], newKeys []K
 			tasks[i] = task
 			continue
 		}
-		task := &task[V]{done: make(chan struct{})}
+		task := &task[V]{}
+		task.wg.Add(1)
 		q.tasks[key] = task
 		tasks[i] = task
 		newKeys = append(newKeys, key)
@@ -242,7 +243,7 @@ func (q *Queue[K, V]) completeTask(key K) *QueueHandle {
 	}
 
 	task.value, task.err = q.handle(taskCtx, key)
-	close(task.done)
+	task.wg.Done()
 	q.tasksDone.Add(1)
 
 	return taskCtx
@@ -331,13 +332,13 @@ func (qh *QueueHandle) Reattach() {
 }
 
 type task[V any] struct {
-	done  chan struct{}
+	wg    sync.WaitGroup
 	value V
 	err   error
 }
 
 func (t *task[V]) Wait() (V, error) {
-	<-t.done
+	t.wg.Wait()
 	return t.value, t.err
 }
 
