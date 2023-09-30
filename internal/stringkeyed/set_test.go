@@ -21,12 +21,20 @@ func TestSet(t *testing.T) {
 			Elements:    nil,
 		},
 		{
-			Description: "set of the empty string",
+			Description: "empty string",
 			Elements:    []string{""},
 		},
 		{
-			Description: "one element",
+			Description: "one normal element",
 			Elements:    []string{"one"},
+		},
+		{
+			Description: "unit separator",
+			Elements:    []string{unitSeparator},
+		},
+		{
+			Description: "shift out",
+			Elements:    []string{shiftOut},
 		},
 		{
 			Description: "multiple normal elements",
@@ -40,12 +48,11 @@ func TestSet(t *testing.T) {
 				"\x0e y",
 				"\x1f",
 				"\x1fabc\x00\x00\x00\x00x",
+				"a",
 				"a \x0e b",
 				"p \x1f ",
 				"p \x1f q",
 				"p \x1f qq",
-				"p \x1f qqq",
-				"p \x1f qqqq",
 				"z",
 			},
 		},
