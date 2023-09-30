@@ -242,8 +242,8 @@ func (q *Queue[K, V]) completeTask(key K) (detached bool) {
 		reattach: q.handleReattach,
 	}
 	task.value, task.err = q.handle(qh, key)
-	task.wg.Done()
 	q.tasksDone.Add(1)
+	task.wg.Done()
 	return qh.detached
 }
 
