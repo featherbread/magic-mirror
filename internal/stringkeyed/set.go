@@ -23,8 +23,8 @@ var _ assertComparable[Set]
 // a valid and empty set.
 type Set struct {
 	// The internal representation of a Set is formed by sorting its raw elements,
-	// encoding each one, and concatenating them with the byte 0x1F (the ASCII
-	// Unit Separator character) as a separator.
+	// encoding each one, prepending the byte 0x1F (the ASCII Unit Separator
+	// character) to each one, and concatenating the result.
 	//
 	// The per-element encoding has two forms. If the encoded element begins with
 	// the byte 0x0E (the ASCII Shift Out character), the remaining bytes of the
@@ -32,9 +32,8 @@ type Set struct {
 	// Otherwise, the encoded element is equivalent to the original raw element.
 	//
 	// The representation of a particular set of elements is not guaranteed to
-	// remain stable over time, as the choice to encode a particular element as
-	// raw or Ascii85 may change. This internal representation must not be stored
-	// or transmitted outside of the process that created it.
+	// remain stable over time. This internal representation must not be stored or
+	// transmitted outside of the process that created it.
 	joined string
 }
 
@@ -45,18 +44,17 @@ func (s *Set) Add(elems ...string) {
 	all := append(s.ToSlice(), elems...)
 	slices.Sort(all)
 	all = slices.Compact(all)
-	encodeAll(all)
-	s.joined = strings.Join(all, unitSeparator)
+	if len(all) > 0 {
+		encodeAll(all)
+		s.joined = unitSeparator + strings.Join(all, unitSeparator)
+	}
 }
 
 // Cardinality returns the cardinality of s; that is, the number of elements it
 // contains. It is more efficient than computing the length of the slice
 // returned by ToSlice.
 func (s Set) Cardinality() int {
-	if len(s.joined) == 0 {
-		return 0
-	}
-	return 1 + strings.Count(s.joined, unitSeparator)
+	return strings.Count(s.joined, unitSeparator)
 }
 
 // ToSlice returns a sorted slice of the elements in s.
@@ -64,7 +62,13 @@ func (s Set) ToSlice() []string {
 	if len(s.joined) == 0 {
 		return nil
 	}
+
 	all := strings.Split(s.joined, unitSeparator)
+	if len(all) < 1 || all[0] != "" {
+		panic("invalid stringkeyed.Set encoding")
+	}
+
+	all = all[1:]
 	decodeAll(all)
 	return all
 }

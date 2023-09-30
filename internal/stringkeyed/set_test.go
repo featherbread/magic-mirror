@@ -21,6 +21,10 @@ func TestSet(t *testing.T) {
 			Elements:    nil,
 		},
 		{
+			Description: "set of the empty string",
+			Elements:    []string{""},
+		},
+		{
 			Description: "one element",
 			Elements:    []string{"one"},
 		},
@@ -119,13 +123,6 @@ func TestSetUnmarshalJSONInvalid(t *testing.T) {
 func FuzzSetChunkedString(f *testing.F) {
 	f.Fuzz(func(t *testing.T, chunkSize uint, input string) {
 		if chunkSize == 0 {
-			t.SkipNow()
-		}
-		if len(input) == 0 {
-			// TODO: This is legitimately a bug; we can't differentiate between the
-			// empty set and a set containing only the empty string. This will require
-			// a change to the internal set representation, so I'd like to build up
-			// more of a fuzz corpus before working on that.
 			t.SkipNow()
 		}
 
