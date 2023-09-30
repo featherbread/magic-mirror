@@ -3,9 +3,12 @@ package stringkeyed
 import (
 	"encoding/json"
 	"math/rand"
+	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/samber/lo"
 )
 
 func TestSet(t *testing.T) {
@@ -111,4 +114,37 @@ func TestSetUnmarshalJSONInvalid(t *testing.T) {
 	} else {
 		t.Logf("unmarshal error was: %v", err)
 	}
+}
+
+func FuzzSetChunkedString(f *testing.F) {
+	f.Fuzz(func(t *testing.T, chunkSize uint, input string) {
+		if chunkSize == 0 {
+			t.SkipNow()
+		}
+		if len(input) == 0 {
+			// TODO: This is legitimately a bug; we can't differentiate between the
+			// empty set and a set containing only the empty string. This will require
+			// a change to the internal set representation, so I'd like to build up
+			// more of a fuzz corpus before working on that.
+			t.SkipNow()
+		}
+
+		chunks := lo.ChunkString(input, int(chunkSize))
+		uniqChunks := lo.Uniq(chunks)
+		slices.Sort(uniqChunks)
+
+		var s Set
+		s.Add(chunks...)
+		t.Logf("encoded set: %q", s.joined)
+
+		gotChunks := s.ToSlice()
+		slices.Sort(gotChunks)
+		if diff := cmp.Diff(uniqChunks, gotChunks, cmpopts.EquateEmpty()); diff != "" {
+			t.Errorf("ToSlice() did not return expected elements (-want +got):\n%s", diff)
+		}
+
+		if len(gotChunks) != s.Cardinality() {
+			t.Errorf("Cardinality() == %d, want %d", s.Cardinality(), len(gotChunks))
+		}
+	})
 }
