@@ -186,52 +186,77 @@ func (q *Queue[K, V]) scheduleLimited(keys []K) {
 	if len(keys) == 0 {
 		return // No need to lock up the state.
 	}
+
 	// Because we are dispatching new work units, we must issue as many new work
 	// grants as the concurrency limit allows. We transfer each work grant to a
 	// worker goroutine that can discharge all duties associated with it.
 	q.stateMu.Lock()
-	q.state.keys = append(q.state.keys, keys...)
 	newGrants := min(q.maxGrants-q.state.grants, len(keys))
+	initialKeys, queuedKeys := keys[:newGrants], keys[newGrants:]
 	q.state.grants += newGrants
+	q.state.keys = append(q.state.keys, queuedKeys...)
 	q.stateMu.Unlock()
-	for i := 0; i < newGrants; i++ {
-		go q.work()
+
+	for _, key := range initialKeys {
+		go q.work(key)
 	}
 }
 
 // work, when invoked in a new goroutine, accepts ownership of a work grant and
-// discharges all duties associated with it.
-func (q *Queue[K, V]) work() {
+// discharges all duties associated with it. If provided with a single initial
+// key, it will execute the task associated with that key before looking for any
+// queued work.
+func (q *Queue[K, V]) work(initialKey ...K) {
 	for {
-		q.stateMu.Lock()
+		var key K
+		switch {
+		case len(initialKey) > 1:
+			panic("worker received more than one initial key")
 
-		if len(q.state.reattachers) > 0 {
-			// See handleReattach for details.
-			reattach := q.state.reattachers[0]
-			q.state.reattachers = q.state.reattachers[1:]
-			q.stateMu.Unlock()
-			close(reattach)
-			return // We have successfully transferred our work grant.
+		case len(initialKey) == 1:
+			key, initialKey = initialKey[0], nil
+
+		default:
+			var ok bool
+			key, ok = q.tryGetQueuedKey()
+			if !ok {
+				return // We no longer have a work grant; see tryGetQueuedKey.
+			}
 		}
-
-		if len(q.state.keys) == 0 {
-			// With no reattachers and no keys, we have no pending work and must
-			// retire the work grant.
-			q.state.grants -= 1
-			q.stateMu.Unlock()
-			return
-		}
-
-		// We have pending work and must use our work grant to execute it.
-		key := q.state.keys[0]
-		q.state.keys = q.state.keys[1:]
-		q.stateMu.Unlock()
 
 		detached := q.completeTask(key)
 		if detached {
 			return // We no longer have a work grant.
 		}
 	}
+}
+
+func (q *Queue[K, V]) tryGetQueuedKey() (key K, ok bool) {
+	q.stateMu.Lock()
+
+	if len(q.state.reattachers) > 0 {
+		// See handleReattach for details.
+		reattach := q.state.reattachers[0]
+		q.state.reattachers = q.state.reattachers[1:]
+		q.stateMu.Unlock()
+		close(reattach)
+		return // We have successfully transferred our work grant.
+	}
+
+	if len(q.state.keys) == 0 {
+		// With no reattachers and no keys, we have no pending work and must
+		// retire the work grant.
+		q.state.grants -= 1
+		q.stateMu.Unlock()
+		return
+	}
+
+	// We have pending work and must use our work grant to execute it.
+	key = q.state.keys[0]
+	q.state.keys = q.state.keys[1:]
+	q.stateMu.Unlock()
+	ok = true
+	return
 }
 
 func (q *Queue[K, V]) completeTask(key K) (detached bool) {
