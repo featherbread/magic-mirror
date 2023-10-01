@@ -26,15 +26,17 @@ type Handler[K comparable, V any] func(*QueueHandle, K) (V, error)
 type Queue[K comparable, V any] struct {
 	handle Handler[K, V]
 
+	// Queues with unlimited concurrency have maxGrants == 0. Otherwise, maxGrants
+	// is the maximum allowed number of outstanding work grants; see workState for
+	// details.
+	maxGrants int
+
+	state   workState[K]
+	stateMu sync.Mutex
+
 	tasks     map[K]*task[V]
 	tasksMu   sync.Mutex
 	tasksDone atomic.Uint64
-
-	// Queues with limited concurrency share a workState through a 1-buffered
-	// channel. Queues with unlimited concurrency are represented by a nil state
-	// channel.
-	state     chan workState[K]
-	maxGrants int
 }
 
 // workState tracks pending work in a limited concurrency queue, along with the
@@ -87,8 +89,6 @@ func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue
 	}
 	if concurrency > 0 {
 		q.maxGrants = concurrency
-		q.state = make(chan workState[K], 1)
-		q.state <- workState[K]{}
 	}
 	return q
 }
@@ -170,7 +170,7 @@ func (q *Queue[K, V]) getOrCreateTasks(keys []K) (tasks taskList[V], newKeys []K
 }
 
 func (q *Queue[K, V]) scheduleNewKeys(keys []K) {
-	if q.state == nil {
+	if q.maxGrants == 0 {
 		q.scheduleUnlimited(keys)
 	} else {
 		q.scheduleLimited(keys)
@@ -187,11 +187,11 @@ func (q *Queue[K, V]) scheduleLimited(keys []K) {
 	// Because we are dispatching new work units, we must issue as many new work
 	// grants as the concurrency limit allows. We transfer each work grant to a
 	// worker goroutine that can discharge all duties associated with it.
-	state := <-q.state
-	state.keys = append(state.keys, keys...)
-	newGrants := min(q.maxGrants-state.grants, len(keys))
-	state.grants += newGrants
-	q.state <- state
+	q.stateMu.Lock()
+	q.state.keys = append(q.state.keys, keys...)
+	newGrants := min(q.maxGrants-q.state.grants, len(keys))
+	q.state.grants += newGrants
+	q.stateMu.Unlock()
 	for i := 0; i < newGrants; i++ {
 		go q.work()
 	}
@@ -201,29 +201,29 @@ func (q *Queue[K, V]) scheduleLimited(keys []K) {
 // discharges all duties associated with it.
 func (q *Queue[K, V]) work() {
 	for {
-		state := <-q.state
+		q.stateMu.Lock()
 
-		if len(state.reattachers) > 0 {
+		if len(q.state.reattachers) > 0 {
 			// See handleReattach for details.
-			reattach := state.reattachers[0]
-			state.reattachers = state.reattachers[1:]
-			q.state <- state
+			reattach := q.state.reattachers[0]
+			q.state.reattachers = q.state.reattachers[1:]
+			q.stateMu.Unlock()
 			close(reattach)
 			return // We have successfully transferred our work grant.
 		}
 
-		if len(state.keys) == 0 {
+		if len(q.state.keys) == 0 {
 			// With no reattachers and no keys, we have no pending work and must
 			// retire the work grant.
-			state.grants -= 1
-			q.state <- state
+			q.state.grants -= 1
+			q.stateMu.Unlock()
 			return
 		}
 
 		// We have pending work and must use our work grant to execute it.
-		key := state.keys[0]
-		state.keys = state.keys[1:]
-		q.state <- state
+		key := q.state.keys[0]
+		q.state.keys = q.state.keys[1:]
+		q.stateMu.Unlock()
 
 		detached := q.completeTask(key)
 		if detached {
@@ -251,7 +251,7 @@ func (q *Queue[K, V]) completeTask(key K) (detached bool) {
 // Its behavior is undefined if its caller does not hold an outstanding work
 // grant.
 func (q *Queue[K, V]) handleDetach() bool {
-	if q.state == nil {
+	if q.maxGrants == 0 {
 		return false
 	}
 	go q.work() // Transfer our work grant to a new worker.
@@ -263,24 +263,24 @@ func (q *Queue[K, V]) handleDetach() bool {
 // or if its caller is not prepared to discharge all duties associated with a
 // work grant.
 func (q *Queue[K, V]) handleReattach() {
-	if q.state == nil {
+	if q.maxGrants == 0 {
 		return
 	}
 
-	state := <-q.state
+	q.stateMu.Lock()
 
-	if state.grants < q.maxGrants {
+	if q.state.grants < q.maxGrants {
 		// There is capacity for a new work grant, so we must issue one.
-		state.grants += 1
-		q.state <- state
+		q.state.grants += 1
+		q.stateMu.Unlock()
 		return
 	}
 
 	// There is no capacity for a new work grant, so we must wait for one from an
 	// existing holder, as indicated by the holder closing our channel.
 	reattach := make(chan struct{})
-	state.reattachers = append(state.reattachers, reattach)
-	q.state <- state
+	q.state.reattachers = append(q.state.reattachers, reattach)
+	q.stateMu.Unlock()
 	<-reattach
 }
 
