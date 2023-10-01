@@ -43,6 +43,22 @@ func assertSucceedsWithin[K comparable, V any](t *testing.T, timeout time.Durati
 	}
 }
 
+func assertDoneCount[K comparable, V any](t *testing.T, q *Queue[K, V], want uint64) {
+	t.Helper()
+	done, _ := q.Stats()
+	if done != want {
+		t.Errorf("queue reports %d tasks done, want %d", done, want)
+	}
+}
+
+func assertSubmittedCount[K comparable, V any](t *testing.T, q *Queue[K, V], want uint64) {
+	t.Helper()
+	_, submitted := q.Stats()
+	if submitted != want {
+		t.Errorf("queue reports %d tasks submitted, want %d", submitted, want)
+	}
+}
+
 func assertBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) (cleanup func()) {
 	t.Helper()
 

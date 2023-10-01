@@ -9,11 +9,15 @@ import (
 func TestQueueBasicUnlimited(t *testing.T) {
 	q := NewQueue(0, func(_ *QueueHandle, x int) (int, error) { return x, nil })
 	assertSucceedsWithin(t, 2*time.Second, q, []int{42}, []int{42})
+	assertSubmittedCount(t, q, 1)
+	assertDoneCount(t, q, 1)
 }
 
 func TestQueueBasicLimited(t *testing.T) {
 	q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) { return x, nil })
 	assertSucceedsWithin(t, 2*time.Second, q, []int{42}, []int{42})
+	assertSubmittedCount(t, q, 1)
+	assertDoneCount(t, q, 1)
 }
 
 func TestQueueDeduplication(t *testing.T) {
@@ -32,17 +36,23 @@ func TestQueueDeduplication(t *testing.T) {
 
 	close(unblock)
 	assertSucceedsWithin(t, 2*time.Second, q, keys[:half], keys[:half])
+	assertSubmittedCount(t, q, half)
+	assertDoneCount(t, q, half)
 
 	unblock = make(chan struct{})
 	assertSucceedsWithin(t, 2*time.Second, q, keys[:half], keys[:half])
 	cleanup := assertBlocked(t, q, keys[half])
 	defer cleanup()
+	assertSubmittedCount(t, q, half+1)
+	assertDoneCount(t, q, half)
 
 	close(unblock)
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 
 	unblock = make(chan struct{})
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
+	assertSubmittedCount(t, q, count)
+	assertDoneCount(t, q, count)
 }
 
 func TestQueueConcurrencyLimit(t *testing.T) {
@@ -71,6 +81,8 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 	forceRuntimeProgress(workerCount + 1)
 	close(unblock)
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
+	assertSubmittedCount(t, q, submitCount)
+	assertDoneCount(t, q, submitCount)
 
 	if breached.Load() {
 		t.Errorf("queue breached limit of %d workers in flight", workerCount)
@@ -90,6 +102,8 @@ func TestQueueDetachReattachUnlimited(t *testing.T) {
 
 	keys := makeIntKeys(submitCount)
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
+	assertSubmittedCount(t, q, submitCount)
+	assertDoneCount(t, q, submitCount)
 }
 
 func TestQueueDetachReattachLimited(t *testing.T) {
@@ -142,6 +156,8 @@ func TestQueueDetachReattachLimited(t *testing.T) {
 
 	close(unblockReturn)
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
+	assertSubmittedCount(t, q, submitCount)
+	assertDoneCount(t, q, submitCount)
 
 	if breachedReattach.Load() {
 		t.Errorf("queue breached limit of %d workers in flight during reattach", workerCount)
