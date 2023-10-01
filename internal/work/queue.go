@@ -143,9 +143,7 @@ func (q *Queue[K, V]) Stats() (done, submitted uint64) {
 
 func (q *Queue[K, V]) getTasks(keys ...K) taskList[V] {
 	tasks, newKeys := q.getOrCreateTasks(keys)
-	if len(newKeys) > 0 {
-		q.scheduleNewKeys(newKeys)
-	}
+	q.scheduleNewKeys(newKeys)
 	return tasks
 }
 
@@ -184,6 +182,9 @@ func (q *Queue[K, V]) scheduleUnlimited(keys []K) {
 }
 
 func (q *Queue[K, V]) scheduleLimited(keys []K) {
+	if len(keys) == 0 {
+		return // No need to lock up the state.
+	}
 	// Because we are dispatching new work units, we must issue as many new work
 	// grants as the concurrency limit allows. We transfer each work grant to a
 	// worker goroutine that can discharge all duties associated with it.
