@@ -40,6 +40,12 @@ type Set struct {
 	joined string
 }
 
+// SetOf returns a new [Set] containing the provided elements.
+func SetOf(elems ...string) (s Set) {
+	s.Add(elems...)
+	return
+}
+
 // Add adds the provided elements to s if it does not already contain them. In
 // other words, it makes s the union of the elements already in s and the
 // elements provided.

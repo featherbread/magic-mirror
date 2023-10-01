@@ -2,7 +2,6 @@ package stringkeyed
 
 import (
 	"encoding/json"
-	"math/rand"
 	"slices"
 	"testing"
 
@@ -59,15 +58,10 @@ func TestSet(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.Description, func(t *testing.T) {
-			elements := make([]string, len(tc.Elements))
-			copy(elements, tc.Elements)
-			shuffleElements := func() {
-				rand.Shuffle(len(elements), func(i, j int) { elements[i], elements[j] = elements[j], elements[i] })
-			}
-			shuffleElements()
+			elements := slices.Clone(tc.Elements)
+			lo.Shuffle(elements)
 
-			var s Set
-			s.Add(elements...)
+			s := SetOf(elements...)
 			t.Logf("encoded set: %q", s.joined)
 
 			if s.Cardinality() != len(elements) {
@@ -79,10 +73,8 @@ func TestSet(t *testing.T) {
 				t.Errorf("got back different elements than put in (-want +got):\n%s", diff)
 			}
 
-			var x Set
-			shuffleElements()
-			x.Add(elements...)
-			shuffleElements()
+			x := SetOf(elements...)
+			lo.Shuffle(elements)
 			x.Add(elements...)
 			if s != x {
 				t.Errorf("sets with the same content compared unequal: %q vs. %q", s.joined, x.joined)
@@ -92,9 +84,7 @@ func TestSet(t *testing.T) {
 }
 
 func TestSetMarshalJSON(t *testing.T) {
-	var s Set
-	s.Add("one", "two", "three")
-
+	s := SetOf("one", "two", "three")
 	want := []byte(`["one","three","two"]`)
 	got, err := json.Marshal(s)
 	if err != nil {
@@ -134,15 +124,13 @@ func FuzzSetChunkedString(f *testing.F) {
 		}
 
 		chunks := lo.ChunkString(input, int(chunkSize))
+		s := SetOf(chunks...)
+		t.Logf("encoded set: %q", s.joined)
+
 		uniqChunks := lo.Uniq(chunks)
 		slices.Sort(uniqChunks)
 
-		var s Set
-		s.Add(chunks...)
-		t.Logf("encoded set: %q", s.joined)
-
 		gotChunks := s.ToSlice()
-		slices.Sort(gotChunks)
 		if diff := cmp.Diff(uniqChunks, gotChunks, cmpopts.EquateEmpty()); diff != "" {
 			t.Errorf("ToSlice() did not return expected elements (-want +got):\n%s", diff)
 		}
