@@ -135,9 +135,9 @@ func (q *Queue[K, V]) GetAll(keys ...K) ([]V, error) {
 //     computed.
 func (q *Queue[K, V]) Stats() (done, submitted uint64) {
 	q.tasksMu.Lock()
-	defer q.tasksMu.Unlock()
-	done = q.tasksDone.Load()
 	submitted = uint64(len(q.tasks))
+	q.tasksMu.Unlock()
+	done = q.tasksDone.Load()
 	return
 }
 
@@ -149,6 +149,7 @@ func (q *Queue[K, V]) getTasks(keys ...K) taskList[V] {
 
 func (q *Queue[K, V]) getOrCreateTasks(keys []K) (tasks taskList[V], newKeys []K) {
 	tasks = make(taskList[V], len(keys))
+	newKeys = make([]K, 0, len(keys))
 
 	q.tasksMu.Lock()
 	defer q.tasksMu.Unlock()

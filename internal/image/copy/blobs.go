@@ -76,6 +76,9 @@ func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {
 }
 
 func (c *blobCopier) copyOneBlob(qh *work.QueueHandle, req blobCopyRequest) (err error) {
+	// If another handler is copying this same blob, wait for that handler to
+	// finish. If it's copying to the same registry that we are, we'll be able to
+	// mount the blob instead of pulling it again from the source.
 	c.copyMu.LockDetached(qh, req.Digest)
 	defer c.copyMu.Unlock(req.Digest)
 
