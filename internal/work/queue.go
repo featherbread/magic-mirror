@@ -134,10 +134,10 @@ func (q *Queue[K, V]) GetAll(keys ...K) ([]V, error) {
 //     requested from the queue, including keys whose results are not yet
 //     computed.
 func (q *Queue[K, V]) Stats() (done, submitted uint64) {
+	done = q.tasksDone.Load()
 	q.tasksMu.Lock()
 	submitted = uint64(len(q.tasks))
 	q.tasksMu.Unlock()
-	done = q.tasksDone.Load()
 	return
 }
 
