@@ -243,12 +243,13 @@ func (q *Queue[K, V]) tryGetQueuedKey() (key K, ok bool) {
 // q.stateMu is locked on entry and unlocks q.stateMu before it returns.
 func (q *Queue[K, V]) tryGetQueuedKeyLocked() (key K, ok bool) {
 	if len(q.state.reattachers) > 0 {
-		// See handleReattach for details.
+		// We can transfer our work grant to a reattacher; see handleReattach for
+		// details.
 		reattach := q.state.reattachers[0]
 		q.state.reattachers = q.state.reattachers[1:]
 		q.stateMu.Unlock()
 		close(reattach)
-		return // We have successfully transferred our work grant.
+		return
 	}
 
 	if len(q.state.keys) == 0 {
@@ -259,7 +260,7 @@ func (q *Queue[K, V]) tryGetQueuedKeyLocked() (key K, ok bool) {
 		return
 	}
 
-	// We have pending work and must use our work grant to execute it.
+	// We have pending work and must use the work grant to execute it.
 	key = q.state.keys[0]
 	q.state.keys = q.state.keys[1:]
 	q.stateMu.Unlock()
