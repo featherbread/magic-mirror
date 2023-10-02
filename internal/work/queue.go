@@ -231,9 +231,17 @@ func (q *Queue[K, V]) work(initialKey ...K) {
 	}
 }
 
+// tryGetQueuedKey, when called with a work grant held, either relinquishes the
+// work grant (returning ok == false) or returns a key (with ok == true) whose
+// associated work the caller must execute.
 func (q *Queue[K, V]) tryGetQueuedKey() (key K, ok bool) {
 	q.stateMu.Lock()
+	return q.tryGetQueuedKeyLocked()
+}
 
+// tryGetQueuedKeyLocked behaves like [Queue.tryGetQueuedKey], but assumes that
+// q.stateMu is locked on entry and unlocks q.stateMu before it returns.
+func (q *Queue[K, V]) tryGetQueuedKeyLocked() (key K, ok bool) {
 	if len(q.state.reattachers) > 0 {
 		// See handleReattach for details.
 		reattach := q.state.reattachers[0]
@@ -281,7 +289,20 @@ func (q *Queue[K, V]) handleDetach() bool {
 	if q.maxGrants == 0 {
 		return false
 	}
-	go q.work() // Transfer our work grant to a new worker.
+
+	// If we can quickly get a lock on the state, we'll see if we can relinquish
+	// the work grant directly instead of starting a new worker.
+	if q.stateMu.TryLock() {
+		key, ok := q.tryGetQueuedKeyLocked()
+		if ok {
+			go q.work(key)
+		}
+		return true
+	}
+
+	// Otherwise, we'll simply transfer our work grant to a new worker and let it
+	// figure out what to do, so we don't block the detach.
+	go q.work()
 	return true
 }
 
