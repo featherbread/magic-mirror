@@ -72,7 +72,7 @@ type Queue[K comparable, V any] struct {
 type workState[K comparable] struct {
 	grants      int
 	keys        []K
-	reattachers []chan<- struct{}
+	reattachers []chan<- struct{} // TODO: CHANNELS ARE ALREADY FIFO QUEUES!
 }
 
 // NewQueue creates a queue that uses the provided handler to compute the result
