@@ -70,7 +70,7 @@ func assertBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) (cl
 
 	// Make a best-effort attempt to force the key's handler to be in flight when
 	// it should not be.
-	forceRuntimeProgress(2)
+	forceRuntimeProgress()
 
 	select {
 	case <-done:
@@ -81,20 +81,24 @@ func assertBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) (cl
 	return func() { <-done }
 }
 
-// forceRuntimeProgress attempts to force the Go runtime to make progress on at
-// least n other goroutines before resuming the current one.
+// forceRuntimeProgress attempts to force the Go runtime to make progress on
+// every other live goroutine before resuming the current one.
 //
-// This function is intended to help reveal issues with concurrency limits by
-// forcing the goroutines subject to those limits to hit some kind of blocking
-// condition simultaneously. When the only other live goroutines in a test are
-// those spawned by the test itself, this approach appears in practice to work
-// just as well as other strategies that may be at least an order of magnitude
-// more expensive (e.g. time.Sleep calls). However, there is some inherent
-// non-determinism in this strategy that could reveal itself if some other test
-// leaks runnable goroutines.
-func forceRuntimeProgress(n int) {
+// In scenarios where all live goroutines other than the current one are
+// expected to eventually block, this function tries to force those goroutines
+// to execute up to that eventual state so that assertions can be made about it.
+// For example, if an implementation of concurrency limits is broken, or if a
+// goroutine can run to completion when it should be blocked, this function
+// should force those conditions to occur more quickly and reliably than
+// sleeping for a predetermined time.
+//
+// This function operates on a best-effort basis. It works best when no live
+// goroutines in the system are expected to spawn further goroutines or perform
+// CPU-intensive work without blocking.
+func forceRuntimeProgress() {
 	gomaxprocs := runtime.GOMAXPROCS(1)
 	defer runtime.GOMAXPROCS(gomaxprocs)
+	n := runtime.NumGoroutine()
 	for i := 0; i < n; i++ {
 		runtime.Gosched()
 	}

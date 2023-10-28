@@ -37,7 +37,7 @@ func TestKeyMutexBasic(t *testing.T) {
 	for i := 0; i < nWorkers; i++ {
 		ready <- struct{}{}
 	}
-	forceRuntimeProgress(nWorkers)
+	forceRuntimeProgress()
 	for i := range locked {
 		if count := locked[i].Load(); count > 1 {
 			t.Errorf("mutex for %d held %d times", i, count)

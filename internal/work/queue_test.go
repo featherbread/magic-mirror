@@ -78,7 +78,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 
 	keys := makeIntKeys(submitCount)
 	go func() { q.GetAll(keys...) }()
-	forceRuntimeProgress(workerCount + 1)
+	forceRuntimeProgress()
 	close(unblock)
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 	assertSubmittedCount(t, q, submitCount)
@@ -152,7 +152,7 @@ func TestQueueDetachReattachLimited(t *testing.T) {
 	}
 
 	close(unblockReattach)
-	forceRuntimeProgress(workerCount + 1)
+	forceRuntimeProgress()
 
 	close(unblockReturn)
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
