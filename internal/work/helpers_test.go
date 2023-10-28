@@ -93,11 +93,17 @@ func assertBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) (cl
 // sleeping for a predetermined time.
 //
 // This function operates on a best-effort basis. It works best when no live
-// goroutines in the system are expected to spawn further goroutines or perform
-// CPU-intensive work without blocking.
+// goroutines in the system are expected to spawn further goroutines, perform
+// CPU-intensive work without blocking, or change GOMAXPROCS.
 func forceRuntimeProgress() {
+	// We want the runtime to execute this goroutine because others are blocked,
+	// not because they're executing in parallel.
 	gomaxprocs := runtime.GOMAXPROCS(1)
 	defer runtime.GOMAXPROCS(gomaxprocs)
+
+	// This is more of a reasonable heuristic than a guarantee, for the reasons
+	// described above. Yes, this count includes the current goroutine; consider
+	// it extra insurance.
 	n := runtime.NumGoroutine()
 	for i := 0; i < n; i++ {
 		runtime.Gosched()
