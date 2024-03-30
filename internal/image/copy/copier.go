@@ -9,9 +9,9 @@ import (
 	"github.com/containerd/containerd/platforms"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"go.alexhamlin.co/magic-mirror/internal/image"
-	"go.alexhamlin.co/magic-mirror/internal/log"
-	"go.alexhamlin.co/magic-mirror/internal/work"
+	"github.com/ahamlinman/magic-mirror/internal/image"
+	"github.com/ahamlinman/magic-mirror/internal/log"
+	"github.com/ahamlinman/magic-mirror/internal/work"
 )
 
 // CopyAll performs a bulk copy between OCI image registries based on the

@@ -1,4 +1,4 @@
-module go.alexhamlin.co/magic-mirror
+module github.com/ahamlinman/magic-mirror
 
 go 1.21
 

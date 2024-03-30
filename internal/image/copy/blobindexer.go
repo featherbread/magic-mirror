@@ -1,8 +1,8 @@
 package copy
 
 import (
-	"go.alexhamlin.co/magic-mirror/internal/image"
-	"go.alexhamlin.co/magic-mirror/internal/log"
+	"github.com/ahamlinman/magic-mirror/internal/image"
+	"github.com/ahamlinman/magic-mirror/internal/log"
 )
 
 // blobIndexer discovers the existence of blobs in a repository using manifest

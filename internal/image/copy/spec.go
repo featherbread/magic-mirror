@@ -9,8 +9,8 @@ import (
 	mapset "github.com/deckarep/golang-set/v2"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"go.alexhamlin.co/magic-mirror/internal/image"
-	"go.alexhamlin.co/magic-mirror/internal/stringkeyed"
+	"github.com/ahamlinman/magic-mirror/internal/image"
+	"github.com/ahamlinman/magic-mirror/internal/stringkeyed"
 )
 
 // Spec represents a single request to copy a particular source image to a

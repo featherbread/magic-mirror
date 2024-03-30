@@ -5,9 +5,9 @@ import (
 
 	"github.com/opencontainers/go-digest"
 
-	"go.alexhamlin.co/magic-mirror/internal/image"
-	"go.alexhamlin.co/magic-mirror/internal/log"
-	"go.alexhamlin.co/magic-mirror/internal/work"
+	"github.com/ahamlinman/magic-mirror/internal/image"
+	"github.com/ahamlinman/magic-mirror/internal/log"
+	"github.com/ahamlinman/magic-mirror/internal/work"
 )
 
 type platformCopier struct {

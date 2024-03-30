@@ -11,10 +11,10 @@ import (
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/opencontainers/go-digest"
 
-	"go.alexhamlin.co/magic-mirror/internal/image"
-	"go.alexhamlin.co/magic-mirror/internal/image/registry"
-	"go.alexhamlin.co/magic-mirror/internal/log"
-	"go.alexhamlin.co/magic-mirror/internal/work"
+	"github.com/ahamlinman/magic-mirror/internal/image"
+	"github.com/ahamlinman/magic-mirror/internal/image/registry"
+	"github.com/ahamlinman/magic-mirror/internal/log"
+	"github.com/ahamlinman/magic-mirror/internal/work"
 )
 
 // blobCopier handles requests to copy blob content between repositories.

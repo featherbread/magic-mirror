@@ -9,7 +9,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
-	"go.alexhamlin.co/magic-mirror/internal/image"
+	"github.com/ahamlinman/magic-mirror/internal/image"
 )
 
 // Scope represents a permission on a particular image repository.
