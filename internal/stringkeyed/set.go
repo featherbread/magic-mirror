@@ -46,9 +46,7 @@ func SetOf(elems ...string) (s Set) {
 	return
 }
 
-// Add adds the provided elements to s if it does not already contain them. In
-// other words, it makes s the union of the elements already in s and the
-// elements provided.
+// Add turns s into the union of s and the provided elements.
 func (s *Set) Add(elems ...string) {
 	all := append(s.ToSlice(), elems...)
 	slices.Sort(all)
@@ -61,9 +59,8 @@ func (s *Set) Add(elems ...string) {
 	}
 }
 
-// Cardinality returns the cardinality of s; that is, the number of elements it
-// contains. It is more efficient than computing the length of the slice
-// returned by ToSlice.
+// Cardinality returns the number of elements in s. It is more efficient than
+// computing the length of the slice returned by ToSlice.
 func (s Set) Cardinality() int {
 	switch s.joined {
 	case "":
@@ -109,12 +106,11 @@ func (s *Set) UnmarshalJSON(b []byte) error {
 
 func encodeAll(elems []string) {
 	for i, elem := range elems {
-		// Note that the per-element encoding is defined only in terms of the final
-		// encoded form, so we can be flexible about when we choose to encode. For
-		// now, we only encode in the two cases where the properties of the encoding
-		// absolutely require it: when the raw element contains a Unit Separator
-		// (which conflicts with the higher-level Set representation) or starts with
-		// a Shift Out (which conflicts with the Ascii85 marker in the encoding).
+		// The per-element encoding is defined in terms of the final encoded form,
+		// so we can be flexible about when we apply Ascii85. For now, we do so in
+		// the two cases that absolutely require it: when the raw element contains
+		// a Unit Separator (confusable with the element separator) or starts with
+		// a Shift Out (confusable with the Ascii85 marker).
 		if strings.Contains(elem, unitSeparator) || strings.HasPrefix(elem, shiftOut) {
 			elems[i] = encodeAscii85Element(elem)
 		}

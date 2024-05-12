@@ -42,13 +42,13 @@ func newBlobCopier(concurrency int) *blobCopier {
 // contains the blob with the provided digest. The copier may use this
 // information to optimize its copy attempts, by skipping copies of blobs that
 // are known to exist at a destination or attempting cross-repository mounts of
-// blobs within the same registry.
+// blobs in the same registry.
 func (c *blobCopier) RegisterSource(dgst digest.Digest, src image.Repository) {
 	c.sources(dgst).Add(src)
 }
 
-// CopyAll ensures that all of the referenced blobs from the source repository
-// exist in the destination repository.
+// CopyAll ensures that all referenced blobs from the source repository exist
+// in the destination repository.
 //
 // The source repository will be registered as a source for the provided blobs.
 // Note that the copier may source the blobs for this operation from another

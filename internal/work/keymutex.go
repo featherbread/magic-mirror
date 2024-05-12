@@ -48,8 +48,8 @@ func (km *KeyMutex[K]) lock(key K, detach func() bool, reattach func()) {
 		km.chansMu.Lock()
 		ch, ok := km.chans[key]
 		if !ok {
-			// We are the only ones currently trying to lock this key, and will
-			// initialize a channel for future waiters to block on.
+			// We're first to lock this key, and will create a channel for future
+			// waiters to block on.
 			if km.chans == nil {
 				km.chans = make(map[K]chan struct{})
 			}
@@ -58,12 +58,11 @@ func (km *KeyMutex[K]) lock(key K, detach func() bool, reattach func()) {
 			return
 		}
 
-		// Someone else currently holds the lock on this key. We'll detach from the
-		// parent queue and start waiting on their channel. If possible, we'll try
-		// to receive a single token from another unlocker, to limit channel
-		// allocations and take advantage of whatever fairness mechanisms the Go
-		// runtime provides. Otherwise, we'll loop and try to get or create a fresh
-		// channel again.
+		// Someone else holds the lock on this key. We'll detach from the parent
+		// queue and wait on their channel. If possible, we'll receive a single
+		// token from them, to limit channel allocations and leverage fairness
+		// mechanisms in the Go runtime. Otherwise, we'll loop and obtain a fresh
+		// channel.
 		km.chansMu.Unlock()
 		tryDetach()
 		_, passed := <-ch
@@ -85,11 +84,10 @@ func (km *KeyMutex[K]) Unlock(key K) {
 	}
 	select {
 	case ch <- struct{}{}:
-		// We successfully passed the lock to another waiter.
+		// We passed the lock to another waiter.
 	default:
-		// There are no other waiters at this time. If a waiter got this channel and
-		// hasn't yet blocked on it, they'll need to detect that it's closed and get
-		// a new one.
+		// There are no blocked waiters. If a waiter got this channel and hasn't
+		// yet blocked on it, they must detect that it's closed and get a new one.
 		close(ch)
 		delete(km.chans, key)
 	}

@@ -8,11 +8,11 @@ import (
 // blobIndexer discovers the existence of blobs in a repository using manifest
 // information alone, and registers this information with a blobCopier.
 //
-// The goal of blob indexing is twofold: to identify when blobs already exist in
-// a destination repository before we even make a HEAD request to the registry,
-// and to identify potential cross-repository mount sources within each
-// destination registry. Blob indexing is performed on a best-effort basis even
-// when the image manifest at the destination is up to date.
+// Blob indexing serves two purposes: to identify when blobs exist in a
+// repository before we even check with a HEAD request, and to find
+// cross-repository mount sources in each destination registry. Blob indexing
+// is performed on a best-effort basis even when the image manifest at the
+// destination is up to date.
 type blobIndexer struct {
 	manifests *manifestCache
 	blobs     *blobCopier
