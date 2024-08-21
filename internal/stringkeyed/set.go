@@ -84,32 +84,20 @@ func (s *Set) All() iter.Seq[string] {
 			return
 		}
 
-		// TODO: A real iterator, not this naïve version.
-		all := stringSplit(s.joined)
-		decodeAll(all)
-		slices.Values(all)(yield)
-	}
-}
-
-func stringSplit(s string) []string {
-	chunkCount := strings.Count(s, unitSeparator) + 1
-	if chunkCount > len(s)+1 {
-		chunkCount = len(s) + 1
-	}
-	chunks := make([]string, chunkCount)
-	chunkCount--
-	i := 0
-	for i < chunkCount {
-		idx := strings.Index(s, unitSeparator)
-		if idx < 0 {
-			break
+		rest := s.joined
+		for len(rest) > 0 {
+			idx := strings.Index(rest, unitSeparator)
+			if idx < 0 {
+				yield(decode(rest))
+				return
+			}
+			var next string
+			next, rest = rest[:idx], rest[idx+len(unitSeparator):]
+			if !yield(decode(next)) {
+				return
+			}
 		}
-		chunks[i] = s[:idx]
-		s = s[idx+len(unitSeparator):]
-		i++
 	}
-	chunks[i] = s
-	return chunks[:i+1]
 }
 
 func (s Set) MarshalJSON() ([]byte, error) {
@@ -148,12 +136,6 @@ func encodeAscii85Element(elem string) string {
 	out[0] = shiftOut[0]
 	outlen := ascii85.Encode(out[1:], []byte(elem))
 	return string(out[:1+outlen])
-}
-
-func decodeAll(elems []string) {
-	for i, elem := range elems {
-		elems[i] = decode(elem)
-	}
 }
 
 func decode(elem string) string {
