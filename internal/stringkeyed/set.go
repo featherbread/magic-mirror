@@ -148,22 +148,22 @@ func decodeAscii85Element(elem string) string {
 }
 
 func stringSplit(s, sep string) []string {
-	n := strings.Count(s, sep) + 1
-	if n > len(s)+1 {
-		n = len(s) + 1
+	chunkCount := strings.Count(s, sep) + 1
+	if chunkCount > len(s)+1 {
+		chunkCount = len(s) + 1
 	}
-	a := make([]string, n)
-	n--
+	chunks := make([]string, chunkCount)
+	chunkCount--
 	i := 0
-	for i < n {
-		m := strings.Index(s, sep)
-		if m < 0 {
+	for i < chunkCount {
+		idx := strings.Index(s, sep)
+		if idx < 0 {
 			break
 		}
-		a[i] = s[:m]
-		s = s[m+len(sep):]
+		chunks[i] = s[:idx]
+		s = s[idx+len(sep):]
 		i++
 	}
-	a[i] = s
-	return a[:i+1]
+	chunks[i] = s
+	return chunks[:i+1]
 }
