@@ -83,6 +83,13 @@ func TestSet(t *testing.T) {
 	}
 }
 
+func TestSetIterateBreak(t *testing.T) {
+	s := SetOf("one", "two", "three")
+	for range s.All() {
+		break // Should not panic.
+	}
+}
+
 func TestSetMarshalJSON(t *testing.T) {
 	s := SetOf("one", "two", "three")
 	want := []byte(`["one","three","two"]`)
