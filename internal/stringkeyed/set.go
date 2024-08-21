@@ -91,6 +91,27 @@ func (s *Set) All() iter.Seq[string] {
 	}
 }
 
+func stringSplit(s, sep string) []string {
+	chunkCount := strings.Count(s, sep) + 1
+	if chunkCount > len(s)+1 {
+		chunkCount = len(s) + 1
+	}
+	chunks := make([]string, chunkCount)
+	chunkCount--
+	i := 0
+	for i < chunkCount {
+		idx := strings.Index(s, sep)
+		if idx < 0 {
+			break
+		}
+		chunks[i] = s[:idx]
+		s = s[idx+len(sep):]
+		i++
+	}
+	chunks[i] = s
+	return chunks[:i+1]
+}
+
 func (s Set) MarshalJSON() ([]byte, error) {
 	return json.Marshal(slices.Collect(s.All()))
 }
@@ -145,25 +166,4 @@ func decodeAscii85Element(elem string) string {
 		panic(fmt.Errorf("invalid stringkeyed.Set encoding: %q: %v", elem, err))
 	}
 	return builder.String()
-}
-
-func stringSplit(s, sep string) []string {
-	chunkCount := strings.Count(s, sep) + 1
-	if chunkCount > len(s)+1 {
-		chunkCount = len(s) + 1
-	}
-	chunks := make([]string, chunkCount)
-	chunkCount--
-	i := 0
-	for i < chunkCount {
-		idx := strings.Index(s, sep)
-		if idx < 0 {
-			break
-		}
-		chunks[i] = s[:idx]
-		s = s[idx+len(sep):]
-		i++
-	}
-	chunks[i] = s
-	return chunks[:i+1]
 }
