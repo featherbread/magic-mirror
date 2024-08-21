@@ -3,7 +3,7 @@ module github.com/ahamlinman/magic-mirror
 go 1.23.0
 
 require (
-	github.com/containerd/containerd v1.7.20
+	github.com/containerd/platforms v0.2.1
 	github.com/deckarep/golang-set/v2 v2.6.0
 	github.com/google/go-cmp v0.6.0
 	github.com/google/go-containerregistry v0.20.2
@@ -15,9 +15,7 @@ require (
 )
 
 require (
-	github.com/Microsoft/hcsshim v0.12.6 // indirect
 	github.com/containerd/log v0.1.0 // indirect
-	github.com/containerd/platforms v0.2.1 // indirect
 	github.com/docker/cli v27.1.2+incompatible // indirect
 	github.com/docker/distribution v2.8.3+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.8.2 // indirect

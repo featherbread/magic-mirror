@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/containerd/containerd/platforms"
+	"github.com/containerd/platforms"
 	mapset "github.com/deckarep/golang-set/v2"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 
