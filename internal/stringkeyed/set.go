@@ -148,18 +148,7 @@ func decodeAscii85Element(elem string) string {
 }
 
 func stringSplit(s, sep string) []string {
-	n := -1
-
-	if n == 0 {
-		return nil
-	}
-	if sep == "" {
-		panic("not implemented")
-	}
-	if n < 0 {
-		n = strings.Count(s, sep) + 1
-	}
-
+	n := strings.Count(s, sep) + 1
 	if n > len(s)+1 {
 		n = len(s) + 1
 	}
