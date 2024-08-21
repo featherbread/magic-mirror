@@ -85,14 +85,14 @@ func (s *Set) All() iter.Seq[string] {
 		}
 
 		// TODO: A real iterator, not this naïve version.
-		all := stringSplit(s.joined, unitSeparator)
+		all := stringSplit(s.joined)
 		decodeAll(all)
 		slices.Values(all)(yield)
 	}
 }
 
-func stringSplit(s, sep string) []string {
-	chunkCount := strings.Count(s, sep) + 1
+func stringSplit(s string) []string {
+	chunkCount := strings.Count(s, unitSeparator) + 1
 	if chunkCount > len(s)+1 {
 		chunkCount = len(s) + 1
 	}
@@ -100,12 +100,12 @@ func stringSplit(s, sep string) []string {
 	chunkCount--
 	i := 0
 	for i < chunkCount {
-		idx := strings.Index(s, sep)
+		idx := strings.Index(s, unitSeparator)
 		if idx < 0 {
 			break
 		}
 		chunks[i] = s[:idx]
-		s = s[idx+len(sep):]
+		s = s[idx+len(unitSeparator):]
 		i++
 	}
 	chunks[i] = s
