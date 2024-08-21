@@ -82,12 +82,12 @@ func (s *Set) All() iter.Seq[string] {
 		case unitSeparator:
 			yield("")
 			return
-		default:
-			// TODO: A real iterator, not this naïve version.
-			all := stringSplit(s.joined, unitSeparator)
-			decodeAll(all)
-			slices.Values(all)(yield)
 		}
+
+		// TODO: A real iterator, not this naïve version.
+		all := stringSplit(s.joined, unitSeparator)
+		decodeAll(all)
+		slices.Values(all)(yield)
 	}
 }
 
