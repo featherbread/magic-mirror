@@ -147,9 +147,10 @@ func decodeAscii85Element(elem string) string {
 	return builder.String()
 }
 
-func stringSplit(s, sep string) []string { return genSplit(s, sep, 0, -1) }
+func stringSplit(s, sep string) []string {
+	sepSave := 0
+	n := -1
 
-func genSplit(s, sep string, sepSave, n int) []string {
 	if n == 0 {
 		return nil
 	}
