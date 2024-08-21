@@ -84,14 +84,13 @@ func (s *Set) All() iter.Seq[string] {
 			return
 		}
 
-		rest := s.joined
-		for len(rest) > 0 {
+		next, rest := "", s.joined
+		for {
 			idx := strings.Index(rest, unitSeparator)
 			if idx < 0 {
 				yield(decode(rest))
 				return
 			}
-			var next string
 			next, rest = rest[:idx], rest[idx+len(unitSeparator):]
 			if !yield(decode(next)) {
 				return
