@@ -68,7 +68,7 @@ func TestSet(t *testing.T) {
 				t.Errorf("incorrect cardinality: got %d, want %d", s.Cardinality(), len(elements))
 			}
 
-			got := slices.Collect(s.All())
+			got := s.ToSlice()
 			if diff := cmp.Diff(tc.Elements, got); diff != "" {
 				t.Errorf("got back different elements than put in (-want +got):\n%s", diff)
 			}
@@ -80,6 +80,13 @@ func TestSet(t *testing.T) {
 				t.Errorf("sets with the same content compared unequal: %q vs. %q", s.joined, x.joined)
 			}
 		})
+	}
+}
+
+func TestSetIterateEmpty(t *testing.T) {
+	var s Set
+	for elem := range s.All() {
+		t.Fatalf("iteration over empty Set yielded %q", elem)
 	}
 }
 
@@ -108,7 +115,7 @@ func TestSetUnmarshalJSON(t *testing.T) {
 		t.Fatalf("error unmarshaling valid Set from JSON: %v", err)
 	}
 	want := []string{"one", "three", "two"}
-	got := slices.Collect(s.All())
+	got := s.ToSlice()
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("unexpected JSON unmarshaling (-want +got):\n%s", diff)
 	}
@@ -137,7 +144,7 @@ func FuzzSetChunkedString(f *testing.F) {
 		uniqChunks := lo.Uniq(chunks)
 		slices.Sort(uniqChunks)
 
-		gotChunks := slices.Collect(s.All())
+		gotChunks := s.ToSlice()
 		if diff := cmp.Diff(uniqChunks, gotChunks, cmpopts.EquateEmpty()); diff != "" {
 			t.Errorf("ToSlice() did not return expected elements (-want +got):\n%s", diff)
 		}

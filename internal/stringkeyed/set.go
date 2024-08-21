@@ -49,7 +49,7 @@ func SetOf(elems ...string) (s Set) {
 
 // Add turns s into the union of s and the provided elements.
 func (s *Set) Add(elems ...string) {
-	all := append(slices.Collect(s.All()), elems...)
+	all := append(s.ToSlice(), elems...)
 	slices.Sort(all)
 	all = slices.Compact(all)
 	if len(all) == 1 && all[0] == "" {
@@ -101,8 +101,16 @@ func (s Set) All() iter.Seq[string] {
 	}
 }
 
+// ToSlice returns a sorted slice of the elements in s.
+func (s Set) ToSlice() []string {
+	if card := s.Cardinality(); card > 0 {
+		return slices.AppendSeq(make([]string, 0, card), s.All())
+	}
+	return nil
+}
+
 func (s Set) MarshalJSON() ([]byte, error) {
-	return json.Marshal(slices.Collect(s.All()))
+	return json.Marshal(s.ToSlice())
 }
 
 func (s *Set) UnmarshalJSON(b []byte) error {
