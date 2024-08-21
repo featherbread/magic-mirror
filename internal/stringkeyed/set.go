@@ -148,7 +148,6 @@ func decodeAscii85Element(elem string) string {
 }
 
 func stringSplit(s, sep string) []string {
-	sepSave := 0
 	n := -1
 
 	if n == 0 {
@@ -172,7 +171,7 @@ func stringSplit(s, sep string) []string {
 		if m < 0 {
 			break
 		}
-		a[i] = s[:m+sepSave]
+		a[i] = s[:m]
 		s = s[m+len(sep):]
 		i++
 	}
