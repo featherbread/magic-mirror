@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"slices"
 	"strings"
 )
@@ -72,18 +73,27 @@ func (s Set) Cardinality() int {
 	}
 }
 
+// All returns an iterator over the sorted elements in s.
+func (s *Set) All() iter.Seq[string] {
+	return func(yield func(string) bool) {
+		switch s.joined {
+		case "":
+			return
+		case unitSeparator:
+			yield("")
+			return
+		default:
+			// TODO: A real iterator, not this naïve version.
+			all := strings.Split(s.joined, unitSeparator)
+			decodeAll(all)
+			slices.Values(all)(yield)
+		}
+	}
+}
+
 // ToSlice returns a sorted slice of the elements in s.
 func (s Set) ToSlice() []string {
-	switch s.joined {
-	case "":
-		return nil
-	case unitSeparator:
-		return []string{""}
-	default:
-		all := strings.Split(s.joined, unitSeparator)
-		decodeAll(all)
-		return all
-	}
+	return slices.Collect(s.All())
 }
 
 func (s Set) MarshalJSON() ([]byte, error) {
