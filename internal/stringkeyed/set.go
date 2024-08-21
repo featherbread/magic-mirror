@@ -49,9 +49,38 @@ func SetOf(elems ...string) (s Set) {
 
 // Add turns s into the union of s and the provided elements.
 func (s *Set) Add(elems ...string) {
-	all := append(slices.Collect(s.All()), elems...) // TODO: Optimize this.
-	slices.Sort(all)
-	all = slices.Compact(all)
+	slices.Sort(elems)
+	elems = slices.Compact(elems)
+	nextNew, stopNew := iter.Pull(slices.Values(elems))
+	defer stopNew()
+
+	all := make([]string, 0, s.Cardinality()+len(elems))
+	nextOld, stopOld := iter.Pull(s.All())
+	defer stopOld()
+
+	old, oldOK := nextOld()
+	new, newOK := nextNew()
+	for oldOK && newOK {
+		switch {
+		case old < new:
+			all = append(all, old)
+			old, oldOK = nextOld()
+		case old == new:
+			all = append(all, old)
+			old, oldOK = nextOld()
+			new, newOK = nextNew()
+		case new < old:
+			all = append(all, new)
+			new, newOK = nextNew()
+		}
+	}
+	for ; oldOK; old, oldOK = nextOld() {
+		all = append(all, old)
+	}
+	for ; newOK; new, newOK = nextNew() {
+		all = append(all, new)
+	}
+
 	if len(all) == 1 && all[0] == "" {
 		s.joined = unitSeparator
 	} else {
