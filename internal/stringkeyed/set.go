@@ -152,10 +152,15 @@ func encodeAscii85Element(elem string) string {
 
 func decodeAll(elems []string) {
 	for i, elem := range elems {
-		if strings.HasPrefix(elem, shiftOut) {
-			elems[i] = decodeAscii85Element(elem)
-		}
+		elems[i] = decode(elem)
 	}
+}
+
+func decode(elem string) string {
+	if strings.HasPrefix(elem, shiftOut) {
+		return decodeAscii85Element(elem)
+	}
+	return elem
 }
 
 func decodeAscii85Element(elem string) string {
