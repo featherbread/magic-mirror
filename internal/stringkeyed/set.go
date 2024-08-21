@@ -84,7 +84,7 @@ func (s *Set) All() iter.Seq[string] {
 			return
 		default:
 			// TODO: A real iterator, not this naïve version.
-			all := strings.Split(s.joined, unitSeparator)
+			all := stringSplit(s.joined, unitSeparator)
 			decodeAll(all)
 			slices.Values(all)(yield)
 		}
@@ -145,4 +145,36 @@ func decodeAscii85Element(elem string) string {
 		panic(fmt.Errorf("invalid stringkeyed.Set encoding: %q: %v", elem, err))
 	}
 	return builder.String()
+}
+
+func stringSplit(s, sep string) []string { return genSplit(s, sep, 0, -1) }
+
+func genSplit(s, sep string, sepSave, n int) []string {
+	if n == 0 {
+		return nil
+	}
+	if sep == "" {
+		panic("not implemented")
+	}
+	if n < 0 {
+		n = strings.Count(s, sep) + 1
+	}
+
+	if n > len(s)+1 {
+		n = len(s) + 1
+	}
+	a := make([]string, n)
+	n--
+	i := 0
+	for i < n {
+		m := strings.Index(s, sep)
+		if m < 0 {
+			break
+		}
+		a[i] = s[:m+sepSave]
+		s = s[m+len(sep):]
+		i++
+	}
+	a[i] = s
+	return a[:i+1]
 }
