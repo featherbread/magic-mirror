@@ -49,7 +49,7 @@ func SetOf(elems ...string) (s Set) {
 
 // Add turns s into the union of s and the provided elements.
 func (s *Set) Add(elems ...string) {
-	all := append(s.ToSlice(), elems...)
+	all := append(slices.Collect(s.All()), elems...) // TODO: Optimize this.
 	slices.Sort(all)
 	all = slices.Compact(all)
 	if len(all) == 1 && all[0] == "" {
@@ -91,13 +91,8 @@ func (s *Set) All() iter.Seq[string] {
 	}
 }
 
-// ToSlice returns a sorted slice of the elements in s.
-func (s Set) ToSlice() []string {
-	return slices.Collect(s.All())
-}
-
 func (s Set) MarshalJSON() ([]byte, error) {
-	return json.Marshal(s.ToSlice())
+	return json.Marshal(slices.Collect(s.All()))
 }
 
 func (s *Set) UnmarshalJSON(b []byte) error {
