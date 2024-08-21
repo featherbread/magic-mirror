@@ -36,10 +36,9 @@ type platformSet struct {
 }
 
 func (ps platformSet) ToPlatforms() []v1.Platform {
-	rawPlatforms := ps.ToSlice()
-	result := make([]v1.Platform, len(rawPlatforms))
-	for i, rawPlatform := range rawPlatforms {
-		result[i] = platforms.MustParse(rawPlatform)
+	result := make([]v1.Platform, 0, ps.Cardinality())
+	for rawPlatform := range ps.All() {
+		result = append(result, platforms.MustParse(rawPlatform))
 	}
 	return result
 }
@@ -49,7 +48,7 @@ func (ps *platformSet) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
-	for _, rawPlatform := range raw.ToSlice() {
+	for rawPlatform := range raw.All() {
 		if _, err := platforms.Parse(rawPlatform); err != nil {
 			return err
 		}

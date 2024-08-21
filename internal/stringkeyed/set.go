@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"slices"
 	"strings"
 )
@@ -48,13 +49,15 @@ func SetOf(elems ...string) (s Set) {
 
 // Add turns s into the union of s and the provided elements.
 func (s *Set) Add(elems ...string) {
-	all := append(s.ToSlice(), elems...)
+	all := append(slices.Collect(s.All()), elems...)
 	slices.Sort(all)
 	all = slices.Compact(all)
 	if len(all) == 1 && all[0] == "" {
 		s.joined = unitSeparator
 	} else {
-		encodeAll(all)
+		for i, elem := range all {
+			all[i] = encode(elem)
+		}
 		s.joined = strings.Join(all, unitSeparator)
 	}
 }
@@ -72,22 +75,34 @@ func (s Set) Cardinality() int {
 	}
 }
 
-// ToSlice returns a sorted slice of the elements in s.
-func (s Set) ToSlice() []string {
-	switch s.joined {
-	case "":
-		return nil
-	case unitSeparator:
-		return []string{""}
-	default:
-		all := strings.Split(s.joined, unitSeparator)
-		decodeAll(all)
-		return all
+// All returns an iterator over the sorted elements in s.
+func (s Set) All() iter.Seq[string] {
+	return func(yield func(string) bool) {
+		switch s.joined {
+		case "":
+			return
+		case unitSeparator:
+			yield("")
+			return
+		}
+
+		next, rest := "", s.joined
+		for {
+			idx := strings.Index(rest, unitSeparator)
+			if idx < 0 {
+				yield(decode(rest))
+				return
+			}
+			next, rest = rest[:idx], rest[idx+len(unitSeparator):]
+			if !yield(decode(next)) {
+				return
+			}
+		}
 	}
 }
 
 func (s Set) MarshalJSON() ([]byte, error) {
-	return json.Marshal(s.ToSlice())
+	return json.Marshal(slices.Collect(s.All()))
 }
 
 func (s *Set) UnmarshalJSON(b []byte) error {
@@ -104,17 +119,16 @@ func (s *Set) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func encodeAll(elems []string) {
-	for i, elem := range elems {
-		// The per-element encoding is defined in terms of the final encoded form,
-		// so we can be flexible about when we apply Ascii85. For now, we do so in
-		// the two cases that absolutely require it: when the raw element contains
-		// a Unit Separator (confusable with the element separator) or starts with
-		// a Shift Out (confusable with the Ascii85 marker).
-		if strings.Contains(elem, unitSeparator) || strings.HasPrefix(elem, shiftOut) {
-			elems[i] = encodeAscii85Element(elem)
-		}
+func encode(elem string) string {
+	// The per-element encoding is defined in terms of the final encoded form,
+	// so we can be flexible about when we apply Ascii85. For now, we do so in
+	// the two cases that absolutely require it: when the raw element contains
+	// a Unit Separator (confusable with the element separator) or starts with
+	// a Shift Out (confusable with the Ascii85 marker).
+	if strings.Contains(elem, unitSeparator) || strings.HasPrefix(elem, shiftOut) {
+		return encodeAscii85Element(elem)
 	}
+	return elem
 }
 
 func encodeAscii85Element(elem string) string {
@@ -124,12 +138,11 @@ func encodeAscii85Element(elem string) string {
 	return string(out[:1+outlen])
 }
 
-func decodeAll(elems []string) {
-	for i, elem := range elems {
-		if strings.HasPrefix(elem, shiftOut) {
-			elems[i] = decodeAscii85Element(elem)
-		}
+func decode(elem string) string {
+	if strings.HasPrefix(elem, shiftOut) {
+		return decodeAscii85Element(elem)
 	}
+	return elem
 }
 
 func decodeAscii85Element(elem string) string {
