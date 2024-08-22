@@ -124,6 +124,9 @@ func TestQueueDetachReattachLimited(t *testing.T) {
 		if !qh.Detach() {
 			panic("did not actually detach from queue")
 		}
+		if qh.Detach() {
+			panic("claimed to detach multiple times from queue")
+		}
 		countDetached.Add(1)
 		<-awaitDetached
 
