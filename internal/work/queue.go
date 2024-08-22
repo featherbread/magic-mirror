@@ -12,13 +12,13 @@ type NoValue = struct{}
 type Handler[K comparable, V any] func(*QueueHandle, K) (V, error)
 
 // Queue is a deduplicating work queue. It acts like a map that computes and
-// caches the result for a unique key by calling a [Handler] in a new
+// caches the result for each unique key by calling a [Handler] in a new
 // goroutine. It optionally limits the concurrency of handlers in flight,
-// queueing keys for handling in the order requested.
+// computing results in the order that keys are requested.
 //
-// The cached result for each key consists of a value and an error. Results
-// with non-nil errors receive no special treatment from the queue; they are
-// cached as usual and their handlers are never retried.
+// The cached result for each key consists of a value and an error. Results with
+// non-nil errors receive no special treatment; a Queue caches them as usual and
+// never retries their handlers.
 //
 // Handlers receive a [QueueHandle] that allows them to detach from the queue,
 // temporarily increasing its concurrency limit. See [QueueHandle.Detach] for
@@ -55,17 +55,17 @@ type Queue[K comparable, V any] struct {
 //     associated with it.
 //
 //   - To initiate new work when the number of outstanding work grants is not
-//     lower than the concurrency limit, it must be held for later handling by
+//     lower than the concurrency limit, it must be queued for later handling by
 //     an existing work grant holder.
 //
-//   - The holder of a work grant must handle this held work after finishing
-//     its current work. Should it find no held work, it must retire the work
-//     grant (by decrementing grants) and cease to discharge the duties
-//     associated with it.
+//   - The holder of a work grant must handle queued work after finishing its
+//     current work. Should it find no queued work, it must retire the work
+//     grant (by decrementing grants) and cease to fulfill the duties associated
+//     with it.
 //
-//   - To stop handling work for the queue, the holder of a work grant must
-//     retire it if able, or transfer it to a worker who can continue to
-//     discharge the duties associated with it.
+//   - To stop handling queued work, the holder of a work grant must retire it
+//     if able, or transfer it to a worker who can continue to fulfill the
+//     duties associated with it.
 type workState[K comparable] struct {
 	grants      int
 	keys        []K
@@ -179,8 +179,8 @@ func (q *Queue[K, V]) scheduleLimited(keys []K) {
 	}
 
 	// To enqueue new keys, we must issue as many new work grants as the
-	// concurrency limit allows, and transfer them to workers who can discharge
-	// all duties associated with them.
+	// concurrency limit allows, and transfer them to workers who can fulfill all
+	// duties associated with them.
 	q.stateMu.Lock()
 	newGrants := min(q.maxGrants-q.state.grants, len(keys))
 	initialKeys, queuedKeys := keys[:newGrants], keys[newGrants:]
@@ -189,25 +189,19 @@ func (q *Queue[K, V]) scheduleLimited(keys []K) {
 	q.stateMu.Unlock()
 
 	for _, key := range initialKeys {
-		go q.work(key)
+		go q.work(&key)
 	}
 }
 
 // work, when invoked in a new goroutine, accepts ownership of a work grant and
-// discharges all duties associated with it. If provided with a single initial
-// key, it will execute the task associated with that key before looking for any
-// queued work.
-func (q *Queue[K, V]) work(initialKey ...K) {
+// fulfills all duties associated with it. If provided with an initial key, it
+// executes the task for that key before handling queued work.
+func (q *Queue[K, V]) work(initialKey *K) {
 	for {
 		var key K
-		switch {
-		case len(initialKey) > 1:
-			panic("worker received more than one initial key")
-
-		case len(initialKey) == 1:
-			key, initialKey = initialKey[0], nil
-
-		default:
+		if initialKey != nil {
+			key, initialKey = *initialKey, nil
+		} else {
 			var ok bool
 			key, ok = q.tryGetQueuedKey()
 			if !ok {
@@ -285,20 +279,20 @@ func (q *Queue[K, V]) handleDetach() bool {
 	if q.stateMu.TryLock() {
 		key, ok := q.tryGetQueuedKeyLocked()
 		if ok {
-			go q.work(key)
+			go q.work(&key)
 		}
 		return true
 	}
 
 	// Otherwise, transfer the work grant so we don't block the detach.
-	go q.work()
+	go q.work(nil)
 	return true
 }
 
 // handleReattach obtains a work grant for the handler that calls it. Its
 // behavior is undefined if its caller already holds an outstanding work grant,
-// or if its caller is not prepared to discharge all duties associated with a
-// work grant.
+// or if its caller is not prepared to fulfill all duties associated with a work
+// grant.
 func (q *Queue[K, V]) handleReattach() {
 	if q.maxGrants == 0 {
 		return
