@@ -1,6 +1,7 @@
 package work
 
 import (
+	"math"
 	"sync"
 	"sync/atomic"
 )
@@ -26,10 +27,6 @@ type Handler[K comparable, V any] func(*QueueHandle, K) (V, error)
 type Queue[K comparable, V any] struct {
 	handle Handler[K, V]
 
-	// Unlimited concurrency queues have maxGrants == 0. Otherwise, maxGrants is
-	// the maximum number of outstanding work grants; see workState for details.
-	maxGrants int
-
 	state    workState[K]
 	stateMu  sync.Mutex
 	reattach chan struct{}
@@ -39,25 +36,25 @@ type Queue[K comparable, V any] struct {
 	tasksDone atomic.Uint64
 }
 
-// workState tracks pending work in a limited concurrency queue, along with the
-// outstanding "work grants" issued to handle that work.
+// workState tracks the pending work in a queue, along with the outstanding
+// "work grants" issued to handle that work.
 //
 // Work grants are an abstract concept not directly represented by any type or
 // value. Their correct issuance, transfer, and retirement is critical to the
-// operation of a limited concurrency queue. They represent both the right and
-// the obligation to execute work on behalf of a queue, and operate as follows:
+// maintenance of the queue's concurrency limit. They represent both the right
+// and the obligation to execute work on behalf of a queue, and operate as
+// follows:
 //
-//   - To execute work on behalf of a limited concurrency queue, a work grant
-//     must be held.
+//   - To execute work on behalf of a queue, a work grant must be held.
 //
 //   - To initiate new work when the number of outstanding work grants is lower
-//     than the concurrency limit, a work grant must be issued (by incrementing
-//     grants), and its recipient must assume responsibility for all duties
-//     associated with it.
+//     than the maximum, a work grant must be issued (by incrementing grants),
+//     and its recipient must assume responsibility for all duties associated
+//     with it.
 //
 //   - To initiate new work when the number of outstanding work grants is not
-//     lower than the concurrency limit, it must be queued for later handling by
-//     an existing work grant holder.
+//     lower than the maximum, it must be queued for later handling by an
+//     existing work grant holder.
 //
 //   - The holder of a work grant must handle queued work after finishing its
 //     current work. Should it find no queued work, it must retire the work
@@ -69,6 +66,7 @@ type Queue[K comparable, V any] struct {
 //     duties associated with it.
 type workState[K comparable] struct {
 	grants      int
+	maxGrants   int
 	reattachers int
 	keys        []K
 }
@@ -77,19 +75,21 @@ type workState[K comparable] struct {
 // for each key.
 //
 // If concurrency > 0, the queue will run up to that many handlers concurrently
-// in new goroutines (potentially more if a handler calls [QueueHandle.Detach]).
-// If concurrency <= 0, the queue may run an unlimited number of concurrent
-// handlers.
+// in new goroutines, unless a handler calls [QueueHandle.Detach] to unbound
+// itself from the concurrency limit. If concurrency <= 0, the queue will permit
+// up to [math.MaxInt] concurrent handlers; that is, effectively unlimited
+// concurrency.
 func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue[K, V] {
-	q := &Queue[K, V]{
+	state := workState[K]{maxGrants: concurrency}
+	if state.maxGrants <= 0 {
+		state.maxGrants = math.MaxInt
+	}
+	return &Queue[K, V]{
 		handle:   handle,
+		state:    state,
 		tasks:    make(map[K]*task[V]),
 		reattach: make(chan struct{}),
 	}
-	if concurrency > 0 {
-		q.maxGrants = concurrency
-	}
-	return q
 }
 
 // NoValueHandler wraps handlers for queues that produce [NoValue], so the
@@ -115,9 +115,9 @@ func (q *Queue[K, V]) Get(key K) (V, error) {
 // wait for all handlers even in the presence of errors, call [Queue.Get] for
 // each key instead.
 //
-// In a limited concurrency queue, GetAll queues keys whose results are not yet
-// computed in the order provided, without interleaving keys from any other
-// call to Get[All].
+// When concurrency limits require handlers for some keys to be queued, GetAll
+// queues the keys whose results are not yet computed in the order provided,
+// without interleaving keys from any other call to Get[All].
 func (q *Queue[K, V]) GetAll(keys ...K) ([]V, error) {
 	return q.getTasks(keys...).Wait()
 }
@@ -164,18 +164,6 @@ func (q *Queue[K, V]) getOrCreateTasks(keys []K) (tasks taskList[V], newKeys []K
 }
 
 func (q *Queue[K, V]) scheduleNewKeys(keys []K) {
-	if q.maxGrants > 0 {
-		q.scheduleLimited(keys)
-		return
-	}
-
-	// We have unlimited concurrency; schedule everything immediately.
-	for _, key := range keys {
-		go q.completeTask(key)
-	}
-}
-
-func (q *Queue[K, V]) scheduleLimited(keys []K) {
 	if len(keys) == 0 {
 		return // No need to lock up the state.
 	}
@@ -184,7 +172,7 @@ func (q *Queue[K, V]) scheduleLimited(keys []K) {
 	// concurrency limit allows, and transfer them to workers who can fulfill all
 	// duties associated with them.
 	q.stateMu.Lock()
-	newGrants := min(q.maxGrants-q.state.grants, len(keys))
+	newGrants := min(q.state.maxGrants-q.state.grants, len(keys))
 	initialKeys, queuedKeys := keys[:newGrants], keys[newGrants:]
 	q.state.grants += newGrants
 	q.state.keys = append(q.state.keys, queuedKeys...)
@@ -271,10 +259,6 @@ func (q *Queue[K, V]) completeTask(key K) (detached bool) {
 // Its behavior is undefined if its caller does not hold an outstanding work
 // grant.
 func (q *Queue[K, V]) handleDetach() bool {
-	if q.maxGrants == 0 {
-		return false
-	}
-
 	// If we can quickly get a lock on the state, we'll try to relinquish the
 	// work grant directly instead of starting a new worker.
 	if q.stateMu.TryLock() {
@@ -295,13 +279,9 @@ func (q *Queue[K, V]) handleDetach() bool {
 // or if its caller is not prepared to fulfill all duties associated with a work
 // grant.
 func (q *Queue[K, V]) handleReattach() {
-	if q.maxGrants == 0 {
-		return
-	}
-
 	q.stateMu.Lock()
 
-	if q.state.grants < q.maxGrants {
+	if q.state.grants < q.state.maxGrants {
 		// There is capacity for a new work grant, so we must issue one.
 		q.state.grants += 1
 		q.stateMu.Unlock()
@@ -325,11 +305,10 @@ type QueueHandle struct {
 	reattach func()
 }
 
-// Detach unbounds the calling [Handler] from any concurrency limit on the
-// [Queue] that invoked it, allowing the queue to start handling other work. It
-// returns true if the call unbound the handler from a previous limit, or false
-// if the handler was already executing outside of a limit, either because the
-// handler previously detached or because the queue's concurrency is unlimited.
+// Detach unbounds the calling [Handler] from the concurrency limit of the
+// [Queue] that invoked it, allowing the queue to immediately handle other work.
+// It returns true if this call detached the handler, or false if the handler
+// had already detached.
 //
 // [QueueHandle.Reattach] permits a detached handler to reestablish itself
 // within the queue's concurrency limit ahead of the handling of new keys.
@@ -348,7 +327,7 @@ func (qh *QueueHandle) Detach() bool {
 
 // Reattach blocks the calling [Handler] until it can execute within the
 // concurrency limit of the [Queue] that invoked it. It has no effect if the
-// handler is already attached, or if the queue's concurrency is unlimited.
+// handler is already attached.
 func (qh *QueueHandle) Reattach() {
 	if qh.detached {
 		qh.reattach()

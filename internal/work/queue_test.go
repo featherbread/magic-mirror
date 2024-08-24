@@ -89,23 +89,6 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 	}
 }
 
-func TestQueueDetachReattachUnlimited(t *testing.T) {
-	const submitCount = 50
-
-	q := NewQueue(0, func(qh *QueueHandle, x int) (int, error) {
-		if qh.Detach() {
-			panic("claimed to detach from unbounded queue") // Not ideal, but a very fast way to fail everything.
-		}
-		qh.Reattach()
-		return x, nil
-	})
-
-	keys := makeIntKeys(submitCount)
-	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
-	assertSubmittedCount(t, q, submitCount)
-	assertDoneCount(t, q, submitCount)
-}
-
 func TestQueueReattachPriority(t *testing.T) {
 	var workers [2]func(*QueueHandle)
 
@@ -165,7 +148,7 @@ func TestQueueReattachPriority(t *testing.T) {
 	}
 }
 
-func TestQueueDetachReattachLimited(t *testing.T) {
+func TestQueueReattachConcurrency(t *testing.T) {
 	const (
 		submitCount = 50
 		workerCount = 10
