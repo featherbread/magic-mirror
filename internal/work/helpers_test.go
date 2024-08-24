@@ -43,6 +43,14 @@ func assertSucceedsWithin[K comparable, V any](t *testing.T, timeout time.Durati
 	}
 }
 
+func assertReceivesWithin[T any](t *testing.T, timeout time.Duration, ch <-chan T) {
+	select {
+	case <-ch:
+	case <-time.After(timeout):
+		t.Fatalf("did not receive within %v", timeout)
+	}
+}
+
 func assertDoneCount[K comparable, V any](t *testing.T, q *Queue[K, V], want uint64) {
 	t.Helper()
 	done, _ := q.Stats()
@@ -104,8 +112,7 @@ func forceRuntimeProgress() {
 	// This is more of a reasonable heuristic than a guarantee, for the reasons
 	// described above. Yes, this count includes the current goroutine; consider
 	// it extra insurance.
-	n := runtime.NumGoroutine()
-	for i := 0; i < n; i++ {
+	for range runtime.NumGoroutine() {
 		runtime.Gosched()
 	}
 }

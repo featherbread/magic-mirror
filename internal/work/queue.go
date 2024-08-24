@@ -30,8 +30,9 @@ type Queue[K comparable, V any] struct {
 	// the maximum number of outstanding work grants; see workState for details.
 	maxGrants int
 
-	state   workState[K]
-	stateMu sync.Mutex
+	state    workState[K]
+	stateMu  sync.Mutex
+	reattach chan struct{}
 
 	tasks     map[K]*task[V]
 	tasksMu   sync.Mutex
@@ -68,8 +69,8 @@ type Queue[K comparable, V any] struct {
 //     duties associated with it.
 type workState[K comparable] struct {
 	grants      int
+	reattachers int
 	keys        []K
-	reattachers []chan<- struct{}
 }
 
 // NewQueue creates a queue that uses the provided handler to compute the result
@@ -81,8 +82,9 @@ type workState[K comparable] struct {
 // handlers.
 func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue[K, V] {
 	q := &Queue[K, V]{
-		handle: handle,
-		tasks:  make(map[K]*task[V]),
+		handle:   handle,
+		tasks:    make(map[K]*task[V]),
+		reattach: make(chan struct{}),
 	}
 	if concurrency > 0 {
 		q.maxGrants = concurrency
@@ -225,13 +227,12 @@ func (q *Queue[K, V]) tryGetQueuedKey() (key K, ok bool) {
 }
 
 func (q *Queue[K, V]) tryGetQueuedKeyLocked() (key K, ok bool) {
-	if len(q.state.reattachers) > 0 {
+	if q.state.reattachers > 0 {
 		// We can transfer our work grant to a reattacher; see handleReattach for
 		// details.
-		reattach := q.state.reattachers[0]
-		q.state.reattachers = q.state.reattachers[1:]
+		q.state.reattachers -= 1
 		q.stateMu.Unlock()
-		close(reattach)
+		<-q.reattach
 		return
 	}
 
@@ -307,12 +308,11 @@ func (q *Queue[K, V]) handleReattach() {
 		return
 	}
 
-	// There is no capacity for a new work grant, so we must wait for one from an
-	// existing holder, as indicated by the holder closing our channel.
-	reattach := make(chan struct{})
-	q.state.reattachers = append(q.state.reattachers, reattach)
+	// There is no capacity for a new work grant, so we must inform an existing
+	// worker that a reattacher is ready to take theirs.
+	q.state.reattachers += 1
 	q.stateMu.Unlock()
-	<-reattach
+	q.reattach <- struct{}{}
 }
 
 // QueueHandle allows a [Handler] to interact with its parent queue.
