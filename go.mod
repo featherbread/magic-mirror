@@ -5,6 +5,7 @@ go 1.23.0
 require (
 	github.com/containerd/platforms v0.2.1
 	github.com/deckarep/golang-set/v2 v2.6.0
+	github.com/gammazero/deque v0.2.1
 	github.com/google/go-cmp v0.6.0
 	github.com/google/go-containerregistry v0.20.2
 	github.com/mitchellh/copystructure v1.2.0

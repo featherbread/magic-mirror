@@ -4,6 +4,8 @@ import (
 	"math"
 	"sync"
 	"sync/atomic"
+
+	"github.com/gammazero/deque"
 )
 
 // NoValue is the canonical empty value type for a [Queue].
@@ -68,7 +70,7 @@ type workState[K comparable] struct {
 	grants      int
 	maxGrants   int
 	reattachers int
-	keys        []K
+	keys        *deque.Deque[K]
 }
 
 // NewQueue creates a queue that uses the provided handler to compute the result
@@ -80,7 +82,10 @@ type workState[K comparable] struct {
 // up to [math.MaxInt] concurrent handlers; that is, effectively unlimited
 // concurrency.
 func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue[K, V] {
-	state := workState[K]{maxGrants: concurrency}
+	state := workState[K]{
+		keys:      deque.New[K](),
+		maxGrants: concurrency,
+	}
 	if state.maxGrants <= 0 {
 		state.maxGrants = math.MaxInt
 	}
@@ -175,7 +180,9 @@ func (q *Queue[K, V]) scheduleNewKeys(keys []K) {
 	newGrants := min(q.state.maxGrants-q.state.grants, len(keys))
 	initialKeys, queuedKeys := keys[:newGrants], keys[newGrants:]
 	q.state.grants += newGrants
-	q.state.keys = append(q.state.keys, queuedKeys...)
+	for _, k := range queuedKeys {
+		q.state.keys.PushBack(k)
+	}
 	q.stateMu.Unlock()
 
 	for _, key := range initialKeys {
@@ -224,7 +231,7 @@ func (q *Queue[K, V]) tryGetQueuedKeyLocked() (key K, ok bool) {
 		return
 	}
 
-	if len(q.state.keys) == 0 {
+	if q.state.keys.Len() == 0 {
 		// With no reattachers and no keys, we have no pending work and must
 		// retire the work grant.
 		q.state.grants -= 1
@@ -233,8 +240,7 @@ func (q *Queue[K, V]) tryGetQueuedKeyLocked() (key K, ok bool) {
 	}
 
 	// We have pending work and must use the work grant to execute it.
-	key = q.state.keys[0]
-	q.state.keys = q.state.keys[1:]
+	key = q.state.keys.PopFront()
 	q.stateMu.Unlock()
 	ok = true
 	return
