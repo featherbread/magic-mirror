@@ -377,32 +377,38 @@ func (qh *QueueHandle) Reattach() {
 }
 
 type task[V any] struct {
-	wg     sync.WaitGroup
-	value  V
-	err    error
-	panic  any
-	goexit bool
+	wg       sync.WaitGroup
+	value    V
+	err      error
+	panic    bool
+	panicval any
+	goexit   bool
 }
 
 func (t *task[V]) Do(fn func() (V, error)) {
+	defer t.wg.Done()
 	var finished bool
-	defer func() {
-		t.panic = recover()
-		t.goexit = !finished && t.panic == nil // TODO: What about GODEBUG=panicnil=1?
-		t.wg.Done()
+	func() {
+		defer func() {
+			t.panicval = recover()
+			t.goexit = !finished && t.panicval == nil
+		}()
+		t.value, t.err = fn()
+		finished = true
 	}()
-	t.value, t.err = fn()
-	finished = true
+	if !finished {
+		t.panic, t.goexit = true, false
+	}
 }
 
 func (t *task[V]) Wait() (V, error) {
 	t.wg.Wait()
 	switch {
+	case t.panic:
+		panic(t.panicval)
 	case t.goexit:
 		runtime.Goexit()
-		return *new(V), nil // Never actually happens.
-	case t.panic != nil:
-		panic(t.panic)
+		return *new(V), nil // Never happens.
 	default:
 		return t.value, t.err
 	}
