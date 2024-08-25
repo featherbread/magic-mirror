@@ -32,10 +32,15 @@ type Handler[K comparable, V any] func(*QueueHandle, K) (V, error)
 // # Urgent Variants
 //
 // The Urgent variants of the queue's Get* methods push unhandled keys to the
-// front of the work queue rather than the back. When the results for all
-// requested keys are cached, or when ample concurrency is available to handle
-// the requested keys immediately, the behavior of the Urgent variants is
-// equivalent to that of the standard variants.
+// front of the work queue rather than the back.
+//
+// The behavior of the Urgent variants is equivalent to that of the standard
+// variants when:
+//
+//   - The results for all requested keys are already cached.
+//   - Ample concurrency is available to handle the requested keys immediately.
+//   - The requested keys were previously queued by a non-Urgent call. Urgent
+//     calls cannot "promote" these earlier non-Urgent calls.
 //
 // # All Variants
 //
