@@ -1,6 +1,7 @@
 package work
 
 import (
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -8,18 +9,38 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestQueueBasicUnlimited(t *testing.T) {
-	q := NewQueue(0, func(_ *QueueHandle, x int) (int, error) { return x, nil })
+func TestQueueBasic(t *testing.T) {
+	q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) { return x, nil })
 	assertSucceedsWithin(t, 2*time.Second, q, []int{42}, []int{42})
 	assertSubmittedCount(t, q, 1)
 	assertDoneCount(t, q, 1)
 }
 
-func TestQueueBasicLimited(t *testing.T) {
-	q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) { return x, nil })
-	assertSucceedsWithin(t, 2*time.Second, q, []int{42}, []int{42})
-	assertSubmittedCount(t, q, 1)
-	assertDoneCount(t, q, 1)
+func TestQueuePanic(t *testing.T) {
+	want := "the expected panic value"
+	q := NewQueue(1, NoValueHandler(func(_ *QueueHandle, _ NoValue) error {
+		panic(want)
+	}))
+	defer func() {
+		if got := recover(); got != want {
+			t.Errorf("unexpected panic: got %v, want %v", got, want)
+		}
+	}()
+	q.Get(NoValue{})
+}
+
+func TestQueueGoexit(t *testing.T) {
+	q := NewQueue(1, NoValueHandler(func(_ *QueueHandle, _ NoValue) error {
+		runtime.Goexit()
+		return nil
+	}))
+	done := make(chan struct{})
+	go func() { // Goexit isn't allowed in tests outside standard skip / fail functions.
+		defer close(done)
+		q.Get(NoValue{})
+		t.Errorf("runtime.Goexit did not propagate")
+	}()
+	<-done
 }
 
 func TestQueueDeduplication(t *testing.T) {

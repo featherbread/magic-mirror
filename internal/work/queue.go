@@ -83,6 +83,9 @@ type workState[K comparable] struct {
 // itself from the concurrency limit. If concurrency <= 0, the queue will permit
 // up to [math.MaxInt] concurrent handlers; that is, effectively unlimited
 // concurrency.
+//
+// If the handler panics or calls [runtime.Goexit], every Get[All][Urgent] call
+// with that key will panic with the same value or invoke Goexit, respectively.
 func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue[K, V] {
 	state := workState[K]{
 		keys:      deque.New[K](),
@@ -127,6 +130,10 @@ func (q *Queue[K, V]) GetUrgent(key K) (V, error) {
 // subsequent keys to finish. To associate errors with specific keys, or to
 // wait for all handlers even in the presence of errors, call [Queue.Get] for
 // each key instead.
+//
+// When a handler for one of the provided keys panics or calls [runtime.Goexit],
+// GetAll propagates the first panic or Goexit among the provided keys with
+// respect to their ordering.
 //
 // When concurrency limits require handlers for some keys to be queued, GetAll
 // queues the unhandled keys in the order provided, without interleaving keys
