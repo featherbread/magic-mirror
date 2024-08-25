@@ -2,6 +2,7 @@ package work
 
 import (
 	"math"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -109,7 +110,13 @@ func NoValueHandler[K comparable](handle func(*QueueHandle, K) error) Handler[K,
 // Get returns the result for the provided key, blocking if necessary until a
 // corresponding call to the queue's handler finishes.
 func (q *Queue[K, V]) Get(key K) (V, error) {
-	return q.getTasks(key)[0].Wait()
+	return q.getTasks(pushAllBack, key)[0].Wait()
+}
+
+// GetUrgent behaves like [Queue.Get], but pushes the key to the front of the
+// queue (rather than the back) if it is not yet handled.
+func (q *Queue[K, V]) GetUrgent(key K) (V, error) {
+	return q.getTasks(pushAllFront, key)[0].Wait()
 }
 
 // GetAll returns the corresponding values for the provided keys, or the first
@@ -121,10 +128,18 @@ func (q *Queue[K, V]) Get(key K) (V, error) {
 // each key instead.
 //
 // When concurrency limits require handlers for some keys to be queued, GetAll
-// queues the keys whose results are not yet computed in the order provided,
-// without interleaving keys from any other call to Get[All].
+// queues the unhandled keys in the order provided, without interleaving keys
+// from any other call to Get[All]. Keys subsequently queued by Get[All]Urgent
+// may, however, be interleaved between these keys.
 func (q *Queue[K, V]) GetAll(keys ...K) ([]V, error) {
-	return q.getTasks(keys...).Wait()
+	return q.getTasks(pushAllBack, keys...).Wait()
+}
+
+// GetAllUrgent behaves like [Queue.GetAll], but pushes unhandled keys to the
+// front of the queue (rather than the back), in the order provided and without
+// interleaving keys from any other call to Get[All].
+func (q *Queue[K, V]) GetAllUrgent(keys ...K) ([]V, error) {
+	return q.getTasks(pushAllFront, keys...).Wait()
 }
 
 // Stats returns information about the keys and results in the queue:
@@ -141,9 +156,9 @@ func (q *Queue[K, V]) Stats() (done, submitted uint64) {
 	return
 }
 
-func (q *Queue[K, V]) getTasks(keys ...K) taskList[V] {
+func (q *Queue[K, V]) getTasks(enqueue enqueueFunc[K], keys ...K) taskList[V] {
 	tasks, newKeys := q.getOrCreateTasks(keys)
-	q.scheduleNewKeys(newKeys)
+	q.scheduleNewKeys(enqueue, newKeys)
 	return tasks
 }
 
@@ -168,7 +183,7 @@ func (q *Queue[K, V]) getOrCreateTasks(keys []K) (tasks taskList[V], newKeys []K
 	return
 }
 
-func (q *Queue[K, V]) scheduleNewKeys(keys []K) {
+func (q *Queue[K, V]) scheduleNewKeys(enqueue enqueueFunc[K], keys []K) {
 	if len(keys) == 0 {
 		return // No need to lock up the state.
 	}
@@ -180,13 +195,26 @@ func (q *Queue[K, V]) scheduleNewKeys(keys []K) {
 	newGrants := min(q.state.maxGrants-q.state.grants, len(keys))
 	initialKeys, queuedKeys := keys[:newGrants], keys[newGrants:]
 	q.state.grants += newGrants
-	for _, k := range queuedKeys {
-		q.state.keys.PushBack(k)
-	}
+	enqueue(q.state.keys, queuedKeys)
 	q.stateMu.Unlock()
 
 	for _, key := range initialKeys {
 		go q.work(&key)
+	}
+}
+
+// enqueueFunc adds new keys to an internal queue for later handling.
+type enqueueFunc[T any] func(*deque.Deque[T], []T)
+
+func pushAllBack[T any](d *deque.Deque[T], all []T) {
+	for _, v := range all {
+		d.PushBack(v)
+	}
+}
+
+func pushAllFront[T any](d *deque.Deque[T], all []T) {
+	for _, v := range slices.Backward(all) {
+		d.PushFront(v)
 	}
 }
 

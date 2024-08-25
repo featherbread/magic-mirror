@@ -4,6 +4,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestQueueBasicUnlimited(t *testing.T) {
@@ -86,6 +88,39 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 
 	if breached.Load() {
 		t.Errorf("queue breached limit of %d workers in flight", workerCount)
+	}
+}
+
+func TestQueueUrgent(t *testing.T) {
+	var handledOrder []int
+	unblock := make(chan struct{})
+	q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) {
+		<-unblock
+		handledOrder = append(handledOrder, x)
+		return x, nil
+	})
+
+	// Start a new blocked handler to force the queueing of subsequent keys.
+	go func() { q.Get(0) }()
+	forceRuntimeProgress()
+
+	// Queue up some keys with normal priority.
+	go func() { q.GetAll(1, 2) }()
+	forceRuntimeProgress()
+
+	// Queue up some keys with urgent priority.
+	go func() { q.GetAllUrgent(-1, -2) }()
+	forceRuntimeProgress()
+
+	// Unblock all the handlers.
+	close(unblock)
+	keys := []int{-2, -1, 0, 1, 2}
+	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
+
+	// Ensure that everything was queued in the correct order.
+	wantOrder := []int{0, -1, -2, 1, 2}
+	if diff := cmp.Diff(wantOrder, handledOrder); diff != "" {
+		t.Errorf("incorrect handling order (-want +got):\n%s", diff)
 	}
 }
 
