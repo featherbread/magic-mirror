@@ -92,3 +92,13 @@ func TestKeyMutexDetach(t *testing.T) {
 	km.Unlock(NoValue{})
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 }
+
+func TestKeyMutexDoubleUnlock(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("did not panic when unlocking an unlocked key")
+		}
+	}()
+	var km KeyMutex[NoValue]
+	km.Unlock(NoValue{})
+}

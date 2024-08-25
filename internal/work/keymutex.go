@@ -58,8 +58,8 @@ func (km *KeyMutex[K]) lock(key K, detach func() bool, reattach func()) {
 
 		// Someone else holds the lock on this key. We'll detach from the parent
 		// queue and wait on their channel. If possible, we'll receive a single
-		// token from them, to limit channel allocations and leverage the FIFO
-		// nature of channels for fairness. Otherwise, we'll loop and obtain a fresh
+		// token from them, to limit channel allocations and leverage fairness
+		// mechanisms in the Go runtime. Otherwise, we'll loop and obtain a fresh
 		// channel.
 		km.chansMu.Unlock()
 		tryDetach()
