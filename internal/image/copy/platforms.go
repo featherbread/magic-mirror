@@ -50,6 +50,11 @@ func (c *platformCopier) CopyAll(dst image.Repository, srcs ...image.Image) ([]i
 }
 
 func (c *platformCopier) handleRequest(_ *work.QueueHandle, req platformCopyRequest) (m image.Manifest, err error) {
+	// We share this manifest cache with the top-level copier. The top level
+	// requests both indexes and platform manifests, without knowing in advance
+	// what it'll get. This level always gets platform manifests, which are
+	// required to discover source blobs, so we request them urgently to fill up
+	// the blob queue faster.
 	srcManifest, err := c.manifests.GetUrgent(req.Src)
 	if err != nil {
 		return
