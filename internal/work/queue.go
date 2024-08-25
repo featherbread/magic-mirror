@@ -2,6 +2,7 @@ package work
 
 import (
 	"math"
+	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -234,8 +235,24 @@ func (q *Queue[K, V]) work(initialKey *K) {
 			}
 		}
 
-		detached := q.completeTask(key)
-		if detached {
+		q.tasksMu.Lock()
+		task := q.tasks[key]
+		q.tasksMu.Unlock()
+
+		qh := &QueueHandle{
+			detach:   q.handleDetach,
+			reattach: q.handleReattach,
+		}
+		func() {
+			defer func() {
+				q.tasksDone.Add(1)
+				if task.goexit {
+					go q.work(nil) // We can't stop Goexit, so we must transfer our work grant.
+				}
+			}()
+			completeTask(task, q.handle, qh, key)
+		}()
+		if qh.detached {
 			return // We no longer have a work grant.
 		}
 	}
@@ -272,21 +289,6 @@ func (q *Queue[K, V]) tryGetQueuedKeyLocked() (key K, ok bool) {
 	q.stateMu.Unlock()
 	ok = true
 	return
-}
-
-func (q *Queue[K, V]) completeTask(key K) (detached bool) {
-	q.tasksMu.Lock()
-	task := q.tasks[key]
-	q.tasksMu.Unlock()
-
-	qh := &QueueHandle{
-		detach:   q.handleDetach,
-		reattach: q.handleReattach,
-	}
-	task.value, task.err = q.handle(qh, key)
-	q.tasksDone.Add(1)
-	task.wg.Done()
-	return qh.detached
 }
 
 // handleDetach relinquishes the work grant held by the handler that calls it.
@@ -368,14 +370,40 @@ func (qh *QueueHandle) Reattach() {
 }
 
 type task[V any] struct {
-	wg    sync.WaitGroup
-	value V
-	err   error
+	wg     sync.WaitGroup
+	value  V
+	err    error
+	panic  any
+	goexit bool
+}
+
+func completeTask[K comparable, V any](
+	t *task[V],
+	handle func(*QueueHandle, K) (V, error),
+	qh *QueueHandle,
+	key K,
+) {
+	var valid bool
+	defer func() {
+		t.goexit = !valid && t.panic == nil
+		t.wg.Done()
+	}()
+	defer func() { t.panic = recover() }()
+	t.value, t.err = handle(qh, key)
+	valid = true
 }
 
 func (t *task[V]) Wait() (V, error) {
 	t.wg.Wait()
-	return t.value, t.err
+	switch {
+	case t.goexit:
+		runtime.Goexit()
+		return *new(V), nil // Never actually happens.
+	case t.panic != nil:
+		panic(t.panic)
+	default:
+		return t.value, t.err
+	}
 }
 
 type taskList[V any] []*task[V]
