@@ -387,10 +387,10 @@ type task[V any] struct {
 func (t *task[V]) Do(fn func() (V, error)) {
 	var finished bool
 	defer func() {
-		t.goexit = !finished && t.panic == nil
+		t.panic = recover()
+		t.goexit = !finished && t.panic == nil // TODO: What about GODEBUG=panicnil=1?
 		t.wg.Done()
 	}()
-	defer func() { t.panic = recover() }()
 	t.value, t.err = fn()
 	finished = true
 }
