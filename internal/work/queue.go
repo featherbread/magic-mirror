@@ -292,20 +292,18 @@ func (q *Queue[K, V]) completeTask(key K) (detached bool) {
 // handleDetach relinquishes the work grant held by the handler that calls it.
 // Its behavior is undefined if its caller does not hold an outstanding work
 // grant.
-func (q *Queue[K, V]) handleDetach() bool {
-	// If we can quickly get a lock on the state, we'll try to relinquish the
-	// work grant directly instead of starting a new worker.
+func (q *Queue[K, V]) handleDetach() {
 	if q.stateMu.TryLock() {
+		// If we can quickly get a lock on the state, try to relinquish the work
+		// grant directly instead of starting a new worker.
 		key, ok := q.tryGetQueuedKeyLocked()
 		if ok {
 			go q.work(&key)
 		}
-		return true
+	} else {
+		// Otherwise, transfer the work grant so we don't block the detach.
+		go q.work(nil)
 	}
-
-	// Otherwise, transfer the work grant so we don't block the detach.
-	go q.work(nil)
-	return true
 }
 
 // handleReattach obtains a work grant for the handler that calls it. Its
@@ -331,11 +329,10 @@ func (q *Queue[K, V]) handleReattach() {
 
 // QueueHandle allows a [Handler] to interact with its parent queue.
 type QueueHandle struct {
-	// detached indicates that the handler is detached from its queue. In the case
-	// of a limited concurrency queue, this means that the goroutine running the
-	// handler has relinquished its work grant.
+	// detached indicates that the goroutine running the handler has relinquished
+	// its work grant.
 	detached bool
-	detach   func() bool
+	detach   func()
 	reattach func()
 }
 
@@ -355,8 +352,9 @@ func (qh *QueueHandle) Detach() bool {
 	if qh.detached {
 		return false
 	}
-	qh.detached = qh.detach()
-	return qh.detached
+	qh.detach()
+	qh.detached = true
+	return true
 }
 
 // Reattach blocks the calling [Handler] until it can execute within the
