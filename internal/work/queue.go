@@ -257,7 +257,7 @@ func (q *Queue[K, V]) work(initialKey *K) {
 					go q.work(nil) // We can't stop Goexit, so we must transfer our work grant.
 				}
 			}()
-			completeTask(task, q.handle, qh, key)
+			task.Do(func() (V, error) { return q.handle(qh, key) })
 		}()
 		if qh.detached {
 			return // We no longer have a work grant.
@@ -384,20 +384,15 @@ type task[V any] struct {
 	goexit bool
 }
 
-func completeTask[K comparable, V any](
-	t *task[V],
-	handle func(*QueueHandle, K) (V, error),
-	qh *QueueHandle,
-	key K,
-) {
-	var valid bool
+func (t *task[V]) Do(fn func() (V, error)) {
+	var finished bool
 	defer func() {
-		t.goexit = !valid && t.panic == nil
+		t.goexit = !finished && t.panic == nil
 		t.wg.Done()
 	}()
 	defer func() { t.panic = recover() }()
-	t.value, t.err = handle(qh, key)
-	valid = true
+	t.value, t.err = fn()
+	finished = true
 }
 
 func (t *task[V]) Wait() (V, error) {
