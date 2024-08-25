@@ -16,18 +16,49 @@ type NoValue = struct{}
 // Handler is the type for a [Queue]'s handler function.
 type Handler[K comparable, V any] func(*QueueHandle, K) (V, error)
 
-// Queue is a deduplicating work queue. It acts like a map that computes and
-// caches the result for each unique key by calling a [Handler] in a new
-// goroutine. It optionally limits the concurrency of handlers in flight,
-// computing results in the order that keys are requested.
+// Queue is a concurrency-limited deduplicating work queue. It acts like a map
+// that lazily computes and caches the value for each requested key while
+// limiting the number of computations in flight.
 //
-// The cached result for each key consists of a value and an error. Results with
-// non-nil errors receive no special treatment; a Queue caches them as usual and
-// never retries their handlers.
+// Each queue makes one or more concurrent calls to its [Handler] in new
+// goroutines to compute a result for each requested key. It handles each key
+// once regardless of the number of concurrent requests for that key, and caches
+// and returns a single result for all requests.
 //
-// Handlers receive a [QueueHandle] that allows them to detach from the queue,
-// temporarily increasing its concurrency limit. See [QueueHandle.Detach] for
-// details.
+// The result for each key nominally consists of a value and an error, but may
+// instead capture a panic or a call to [runtime.Goexit]. In the latter cases,
+// the queue's Get* methods propagate the panic or Goexit to their caller.
+//
+// # Urgent Variants
+//
+// The Urgent variants of the queue's Get* methods push unhandled keys to the
+// front of the work queue rather than the back. When the results for all
+// requested keys are cached, or when ample concurrency is available to handle
+// the requested keys immediately, the behavior of the Urgent variants is
+// equivalent to that of the standard variants.
+//
+// # All Variants
+//
+// The All variants of the queue's Get* methods coalesce the results for
+// multiple keys into a single call. If every result consists of a value and
+// non-nil error, the method returns a slice of values corresponding to the
+// requested keys. Otherwise, it returns the first error or propagates the first
+// panic or Goexit with respect to the order of the keys, without waiting for
+// subsequent handlers to finish. To associate a result with a specific key or
+// wait for all handlers, use the non-All variants instead.
+//
+// When the queue's concurrency limit requires some keys to be queued for later
+// handling, the All variants enqueue the unhandled keys in the order given,
+// without interleaving keys from any other Get* call. However, a future Urgent
+// call may interpose its unhandled key(s) between those enqueued by an earlier
+// All call.
+//
+// # Concurrency Limits and Detaching
+//
+// Each queue is initialized with a limit on the number of goroutines that will
+// concurrently handle new keys. However, [QueueHandle.Detach] permits handlers
+// to increase the queue's effective concurrency limit for as long as they run,
+// or until they call [QueueHandle.Reattach]. See [QueueHandle] for details.
 type Queue[K comparable, V any] struct {
 	handle Handler[K, V]
 
@@ -40,34 +71,25 @@ type Queue[K comparable, V any] struct {
 	tasksDone atomic.Uint64
 }
 
-// workState tracks the pending work in a queue, along with the outstanding
-// "work grants" issued to handle that work.
+// workState tracks the pending work in a queue, along with the "work grants"
+// that control the concurrency of goroutines handling that work.
 //
-// Work grants are an abstract concept not directly represented by any type or
-// value. Their correct issuance, transfer, and retirement is critical to the
-// maintenance of the queue's concurrency limit. They represent both the right
-// and the obligation to execute work on behalf of a queue, and operate as
-// follows:
+// A work grant is an abstract resource that both permits and obligates the
+// goroutine holding it to execute the queue's handler for any pending keys.
+// Work grants are issued (by incrementing grants), retired (by decrementing
+// grants), and transferred between goroutines to maintain the following
+// invariants:
 //
-//   - To execute work on behalf of a queue, a work grant must be held.
+//   - Exactly one work grant is outstanding for every unhandled key known to
+//     the queue, up to a limit of maxGrants.
+//   - No goroutine holds more than one work grant.
+//   - Any goroutine holding a work grant is either executing the handler for an
+//     unhandled key or maintaining these invariants.
 //
-//   - To initiate new work when the number of outstanding work grants is lower
-//     than the maximum, a work grant must be issued (by incrementing grants),
-//     and its recipient must assume responsibility for all duties associated
-//     with it.
-//
-//   - To initiate new work when the number of outstanding work grants is not
-//     lower than the maximum, it must be queued for later handling by an
-//     existing work grant holder.
-//
-//   - The holder of a work grant must handle queued work after finishing its
-//     current work. Should it find no queued work, it must retire the work
-//     grant (by decrementing grants) and cease to fulfill the duties associated
-//     with it.
-//
-//   - To stop handling queued work, the holder of a work grant must retire it
-//     if able, or transfer it to a worker who can continue to fulfill the
-//     duties associated with it.
+// Handlers that detach from the queue relinquish their goroutine's work grant
+// to continue execution outside of the concurrency limit. Reattaching handlers
+// that wish to re-obtain their work grant should receive priority over the
+// handling of new keys.
 type workState[K comparable] struct {
 	grants      int
 	maxGrants   int
@@ -75,17 +97,10 @@ type workState[K comparable] struct {
 	keys        *deque.Deque[K]
 }
 
-// NewQueue creates a queue that uses the provided handler to compute the result
-// for each key.
+// NewQueue creates a [Queue] with the provided concurrency limit and handler.
 //
-// If concurrency > 0, the queue will run up to that many handlers concurrently
-// in new goroutines, unless a handler calls [QueueHandle.Detach] to unbound
-// itself from the concurrency limit. If concurrency <= 0, the queue will permit
-// up to [math.MaxInt] concurrent handlers; that is, effectively unlimited
-// concurrency.
-//
-// If the handler panics or calls [runtime.Goexit], every Get[All][Urgent] call
-// with that key will panic with the same value or invoke Goexit, respectively.
+// If concurrency <= 0, the queue is created with an effectively unlimited
+// concurrency of [math.MaxInt].
 func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue[K, V] {
 	state := workState[K]{
 		keys:      deque.New[K](),
@@ -111,41 +126,29 @@ func NoValueHandler[K comparable](handle func(*QueueHandle, K) error) Handler[K,
 	}
 }
 
-// Get returns the result for the provided key, blocking if necessary until a
+// Get returns the result or propagates the panic or Goexit for the provided key
+// as described in the [Queue] documentation, blocking if necessary until the
 // corresponding call to the queue's handler finishes.
 func (q *Queue[K, V]) Get(key K) (V, error) {
 	return q.getTasks(pushAllBack, key)[0].Wait()
 }
 
-// GetUrgent behaves like [Queue.Get], but pushes the key to the front of the
-// queue (rather than the back) if it is not yet handled.
+// GetUrgent behaves like [Queue.Get], but pushes unhandled keys to the front of
+// the queue as described in the "Urgent Variants" section of the [Queue]
+// documentation.
 func (q *Queue[K, V]) GetUrgent(key K) (V, error) {
 	return q.getTasks(pushAllFront, key)[0].Wait()
 }
 
-// GetAll returns the corresponding values for the provided keys, or the first
-// error among the results of the provided keys with respect to their ordering.
-//
-// When GetAll returns an error, it does not wait for handlers corresponding to
-// subsequent keys to finish. To associate errors with specific keys, or to
-// wait for all handlers even in the presence of errors, call [Queue.Get] for
-// each key instead.
-//
-// When a handler for one of the provided keys panics or calls [runtime.Goexit],
-// GetAll propagates the first panic or Goexit among the provided keys with
-// respect to their ordering.
-//
-// When concurrency limits require handlers for some keys to be queued, GetAll
-// queues the unhandled keys in the order provided, without interleaving keys
-// from any other call to Get[All]. Keys subsequently queued by Get[All]Urgent
-// may, however, be interleaved between these keys.
+// GetAll coalesces the results for multiple keys as described in the "All
+// Variants" section of the [Queue] documentation.
 func (q *Queue[K, V]) GetAll(keys ...K) ([]V, error) {
 	return q.getTasks(pushAllBack, keys...).Wait()
 }
 
 // GetAllUrgent behaves like [Queue.GetAll], but pushes unhandled keys to the
-// front of the queue (rather than the back), in the order provided and without
-// interleaving keys from any other call to Get[All].
+// front of the queue as described in the "Urgent Variants" section of the
+// [Queue] documentation.
 func (q *Queue[K, V]) GetAllUrgent(keys ...K) ([]V, error) {
 	return q.getTasks(pushAllFront, keys...).Wait()
 }
@@ -154,8 +157,8 @@ func (q *Queue[K, V]) GetAllUrgent(keys ...K) ([]V, error) {
 //
 //   - done is the number of keys whose results are computed and cached.
 //
-//   - submitted is the number of keys whose results have been requested from
-//     the queue, including keys whose results are not yet computed.
+//   - submitted is the number of keys whose results have been requested,
+//     including keys whose results are not yet computed.
 func (q *Queue[K, V]) Stats() (done, submitted uint64) {
 	done = q.tasksDone.Load()
 	q.tasksMu.Lock()
@@ -196,9 +199,9 @@ func (q *Queue[K, V]) scheduleNewKeys(enqueue enqueueFunc[K], keys []K) {
 		return // No need to lock up the state.
 	}
 
-	// To enqueue new keys, we must issue as many new work grants as the
-	// concurrency limit allows, and transfer them to workers who can fulfill all
-	// duties associated with them.
+	// Issue work grants up to the concurrency limit, then transfer them to new
+	// goroutines to discharge our own responsibility for them and restore the
+	// invariant that no goroutine holds more than one.
 	q.stateMu.Lock()
 	newGrants := min(q.state.maxGrants-q.state.grants, len(keys))
 	initialKeys, queuedKeys := keys[:newGrants], keys[newGrants:]
@@ -211,7 +214,6 @@ func (q *Queue[K, V]) scheduleNewKeys(enqueue enqueueFunc[K], keys []K) {
 	}
 }
 
-// enqueueFunc adds new keys to an internal queue for later handling.
 type enqueueFunc[T any] func(*deque.Deque[T], []T)
 
 func pushAllBack[T any](d *deque.Deque[T], all []T) {
@@ -298,13 +300,12 @@ func (q *Queue[K, V]) tryGetQueuedKeyLocked() (key K, ok bool) {
 	return
 }
 
-// handleDetach relinquishes the work grant held by the handler that calls it.
-// Its behavior is undefined if its caller does not hold an outstanding work
-// grant.
+// handleDetach relinquishes the current goroutine's work grant. Its behavior is
+// undefined if its caller does not hold a work grant.
 func (q *Queue[K, V]) handleDetach() {
 	if q.stateMu.TryLock() {
-		// If we can quickly get a lock on the state, try to relinquish the work
-		// grant directly instead of starting a new worker.
+		// If we can quickly lock the state, try to relinquish the work grant
+		// without starting a new worker.
 		key, ok := q.tryGetQueuedKeyLocked()
 		if ok {
 			go q.work(&key)
@@ -315,10 +316,8 @@ func (q *Queue[K, V]) handleDetach() {
 	}
 }
 
-// handleReattach obtains a work grant for the handler that calls it. Its
-// behavior is undefined if its caller already holds an outstanding work grant,
-// or if its caller is not prepared to fulfill all duties associated with a work
-// grant.
+// handleReattach obtains a work grant for the current goroutine, which must be
+// prepared to fulfill the work grant invariants.
 func (q *Queue[K, V]) handleReattach() {
 	q.stateMu.Lock()
 
@@ -346,9 +345,9 @@ type QueueHandle struct {
 }
 
 // Detach unbounds the calling [Handler] from the concurrency limit of the
-// [Queue] that invoked it, allowing the queue to immediately handle other work.
+// [Queue] that invoked it, allowing the queue to immediately handle other keys.
 // It returns true if this call detached the handler, or false if the handler
-// had already detached.
+// already detached.
 //
 // [QueueHandle.Reattach] permits a detached handler to reestablish itself
 // within the queue's concurrency limit ahead of the handling of new keys.

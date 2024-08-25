@@ -1,8 +1,6 @@
 package work
 
-import (
-	"sync"
-)
+import "sync"
 
 // KeyMutex provides mutual exclusion among operations targeting a given
 // comparable key. The zero value is a valid KeyMutex with no locked keys.
@@ -25,8 +23,8 @@ func noopReattach() {}
 
 // LockDetached blocks the calling [Handler] until any other lock on the
 // provided key is released. If the lock is not immediately available,
-// LockDetached will detach the handler from its [Queue] while it waits for the
-// lock, and will reattach before returning.
+// LockDetached detaches the handler from its [Queue] while it waits for the
+// lock, and reattaches before returning.
 func (km *KeyMutex[K]) LockDetached(qh *QueueHandle, key K) {
 	km.lock(key, qh.Detach, qh.Reattach)
 }
@@ -60,8 +58,8 @@ func (km *KeyMutex[K]) lock(key K, detach func() bool, reattach func()) {
 
 		// Someone else holds the lock on this key. We'll detach from the parent
 		// queue and wait on their channel. If possible, we'll receive a single
-		// token from them, to limit channel allocations and leverage fairness
-		// mechanisms in the Go runtime. Otherwise, we'll loop and obtain a fresh
+		// token from them, to limit channel allocations and leverage the FIFO
+		// nature of channels for fairness. Otherwise, we'll loop and obtain a fresh
 		// channel.
 		km.chansMu.Unlock()
 		tryDetach()
