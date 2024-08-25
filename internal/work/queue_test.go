@@ -29,18 +29,48 @@ func TestQueuePanic(t *testing.T) {
 	q.Get(NoValue{})
 }
 
-func TestQueueGoexit(t *testing.T) {
+func TestQueueGoexitPropagation(t *testing.T) {
 	q := NewQueue(1, NoValueHandler(func(_ *QueueHandle, _ NoValue) error {
 		runtime.Goexit()
 		return nil
 	}))
-	done := make(chan struct{})
-	go func() { // Goexit isn't allowed in tests outside standard skip / fail functions.
+	// Goexit isn't allowed in tests outside of standard skip and fail functions,
+	// so we need to get creative.
+	done := make(chan bool)
+	go func() {
 		defer close(done)
 		q.Get(NoValue{})
-		t.Errorf("runtime.Goexit did not propagate")
+		done <- true
 	}()
-	<-done
+	if <-done {
+		t.Fatalf("runtime.Goexit did not propagate")
+	}
+}
+
+func TestQueueGoexitHandling(t *testing.T) {
+	stepGoexit := make(chan struct{})
+	q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) {
+		if x == 0 {
+			<-stepGoexit
+			<-stepGoexit
+			runtime.Goexit()
+		}
+		return x, nil
+	})
+
+	// Start the handler that will Goexit, and ensure that it's blocked.
+	go func() { q.Get(0) }()
+	stepGoexit <- struct{}{}
+
+	// Force some more handlers to queue up.
+	go func() { q.GetAll(1, 2) }()
+	forceRuntimeProgress()
+
+	// Let all the handlers through, and ensure that the initial Goexit didn't
+	// break the processing of other keys.
+	close(stepGoexit)
+	keys := []int{1, 2}
+	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 }
 
 func TestQueueDeduplication(t *testing.T) {
