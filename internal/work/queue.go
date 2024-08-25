@@ -158,18 +158,23 @@ func (q *Queue[K, V]) GetAllUrgent(keys ...K) ([]V, error) {
 	return q.getTasks(pushAllFront, keys...).Wait()
 }
 
-// Stats returns information about the keys and results in the queue:
-//
-//   - done is the number of keys whose results are computed and cached.
-//
-//   - submitted is the number of keys whose results have been requested,
-//     including keys whose results are not yet computed.
-func (q *Queue[K, V]) Stats() (done, submitted uint64) {
-	done = q.tasksDone.Load()
+// Stats conveys information about the keys and results in a [Queue].
+type Stats struct {
+	// Done is the number of handled keys, whose results are computed and cached.
+	Done uint64
+	// Submitted is the number of keys whose results have been requested,
+	// including unhandled keys.
+	Submitted uint64
+}
+
+// Stats returns the [Stats] for a [Queue] as of the time of the call.
+func (q *Queue[K, V]) Stats() Stats {
+	var stats Stats
+	stats.Done = q.tasksDone.Load()
 	q.tasksMu.Lock()
-	submitted = uint64(len(q.tasks))
+	stats.Submitted = uint64(len(q.tasks))
 	q.tasksMu.Unlock()
-	return
+	return stats
 }
 
 func (q *Queue[K, V]) getTasks(enqueue enqueueFunc[K], keys ...K) taskList[V] {

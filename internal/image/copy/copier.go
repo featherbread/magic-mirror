@@ -67,15 +67,15 @@ const statsInterval = 5 * time.Second
 
 func (c *copier) printStats() {
 	var (
-		blobsDone, blobsTotal         = c.blobs.Stats()
-		platformsDone, platformsTotal = c.platforms.Stats()
-		imagesDone, imagesTotal       = c.queue.Stats()
+		blobStats     = c.blobs.Stats()
+		platformStats = c.platforms.Stats()
+		imageStats    = c.queue.Stats()
 	)
 	log.Printf(
 		"[stats] blobs: %d of %d copied; platforms: %d of %d copied; images: %d of %d done",
-		blobsDone, blobsTotal,
-		platformsDone, platformsTotal,
-		imagesDone, imagesTotal,
+		blobStats.Done, blobStats.Submitted,
+		platformStats.Done, platformStats.Submitted,
+		imageStats.Done, imageStats.Submitted,
 	)
 	c.statsTimer.Reset(statsInterval)
 }

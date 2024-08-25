@@ -53,17 +53,17 @@ func assertReceivesWithin[T any](t *testing.T, timeout time.Duration, ch <-chan 
 
 func assertDoneCount[K comparable, V any](t *testing.T, q *Queue[K, V], want uint64) {
 	t.Helper()
-	done, _ := q.Stats()
-	if done != want {
-		t.Errorf("queue reports %d tasks done, want %d", done, want)
+	stats := q.Stats()
+	if stats.Done != want {
+		t.Errorf("queue reports %d tasks done, want %d", stats.Done, want)
 	}
 }
 
 func assertSubmittedCount[K comparable, V any](t *testing.T, q *Queue[K, V], want uint64) {
 	t.Helper()
-	_, submitted := q.Stats()
-	if submitted != want {
-		t.Errorf("queue reports %d tasks submitted, want %d", submitted, want)
+	stats := q.Stats()
+	if stats.Submitted != want {
+		t.Errorf("queue reports %d tasks submitted, want %d", stats.Submitted, want)
 	}
 }
 
