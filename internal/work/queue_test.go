@@ -91,7 +91,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 	}
 }
 
-func TestQueueUrgent(t *testing.T) {
+func TestQueueOrdering(t *testing.T) {
 	var handledOrder []int
 	unblock := make(chan struct{})
 	q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) {
@@ -104,21 +104,33 @@ func TestQueueUrgent(t *testing.T) {
 	go func() { q.Get(0) }()
 	forceRuntimeProgress()
 
-	// Queue up some keys with normal priority.
+	// Queue up some keys with various priorities.
 	go func() { q.GetAll(1, 2) }()
 	forceRuntimeProgress()
-
-	// Queue up some keys with urgent priority.
 	go func() { q.GetAllUrgent(-1, -2) }()
+	forceRuntimeProgress()
+	go func() { q.Get(3) }()
+	forceRuntimeProgress()
+	go func() { q.GetUrgent(-3) }()
 	forceRuntimeProgress()
 
 	// Unblock all the handlers.
 	close(unblock)
-	keys := []int{-2, -1, 0, 1, 2}
+	keys := []int{-3, -2, -1, 0, 1, 2, 3}
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 
 	// Ensure that everything was queued in the correct order.
-	wantOrder := []int{0, -1, -2, 1, 2}
+	wantOrder := []int{
+		// The blocked handler.
+		0,
+		// The urgent handlers, reversed from their queueing order but with keys in
+		// a single GetAllUrgent call queued in the order provided.
+		-3,
+		-1, -2,
+		// The normal handlers, in the order queued.
+		1, 2,
+		3,
+	}
 	if diff := cmp.Diff(wantOrder, handledOrder); diff != "" {
 		t.Errorf("incorrect handling order (-want +got):\n%s", diff)
 	}
