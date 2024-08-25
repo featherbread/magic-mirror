@@ -61,9 +61,9 @@ type Handler[K comparable, V any] func(*QueueHandle, K) (V, error)
 // # Concurrency Limits and Detaching
 //
 // Each queue is initialized with a limit on the number of goroutines that will
-// concurrently handle new keys. However, [QueueHandle.Detach] permits handlers
-// to increase the queue's effective concurrency limit for as long as they run,
-// or until they call [QueueHandle.Reattach]. See [QueueHandle] for details.
+// concurrently handle new keys. However, [QueueHandle.Detach] permits a handler
+// to increase the queue's effective concurrency limit for as long as it runs,
+// or until it calls [QueueHandle.Reattach]. See [QueueHandle] for details.
 type Queue[K comparable, V any] struct {
 	handle Handler[K, V]
 
