@@ -378,39 +378,34 @@ func (qh *QueueHandle) Reattach() {
 
 type task[V any] struct {
 	wg       sync.WaitGroup
+	complete bool
+	goexit   bool
 	value    V
 	err      error
-	panic    bool
 	panicval any
-	goexit   bool
 }
 
 func (t *task[V]) Do(fn func() (V, error)) {
 	defer t.wg.Done()
-	var finished bool
+	t.goexit = true
 	func() {
-		defer func() {
-			t.panicval = recover()
-			t.goexit = !finished && t.panicval == nil
-		}()
+		defer func() { t.panicval = recover() }()
 		t.value, t.err = fn()
-		finished = true
+		t.complete = true
 	}()
-	if !finished {
-		t.panic, t.goexit = true, false
-	}
+	t.goexit = false
 }
 
 func (t *task[V]) Wait() (V, error) {
 	t.wg.Wait()
 	switch {
-	case t.panic:
-		panic(t.panicval)
+	case t.complete:
+		return t.value, t.err
 	case t.goexit:
 		runtime.Goexit()
-		return *new(V), nil // Never happens.
+		panic("continued after runtime.Goexit")
 	default:
-		return t.value, t.err
+		panic(t.panicval)
 	}
 }
 
