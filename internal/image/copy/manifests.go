@@ -54,10 +54,6 @@ func newManifestCache(concurrency int) *manifestCache {
 	return d
 }
 
-func (d *manifestCache) Get(img image.Image) (image.ManifestKind, error) {
-	return d.Queue.Get(img)
-}
-
 func (d *manifestCache) handleRequest(_ *work.QueueHandle, img image.Image) (resp image.ManifestKind, err error) {
 	reference := img.Digest.String()
 	if reference == "" {

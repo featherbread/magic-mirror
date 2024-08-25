@@ -50,7 +50,7 @@ func (c *platformCopier) CopyAll(dst image.Repository, srcs ...image.Image) ([]i
 }
 
 func (c *platformCopier) handleRequest(_ *work.QueueHandle, req platformCopyRequest) (m image.Manifest, err error) {
-	srcManifest, err := c.manifests.Get(req.Src)
+	srcManifest, err := c.manifests.GetUrgent(req.Src)
 	if err != nil {
 		return
 	}
