@@ -18,9 +18,7 @@ func TestQueueBasic(t *testing.T) {
 
 func TestQueuePanic(t *testing.T) {
 	want := "the expected panic value"
-	q := NewQueue(1, NoValueHandler(func(_ *QueueHandle, _ NoValue) error {
-		panic(want)
-	}))
+	q := NewNoValueQueue(1, func(_ *QueueHandle, _ NoValue) error { panic(want) })
 	defer func() {
 		if got := recover(); got != want {
 			t.Errorf("unexpected panic: got %v, want %v", got, want)
@@ -30,10 +28,10 @@ func TestQueuePanic(t *testing.T) {
 }
 
 func TestQueueGoexitPropagation(t *testing.T) {
-	q := NewQueue(1, NoValueHandler(func(_ *QueueHandle, _ NoValue) error {
+	q := NewNoValueQueue(1, func(_ *QueueHandle, _ NoValue) error {
 		runtime.Goexit()
 		return nil
-	}))
+	})
 	// Goexit isn't allowed in tests outside of standard skip and fail functions,
 	// so we need to get creative.
 	done := make(chan bool)

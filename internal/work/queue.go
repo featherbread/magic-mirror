@@ -122,13 +122,13 @@ func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue
 	}
 }
 
-// NoValueHandler wraps handlers for queues that produce [NoValue], so the
-// handler function can be written to only return an error.
-func NoValueHandler[K comparable](handle func(*QueueHandle, K) error) Handler[K, NoValue] {
-	return func(qh *QueueHandle, key K) (_ NoValue, err error) {
+// NewNoValueQueue wraps a handler that only returns an error to create a
+// [Queue] that produces [NoValue] for each key.
+func NewNoValueQueue[K comparable](concurrency int, handle func(*QueueHandle, K) error) *Queue[K, NoValue] {
+	return NewQueue(concurrency, func(qh *QueueHandle, key K) (_ NoValue, err error) {
 		err = handle(qh, key)
 		return
-	}
+	})
 }
 
 // Get returns the result or propagates the panic or Goexit for the provided key

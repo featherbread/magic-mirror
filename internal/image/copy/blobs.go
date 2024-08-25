@@ -34,7 +34,7 @@ type blobCopyRequest struct {
 
 func newBlobCopier(concurrency int) *blobCopier {
 	c := &blobCopier{sourceMap: make(map[digest.Digest]mapset.Set[image.Repository])}
-	c.Queue = work.NewQueue(concurrency, work.NoValueHandler(c.copyOneBlob))
+	c.Queue = work.NewNoValueQueue(concurrency, c.copyOneBlob)
 	return c
 }
 

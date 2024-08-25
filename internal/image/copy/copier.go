@@ -52,7 +52,7 @@ func newCopier(concurrency int) *copier {
 		dstManifests: dstManifests,
 		dstIndexer:   dstIndexer,
 	}
-	c.queue = work.NewQueue(0, work.NoValueHandler(c.handleRequest))
+	c.queue = work.NewNoValueQueue(0, c.handleRequest)
 	c.statsTimer = time.AfterFunc(statsInterval, c.printStats)
 	return c
 }
