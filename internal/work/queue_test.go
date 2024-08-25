@@ -1,6 +1,7 @@
 package work
 
 import (
+	"fmt"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -14,6 +15,26 @@ func TestQueueBasic(t *testing.T) {
 	assertSucceedsWithin(t, 2*time.Second, q, []int{42}, []int{42})
 	assertSubmittedCount(t, q, 1)
 	assertDoneCount(t, q, 1)
+}
+
+func TestQueueGetAllError(t *testing.T) {
+	const submitCount = 10
+	q := NewNoValueQueue(submitCount, func(_ *QueueHandle, x int) error {
+		if x >= 5 {
+			return fmt.Errorf("%d", x)
+		}
+		return nil
+	})
+
+	keys := makeIntKeys(submitCount)
+	_, err := q.GetAll(keys...)
+	if err == nil || err.Error() != "5" {
+		t.Errorf("GetAll() did not return expected error: got %v, want %q", err, "5")
+	}
+
+	for x := range submitCount {
+		q.Get(x) // Wait for all handlers to finish.
+	}
 }
 
 func TestQueuePanic(t *testing.T) {
