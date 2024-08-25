@@ -106,21 +106,27 @@ func TestQueueDeduplication(t *testing.T) {
 
 	keys := makeIntKeys(count)
 
+	// Handle and cache the first half of the keys.
 	close(unblock)
 	assertSucceedsWithin(t, 2*time.Second, q, keys[:half], keys[:half])
 	assertSubmittedCount(t, q, half)
 	assertDoneCount(t, q, half)
 
+	// Re-block the handler to ensure those results are cached.
 	unblock = make(chan struct{})
 	assertSucceedsWithin(t, 2*time.Second, q, keys[:half], keys[:half])
+
+	// Assert that the handler for new keys is, in fact, blocked.
 	cleanup := assertBlocked(t, q, keys[half])
 	defer cleanup()
 	assertSubmittedCount(t, q, half+1)
 	assertDoneCount(t, q, half)
 
+	// Handle and cache the rest of the keys.
 	close(unblock)
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 
+	// Re-block the handler and assert that all keys are cached.
 	unblock = make(chan struct{})
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 	assertSubmittedCount(t, q, count)
@@ -148,14 +154,17 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 		return x, nil
 	})
 
+	// Start up as many handlers as possible, let them check for breaches, then
+	// block them from moving further.
 	keys := makeIntKeys(submitCount)
 	go func() { q.GetAll(keys...) }()
 	forceRuntimeProgress()
+
+	// Let them all finish, and make sure they all saw the limit respected.
 	close(unblock)
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 	assertSubmittedCount(t, q, submitCount)
 	assertDoneCount(t, q, submitCount)
-
 	if breached.Load() {
 		t.Errorf("queue breached limit of %d workers in flight", workerCount)
 	}
@@ -301,9 +310,9 @@ func TestQueueReattachConcurrency(t *testing.T) {
 		return x, nil
 	})
 
+	// Start up a bunch of handlers, and wait for all of them to detach.
 	keys := makeIntKeys(submitCount)
 	go func() { q.GetAll(keys...) }()
-
 	timeout := time.After(2 * time.Second)
 	for i := 0; i < submitCount; i++ {
 		select {
@@ -313,14 +322,17 @@ func TestQueueReattachConcurrency(t *testing.T) {
 		}
 	}
 
+	// Allow them to start reattaching, and force as many as possible to finish
+	// reattaching and checking the reattach count.
 	close(unblockReattach)
 	forceRuntimeProgress()
 
+	// Let them all finish and return, and make sure none saw too many handlers in
+	// flight.
 	close(unblockReturn)
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 	assertSubmittedCount(t, q, submitCount)
 	assertDoneCount(t, q, submitCount)
-
 	if breachedReattach.Load() {
 		t.Errorf("queue breached limit of %d workers in flight during reattach", workerCount)
 	}
