@@ -12,7 +12,7 @@ import (
 
 func TestQueueBasic(t *testing.T) {
 	q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) { return x, nil })
-	assertQueueResult(t, q, []int{42}, []int{42})
+	assertIdentityResult(t, q, []int{42})
 	assertSubmittedCount(t, q, 1)
 	assertDoneCount(t, q, 1)
 }
@@ -89,7 +89,7 @@ func TestQueueGoexitHandling(t *testing.T) {
 	// break the processing of other keys.
 	close(stepGoexit)
 	keys := []int{1, 2}
-	assertQueueResult(t, q, keys, keys)
+	assertIdentityResult(t, q, keys)
 }
 
 func TestQueueDeduplication(t *testing.T) {
@@ -107,13 +107,13 @@ func TestQueueDeduplication(t *testing.T) {
 
 	// Handle and cache the first half of the keys.
 	close(canReturn)
-	assertQueueResult(t, q, keys[:half], keys[:half])
+	assertIdentityResult(t, q, keys[:half])
 	assertSubmittedCount(t, q, half)
 	assertDoneCount(t, q, half)
 
 	// Re-block the handler to ensure those results are cached.
 	canReturn = make(chan struct{})
-	assertQueueResult(t, q, keys[:half], keys[:half])
+	assertIdentityResult(t, q, keys[:half])
 
 	// Assert that the handler for new keys is, in fact, blocked.
 	cleanup := assertBlocked(t, q, keys[half])
@@ -123,11 +123,11 @@ func TestQueueDeduplication(t *testing.T) {
 
 	// Handle and cache the rest of the keys.
 	close(canReturn)
-	assertQueueResult(t, q, keys, keys)
+	assertIdentityResult(t, q, keys)
 
 	// Re-block the handler and assert that all keys are cached.
 	canReturn = make(chan struct{})
-	assertQueueResult(t, q, keys, keys)
+	assertIdentityResult(t, q, keys)
 	assertSubmittedCount(t, q, count)
 	assertDoneCount(t, q, count)
 }
@@ -161,7 +161,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 
 	// Let them all finish, and make sure they all saw the limit respected.
 	close(canReturn)
-	assertQueueResult(t, q, keys, keys)
+	assertIdentityResult(t, q, keys)
 	assertSubmittedCount(t, q, submitCount)
 	assertDoneCount(t, q, submitCount)
 	if breached.Load() {
@@ -195,7 +195,7 @@ func TestQueueOrdering(t *testing.T) {
 	// Unblock all the handlers.
 	close(unblock)
 	keys := []int{-3, -2, -1, 0, 1, 2, 3}
-	assertQueueResult(t, q, keys, keys)
+	assertIdentityResult(t, q, keys)
 
 	// Ensure that everything was queued in the correct order.
 	wantOrder := []int{
@@ -251,7 +251,7 @@ func TestQueueReattachPriority(t *testing.T) {
 	assertOneReceive(t, w0HasDetached)
 
 	// Ensure that unrelated handlers are unblocked.
-	assertQueueResult(t, q, []int{-1}, []int{-1})
+	assertIdentityResult(t, q, []int{-1})
 
 	// Start a non-detached handler for 1, and ensure that 2 and 3 are queued.
 	go func() { q.GetAll(1, 2, 3) }()
@@ -265,7 +265,7 @@ func TestQueueReattachPriority(t *testing.T) {
 	// Allow the handler for 1 to finish, unblocking all the rest as well.
 	close(w1CanReturn)
 	keys := []int{0, 1, 2, 3}
-	assertQueueResult(t, q, keys, keys)
+	assertIdentityResult(t, q, keys)
 
 	lastHandled := handleOrder[len(handleOrder)-1]
 	if lastHandled == 0 {
@@ -327,7 +327,7 @@ func TestQueueReattachConcurrency(t *testing.T) {
 	// Let them all finish and return, and make sure none saw too many handlers in
 	// flight.
 	close(canReturn)
-	assertQueueResult(t, q, keys, keys)
+	assertIdentityResult(t, q, keys)
 	assertSubmittedCount(t, q, submitCount)
 	assertDoneCount(t, q, submitCount)
 	if breached.Load() {
@@ -363,7 +363,7 @@ func TestQueueDetachReturn(t *testing.T) {
 
 	// Let the detached handlers finish.
 	close(canReturn)
-	assertQueueResult(t, q, keys, keys)
+	assertIdentityResult(t, q, keys)
 
 	// Start up as many normal handlers as possible, and make sure they block.
 	canReturn = make(chan struct{})
@@ -374,7 +374,7 @@ func TestQueueDetachReturn(t *testing.T) {
 
 	// Unblock those handlers, and make sure the limit wasn't breached.
 	close(canReturn)
-	assertQueueResult(t, q, keys, keys)
+	assertIdentityResult(t, q, keys)
 	if breached.Load() {
 		t.Error("queue breached limit of 1 worker in flight")
 	}

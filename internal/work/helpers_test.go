@@ -18,12 +18,12 @@ func makeIntKeys(n int) (keys []int) {
 	return
 }
 
-func assertQueueResult[K comparable, V any](t *testing.T, q *Queue[K, V], keys []K, want []V) {
+func assertIdentityResult[K comparable](t *testing.T, q *Queue[K, K], keys []K) {
 	t.Helper()
 
 	var (
 		done = make(chan struct{})
-		got  []V
+		got  []K
 		err  error
 	)
 	go func() {
@@ -34,10 +34,10 @@ func assertQueueResult[K comparable, V any](t *testing.T, q *Queue[K, V], keys [
 	select {
 	case <-done:
 		if err != nil {
-			t.Errorf("unexpected error from task: %v", err)
+			t.Errorf("unexpected handler error: %v", err)
 		}
-		if diff := cmp.Diff(want, got); diff != "" {
-			t.Errorf("unexpected result from task (-want +got): %s", diff)
+		if diff := cmp.Diff(keys, got); diff != "" {
+			t.Errorf("unexpected handler results (-want +got): %s", diff)
 		}
 
 	case <-time.After(timeout):
