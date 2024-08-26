@@ -114,8 +114,7 @@ func TestQueueDeduplication(t *testing.T) {
 	assertIdentityResults(t, q, keys[:half]...)
 
 	// Assert that the handler for new keys is, in fact, blocked.
-	cleanup := assertBlocked(t, q, keys[half])
-	defer cleanup()
+	assertBlocked(t, q, keys[half])
 	assertSubmittedCount(t, q, half+1)
 	assertDoneCount(t, q, half)
 
@@ -358,8 +357,7 @@ func TestQueueDetachReturn(t *testing.T) {
 	canReturn = make(chan struct{})
 	keys = makeIntKeys(5)
 	go func() { q.GetAll(keys...) }()
-	cleanup := assertBlocked(t, q, keys[0])
-	defer cleanup()
+	assertBlocked(t, q, keys[0])
 
 	// Unblock those handlers, and make sure the limit wasn't breached.
 	close(canReturn)

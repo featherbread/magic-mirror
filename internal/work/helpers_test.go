@@ -73,7 +73,7 @@ func assertSubmittedCount[K comparable, V any](t *testing.T, q *Queue[K, V], wan
 	}
 }
 
-func assertBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) (cleanup func()) {
+func assertBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) {
 	t.Helper()
 
 	done := make(chan struct{})
@@ -90,9 +90,14 @@ func assertBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) (cl
 	case <-done:
 		t.Errorf("computation of key was not blocked")
 	default:
+		t.Cleanup(func() {
+			select {
+			case <-done:
+			case <-time.After(timeout):
+				panic("leaked a blocked handler")
+			}
+		})
 	}
-
-	return func() { <-done }
 }
 
 // forceRuntimeProgress attempts to force the Go runtime to make progress on

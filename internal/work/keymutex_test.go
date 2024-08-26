@@ -86,8 +86,7 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 	<-w0HasLocked
 
 	// Ensure that unrelated handlers are blocked.
-	cleanup := assertBlocked(t, q, 2)
-	defer cleanup()
+	assertBlocked(t, q, 2)
 
 	// Allow both handlers to finish.
 	close(w0CanUnlock)
