@@ -17,8 +17,8 @@ type NoValue = struct{}
 type Handler[K comparable, V any] func(*QueueHandle, K) (V, error)
 
 // Queue is a concurrency-limited deduplicating work queue. It acts like a map
-// that lazily computes and caches the value for each requested key while
-// limiting the number of computations in flight.
+// that computes and caches the value for each requested key while limiting the
+// number of computations in flight.
 //
 // Each queue makes one or more concurrent calls to its [Handler] in new
 // goroutines to compute a result for each requested key. It handles each key

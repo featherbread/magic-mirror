@@ -337,3 +337,48 @@ func TestQueueReattachConcurrency(t *testing.T) {
 		t.Errorf("queue breached limit of %d workers in flight during reattach", workerCount)
 	}
 }
+
+func TestQueueDetachReturn(t *testing.T) {
+	var (
+		inflight atomic.Int32
+		breached atomic.Bool
+		unblock  = make(chan struct{})
+	)
+	q := NewQueue(1, func(qh *QueueHandle, x int) (int, error) {
+		if x < 0 {
+			qh.Detach()
+			<-unblock
+			return x, nil
+		}
+		count := inflight.Add(1)
+		defer inflight.Add(-1)
+		if count > 1 {
+			breached.Store(true)
+		}
+		<-unblock
+		return x, nil
+	})
+
+	// Start up multiple detached handlers that will never reattach.
+	keys := []int{-2, -1}
+	go func() { q.GetAll(keys...) }()
+	forceRuntimeProgress()
+
+	// Let the detached handlers finish.
+	close(unblock)
+	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
+
+	// Start up as many normal handlers as possible, and make sure they block.
+	unblock = make(chan struct{})
+	keys = makeIntKeys(5)
+	go func() { q.GetAll(keys...) }()
+	cleanup := assertBlocked(t, q, keys[0])
+	defer cleanup()
+
+	// Unblock those handlers, and make sure the limit wasn't breached.
+	close(unblock)
+	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
+	if breached.Load() {
+		t.Error("queue breached limit of 1 worker in flight")
+	}
+}
