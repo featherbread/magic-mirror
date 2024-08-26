@@ -92,7 +92,7 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 	<-w0HasStarted
 
 	// Ensure that unrelated handlers can proceed while handler 0 awaits the lock.
-	assertIdentityResult(t, q, []int{1})
+	assertIdentityResults(t, q, 1)
 
 	// Allow handler 0 to obtain the lock.
 	km.Unlock(NoValue{})
@@ -104,7 +104,7 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 
 	// Allow both handlers to finish.
 	close(w0CanUnlock)
-	assertIdentityResult(t, q, []int{0, 2})
+	assertIdentityResults(t, q, 0, 2)
 }
 
 func TestKeyMutexDoubleUnlock(t *testing.T) {

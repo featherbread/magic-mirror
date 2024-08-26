@@ -18,7 +18,7 @@ func makeIntKeys(n int) (keys []int) {
 	return
 }
 
-func assertIdentityResult[K comparable](t *testing.T, q *Queue[K, K], keys []K) {
+func assertIdentityResults[K comparable](t *testing.T, q *Queue[K, K], keys ...K) {
 	t.Helper()
 
 	var (
