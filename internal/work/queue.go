@@ -185,7 +185,6 @@ func (q *Queue[K, V]) getTasks(enqueue enqueueFunc[K], keys ...K) taskList[V] {
 
 func (q *Queue[K, V]) getOrCreateTasks(keys []K) (tasks taskList[V], newKeys []K) {
 	tasks = make(taskList[V], len(keys))
-	newKeys = make([]K, 0, len(keys))
 
 	q.tasksMu.Lock()
 	defer q.tasksMu.Unlock()

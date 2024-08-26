@@ -93,6 +93,53 @@ func TestKeyMutexDetach(t *testing.T) {
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 }
 
+func TestKeyMutexDetachReattach(t *testing.T) {
+	var (
+		km      KeyMutex[NoValue]
+		workers [1]func(*QueueHandle)
+	)
+
+	var (
+		w0HasStarted = make(chan struct{})
+		w0HasLocked  = make(chan struct{})
+		w0CanUnlock  = make(chan struct{})
+	)
+	workers[0] = func(qh *QueueHandle) {
+		close(w0HasStarted)
+		km.LockDetached(qh, NoValue{})
+		close(w0HasLocked)
+		<-w0CanUnlock
+		km.Unlock(NoValue{})
+	}
+
+	q := NewQueue(1, func(qh *QueueHandle, x int) (int, error) {
+		if x >= 0 && x < len(workers) {
+			workers[x](qh)
+		}
+		return x, nil
+	})
+
+	// Start the handler for 0, but force it to detach by holding the lock first.
+	km.Lock(NoValue{})
+	go func() { q.Get(0) }()
+	<-w0HasStarted
+
+	// Ensure that unrelated handlers can proceed while handler 0 awaits the lock.
+	assertSucceedsWithin(t, 2*time.Second, q, []int{1}, []int{1})
+
+	// Allow handler 0 to obtain the lock.
+	km.Unlock(NoValue{})
+	<-w0HasLocked
+
+	// Ensure that unrelated handlers are blocked.
+	cleanup := assertBlocked(t, q, 2)
+	defer cleanup()
+
+	// Allow both handlers to finish.
+	close(w0CanUnlock)
+	assertSucceedsWithin(t, 2*time.Second, q, []int{0, 2}, []int{0, 2})
+}
+
 func TestKeyMutexDoubleUnlock(t *testing.T) {
 	defer func() {
 		const want = "key is already unlocked"
