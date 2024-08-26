@@ -75,7 +75,7 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 
 	// Start the handler for 0, but force it to detach by holding the lock first.
 	km.Lock(NoValue{})
-	go func() { q.Get(0) }()
+	async(t, func() { q.Get(0) })
 	<-w0HasStarted
 
 	// Ensure that unrelated handlers can proceed while handler 0 awaits the lock.

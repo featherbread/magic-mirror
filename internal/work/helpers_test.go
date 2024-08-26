@@ -18,6 +18,21 @@ func makeIntKeys(n int) (keys []int) {
 	return
 }
 
+func async(t *testing.T, fn func()) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		fn()
+	}()
+	t.Cleanup(func() {
+		select {
+		case <-done:
+		case <-time.After(timeout):
+			panic("leaked a goroutine from this test")
+		}
+	})
+}
+
 func assertIdentityResults[K comparable](t *testing.T, q *Queue[K, K], keys ...K) {
 	t.Helper()
 
@@ -94,7 +109,7 @@ func assertBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) {
 			select {
 			case <-done:
 			case <-time.After(timeout):
-				panic("leaked a blocked handler")
+				panic("leaked a blocked handler from this test")
 			}
 		})
 	}
