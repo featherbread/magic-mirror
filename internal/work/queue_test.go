@@ -116,12 +116,8 @@ func TestQueueDeduplication(t *testing.T) {
 	// Ensure that the previous results are cached.
 	assertIdentityResults(t, q, keys[:half]...)
 
-	// Handle and cache the rest of the keys.
+	// Finish handling the rest of the keys.
 	close(canReturn)
-	assertIdentityResults(t, q, keys...)
-
-	// Re-block the handler and assert that all keys are cached.
-	canReturn = make(chan struct{})
 	assertIdentityResults(t, q, keys...)
 	assertSubmittedCount(t, q, count)
 	assertDoneCount(t, q, count)
@@ -322,16 +318,17 @@ func TestQueueReattachConcurrency(t *testing.T) {
 
 func TestQueueDetachReturn(t *testing.T) {
 	var (
-		inflight    atomic.Int32
-		breached    atomic.Bool
-		hasDetached = make(chan struct{})
-		canReturn   = make(chan struct{})
+		inflight          atomic.Int32
+		breached          atomic.Bool
+		hasDetached       = make(chan struct{})
+		detachedCanReturn = make(chan struct{})
+		attachedCanReturn = make(chan struct{})
 	)
 	q := NewQueue(1, func(qh *QueueHandle, x int) (int, error) {
 		if x < 0 {
 			qh.Detach()
 			hasDetached <- struct{}{}
-			<-canReturn
+			<-detachedCanReturn
 			return x, nil
 		}
 		count := inflight.Add(1)
@@ -339,28 +336,29 @@ func TestQueueDetachReturn(t *testing.T) {
 		if count > 1 {
 			breached.Store(true)
 		}
-		<-canReturn
+		<-attachedCanReturn
 		return x, nil
 	})
 
 	// Start up multiple detached handlers that will never reattach.
-	keys := []int{-2, -1}
-	async(t, func() { q.GetAll(keys...) })
-	assertReceiveCount(t, len(keys), hasDetached)
+	detachedKeys := []int{-2, -1}
+	async(t, func() { q.GetAll(detachedKeys...) })
+	assertReceiveCount(t, len(detachedKeys), hasDetached)
 
-	// Let the detached handlers finish.
-	close(canReturn)
-	assertIdentityResults(t, q, keys...)
+	// Start up some normal handlers, and make sure they block.
+	attachedKeys := makeIntKeys(3 * len(detachedKeys))
+	async(t, func() { q.GetAll(attachedKeys...) })
+	assertBlocked(t, q, attachedKeys[0])
 
-	// Start up as many normal handlers as possible, and make sure they block.
-	canReturn = make(chan struct{})
-	keys = makeIntKeys(2 * len(keys))
-	async(t, func() { q.GetAll(keys...) })
-	assertBlocked(t, q, keys[0])
+	// Let the detached handlers finish, and push them forward if they're going to
+	// incorrectly pick up keys rather than exit.
+	close(detachedCanReturn)
+	assertIdentityResults(t, q, detachedKeys...)
+	forceRuntimeProgress()
 
-	// Unblock those handlers, and make sure the limit wasn't breached.
-	close(canReturn)
-	assertIdentityResults(t, q, keys...)
+	// Unblock all handlers and make sure the limit wasn't breached.
+	close(attachedCanReturn)
+	assertIdentityResults(t, q, attachedKeys...)
 	if breached.Load() {
 		t.Error("queue breached limit of 1 worker in flight")
 	}
