@@ -91,10 +91,8 @@ func TestQueueGoexitHandling(t *testing.T) {
 }
 
 func TestQueueDeduplication(t *testing.T) {
-	const (
-		count = 10
-		half  = count / 2
-	)
+	const count = 10
+	const half = count / 2
 	canReturn := make(chan struct{})
 	q := NewQueue(0, func(_ *QueueHandle, x int) (int, error) {
 		<-canReturn
@@ -109,14 +107,14 @@ func TestQueueDeduplication(t *testing.T) {
 	assertSubmittedCount(t, q, half)
 	assertDoneCount(t, q, half)
 
-	// Re-block the handler to ensure those results are cached.
+	// Re-block the handler and start handling another key.
 	canReturn = make(chan struct{})
-	assertIdentityResults(t, q, keys[:half]...)
-
-	// Assert that the handler for new keys is, in fact, blocked.
 	assertBlocked(t, q, keys[half])
 	assertSubmittedCount(t, q, half+1)
 	assertDoneCount(t, q, half)
+
+	// Ensure that the previous results are cached.
+	assertIdentityResults(t, q, keys[:half]...)
 
 	// Handle and cache the rest of the keys.
 	close(canReturn)
@@ -134,7 +132,6 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 		submitCount = 50
 		workerCount = 10
 	)
-
 	var (
 		inflight  atomic.Int32
 		breached  atomic.Bool
@@ -195,7 +192,7 @@ func TestQueueOrdering(t *testing.T) {
 
 	// Ensure that everything was queued in the correct order.
 	wantOrder := []int{
-		// The blocked handler.
+		// The initial blocked handler.
 		0,
 		// The urgent handlers, reversed from their queueing order but with keys in
 		// a single GetAllUrgent call queued in the order provided.
@@ -325,13 +322,15 @@ func TestQueueReattachConcurrency(t *testing.T) {
 
 func TestQueueDetachReturn(t *testing.T) {
 	var (
-		inflight  atomic.Int32
-		breached  atomic.Bool
-		canReturn = make(chan struct{})
+		inflight    atomic.Int32
+		breached    atomic.Bool
+		hasDetached = make(chan struct{})
+		canReturn   = make(chan struct{})
 	)
 	q := NewQueue(1, func(qh *QueueHandle, x int) (int, error) {
 		if x < 0 {
 			qh.Detach()
+			hasDetached <- struct{}{}
 			<-canReturn
 			return x, nil
 		}
@@ -347,7 +346,7 @@ func TestQueueDetachReturn(t *testing.T) {
 	// Start up multiple detached handlers that will never reattach.
 	keys := []int{-2, -1}
 	go func() { q.GetAll(keys...) }()
-	forceRuntimeProgress()
+	assertReceiveCount(t, len(keys), hasDetached)
 
 	// Let the detached handlers finish.
 	close(canReturn)
@@ -355,7 +354,7 @@ func TestQueueDetachReturn(t *testing.T) {
 
 	// Start up as many normal handlers as possible, and make sure they block.
 	canReturn = make(chan struct{})
-	keys = makeIntKeys(5)
+	keys = makeIntKeys(2 * len(keys))
 	go func() { q.GetAll(keys...) }()
 	assertBlocked(t, q, keys[0])
 
