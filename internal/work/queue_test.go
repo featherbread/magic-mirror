@@ -97,23 +97,22 @@ func TestQueueDeduplication(t *testing.T) {
 		count = 10
 		half  = count / 2
 	)
-
-	unblock := make(chan struct{})
+	canReturn := make(chan struct{})
 	q := NewQueue(0, func(_ *QueueHandle, x int) (int, error) {
-		<-unblock
+		<-canReturn
 		return x, nil
 	})
 
 	keys := makeIntKeys(count)
 
 	// Handle and cache the first half of the keys.
-	close(unblock)
+	close(canReturn)
 	assertSucceedsWithin(t, 2*time.Second, q, keys[:half], keys[:half])
 	assertSubmittedCount(t, q, half)
 	assertDoneCount(t, q, half)
 
 	// Re-block the handler to ensure those results are cached.
-	unblock = make(chan struct{})
+	canReturn = make(chan struct{})
 	assertSucceedsWithin(t, 2*time.Second, q, keys[:half], keys[:half])
 
 	// Assert that the handler for new keys is, in fact, blocked.
@@ -123,11 +122,11 @@ func TestQueueDeduplication(t *testing.T) {
 	assertDoneCount(t, q, half)
 
 	// Handle and cache the rest of the keys.
-	close(unblock)
+	close(canReturn)
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 
 	// Re-block the handler and assert that all keys are cached.
-	unblock = make(chan struct{})
+	canReturn = make(chan struct{})
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 	assertSubmittedCount(t, q, count)
 	assertDoneCount(t, q, count)
@@ -140,9 +139,9 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 	)
 
 	var (
-		inflight atomic.Int32
-		breached atomic.Bool
-		unblock  = make(chan struct{})
+		inflight  atomic.Int32
+		breached  atomic.Bool
+		canReturn = make(chan struct{})
 	)
 	q := NewQueue(workerCount, func(_ *QueueHandle, x int) (int, error) {
 		count := inflight.Add(1)
@@ -150,7 +149,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 		if count > workerCount {
 			breached.Store(true)
 		}
-		<-unblock
+		<-canReturn
 		return x, nil
 	})
 
@@ -161,7 +160,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 	forceRuntimeProgress()
 
 	// Let them all finish, and make sure they all saw the limit respected.
-	close(unblock)
+	close(canReturn)
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 	assertSubmittedCount(t, q, submitCount)
 	assertDoneCount(t, q, submitCount)
@@ -279,14 +278,13 @@ func TestQueueReattachConcurrency(t *testing.T) {
 		submitCount = 50
 		workerCount = 10
 	)
-
 	var (
-		awaitDetached      = make(chan struct{})
-		countDetached      atomic.Int32
-		unblockReattach    = make(chan struct{})
-		reattachedInflight atomic.Int32
-		breachedReattach   atomic.Bool
-		unblockReturn      = make(chan struct{})
+		countDetached atomic.Int32
+		countAttached atomic.Int32
+		breached      atomic.Bool
+		hasDetached   = make(chan struct{})
+		canReattach   = make(chan struct{})
+		canReturn     = make(chan struct{})
 	)
 	q := NewQueue(workerCount, func(qh *QueueHandle, x int) (int, error) {
 		if !qh.Detach() {
@@ -296,58 +294,57 @@ func TestQueueReattachConcurrency(t *testing.T) {
 			panic("claimed to detach multiple times from queue")
 		}
 		countDetached.Add(1)
-		<-awaitDetached
+		hasDetached <- struct{}{}
 
-		<-unblockReattach
+		<-canReattach
 		qh.Reattach()
-		count := reattachedInflight.Add(1)
-		defer reattachedInflight.Add(-1)
+		count := countAttached.Add(1)
+		defer countAttached.Add(-1)
 		if count > workerCount {
-			breachedReattach.Store(true)
+			breached.Store(true)
 		}
-
-		<-unblockReturn
+		<-canReturn
 		return x, nil
 	})
 
 	// Start up a bunch of handlers, and wait for all of them to detach.
 	keys := makeIntKeys(submitCount)
 	go func() { q.GetAll(keys...) }()
-	timeout := time.After(2 * time.Second)
+	bail := time.After(2 * time.Second)
 	for i := 0; i < submitCount; i++ {
 		select {
-		case awaitDetached <- struct{}{}:
-		case <-timeout:
+		case <-hasDetached:
+		case <-bail:
 			t.Fatalf("timed out waiting for tasks to detach: %d of %d ready", countDetached.Load(), submitCount)
 		}
 	}
 
 	// Allow them to start reattaching, and force as many as possible to finish
 	// reattaching and checking the reattach count.
-	close(unblockReattach)
+	close(canReattach)
 	forceRuntimeProgress()
 
 	// Let them all finish and return, and make sure none saw too many handlers in
 	// flight.
-	close(unblockReturn)
+	close(canReturn)
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 	assertSubmittedCount(t, q, submitCount)
 	assertDoneCount(t, q, submitCount)
-	if breachedReattach.Load() {
+	if breached.Load() {
 		t.Errorf("queue breached limit of %d workers in flight during reattach", workerCount)
 	}
 }
 
 func TestQueueDetachReturn(t *testing.T) {
 	var (
-		inflight atomic.Int32
-		breached atomic.Bool
-		unblock  = make(chan struct{})
+		inflight  atomic.Int32
+		breached  atomic.Bool
+		canReturn = make(chan struct{})
 	)
 	q := NewQueue(1, func(qh *QueueHandle, x int) (int, error) {
 		if x < 0 {
 			qh.Detach()
-			<-unblock
+			<-canReturn
 			return x, nil
 		}
 		count := inflight.Add(1)
@@ -355,7 +352,7 @@ func TestQueueDetachReturn(t *testing.T) {
 		if count > 1 {
 			breached.Store(true)
 		}
-		<-unblock
+		<-canReturn
 		return x, nil
 	})
 
@@ -365,18 +362,18 @@ func TestQueueDetachReturn(t *testing.T) {
 	forceRuntimeProgress()
 
 	// Let the detached handlers finish.
-	close(unblock)
+	close(canReturn)
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 
 	// Start up as many normal handlers as possible, and make sure they block.
-	unblock = make(chan struct{})
+	canReturn = make(chan struct{})
 	keys = makeIntKeys(5)
 	go func() { q.GetAll(keys...) }()
 	cleanup := assertBlocked(t, q, keys[0])
 	defer cleanup()
 
 	// Unblock those handlers, and make sure the limit wasn't breached.
-	close(unblock)
+	close(canReturn)
 	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
 	if breached.Load() {
 		t.Error("queue breached limit of 1 worker in flight")

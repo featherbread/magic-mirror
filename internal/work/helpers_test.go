@@ -16,7 +16,7 @@ func makeIntKeys(n int) (keys []int) {
 	return
 }
 
-func assertSucceedsWithin[K comparable, V any](t *testing.T, timeout time.Duration, q *Queue[K, V], keys []K, want []V) {
+func assertSucceedsWithin[K comparable, V any](t *testing.T, maxWait time.Duration, q *Queue[K, V], keys []K, want []V) {
 	t.Helper()
 
 	var (
@@ -38,16 +38,16 @@ func assertSucceedsWithin[K comparable, V any](t *testing.T, timeout time.Durati
 			t.Errorf("unexpected result from task (-want +got): %s", diff)
 		}
 
-	case <-time.After(timeout):
-		t.Fatalf("did not get result for key within %v", timeout)
+	case <-time.After(maxWait):
+		t.Fatalf("did not get result for key within %v", maxWait)
 	}
 }
 
-func assertReceivesWithin[T any](t *testing.T, timeout time.Duration, ch <-chan T) {
+func assertReceivesWithin[T any](t *testing.T, maxWait time.Duration, ch <-chan T) {
 	select {
 	case <-ch:
-	case <-time.After(timeout):
-		t.Fatalf("did not receive within %v", timeout)
+	case <-time.After(maxWait):
+		t.Fatalf("did not receive within %v", maxWait)
 	}
 }
 
