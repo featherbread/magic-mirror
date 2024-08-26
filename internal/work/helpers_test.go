@@ -8,6 +8,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+const timeout = 2 * time.Second
+
 func makeIntKeys(n int) (keys []int) {
 	keys = make([]int, n)
 	for i := range keys {

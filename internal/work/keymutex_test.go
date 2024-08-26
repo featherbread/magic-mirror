@@ -33,7 +33,7 @@ func TestKeyMutexBasic(t *testing.T) {
 		}()
 	}
 
-	bail := time.After(2 * time.Second)
+	bail := time.After(timeout)
 	for range nWorkers {
 		select {
 		case <-hasStarted:
@@ -50,7 +50,7 @@ func TestKeyMutexBasic(t *testing.T) {
 	}
 
 	close(canReturn)
-	bail = time.After(2 * time.Second)
+	bail = time.After(timeout)
 	for range nWorkers {
 		select {
 		case <-hasFinished:
@@ -92,7 +92,7 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 	<-w0HasStarted
 
 	// Ensure that unrelated handlers can proceed while handler 0 awaits the lock.
-	assertSucceedsWithin(t, 2*time.Second, q, []int{1}, []int{1})
+	assertSucceedsWithin(t, timeout, q, []int{1}, []int{1})
 
 	// Allow handler 0 to obtain the lock.
 	km.Unlock(NoValue{})
@@ -104,7 +104,7 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 
 	// Allow both handlers to finish.
 	close(w0CanUnlock)
-	assertSucceedsWithin(t, 2*time.Second, q, []int{0, 2}, []int{0, 2})
+	assertSucceedsWithin(t, timeout, q, []int{0, 2}, []int{0, 2})
 }
 
 func TestKeyMutexDoubleUnlock(t *testing.T) {
