@@ -24,12 +24,17 @@ type blobCopier struct {
 	sourceMap   map[digest.Digest]mapset.Set[image.Repository]
 	sourceMapMu sync.Mutex
 
-	copyMu work.KeyMutex[digest.Digest]
+	copyMu work.KeyMutex[blobCopyMutexKey]
 }
 
 type blobCopyRequest struct {
 	Digest digest.Digest
 	Dst    image.Repository
+}
+
+type blobCopyMutexKey struct {
+	Digest   digest.Digest
+	Registry image.Registry
 }
 
 func newBlobCopier(concurrency int) *blobCopier {
@@ -76,11 +81,12 @@ func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {
 }
 
 func (c *blobCopier) copyOneBlob(qh *work.QueueHandle, req blobCopyRequest) (err error) {
-	// If another handler is copying this same blob, wait for that handler to
-	// finish. If it's copying to the same registry that we are, we'll be able to
-	// mount the blob instead of pulling it again from the source.
-	c.copyMu.LockDetached(qh, req.Digest)
-	defer c.copyMu.Unlock(req.Digest)
+	// If another handler is copying this blob to the same registry, wait for it
+	// to finish so we can do a cross-repository mount instead of pulling from the
+	// source again.
+	key := blobCopyMutexKey{Digest: req.Digest, Registry: req.Dst.Registry}
+	c.copyMu.LockDetached(qh, key)
+	defer c.copyMu.Unlock(key)
 
 	srcSet := c.sources(req.Digest)
 	if srcSet.Contains(req.Dst) {
