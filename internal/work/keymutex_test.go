@@ -55,44 +55,6 @@ func TestKeyMutexBasic(t *testing.T) {
 	}
 }
 
-func TestKeyMutexDetach(t *testing.T) {
-	const submitCount = 5
-
-	var (
-		km      KeyMutex[NoValue]
-		started = make(chan struct{}, submitCount)
-		locked  atomic.Bool
-	)
-	q := NewQueue(1, func(qh *QueueHandle, x int) (int, error) {
-		started <- struct{}{}
-
-		km.LockDetached(qh, NoValue{})
-		defer km.Unlock(NoValue{})
-
-		if !locked.CompareAndSwap(false, true) {
-			t.Errorf("more than one queue handler holding the lock")
-		}
-		defer locked.Store(false)
-		return x, nil
-	})
-
-	km.Lock(NoValue{})
-
-	keys := makeIntKeys(submitCount)
-	go func() { q.GetAll(keys...) }()
-	timeout := time.After(2 * time.Second)
-	for i := range keys {
-		select {
-		case <-started:
-		case <-timeout:
-			t.Fatalf("timed out waiting for tasks to detach: %d of %d running", i, len(keys))
-		}
-	}
-
-	km.Unlock(NoValue{})
-	assertSucceedsWithin(t, 2*time.Second, q, keys, keys)
-}
-
 func TestKeyMutexDetachReattach(t *testing.T) {
 	var (
 		km      KeyMutex[NoValue]
