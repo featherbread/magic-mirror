@@ -95,8 +95,9 @@ func TestKeyMutexDetach(t *testing.T) {
 
 func TestKeyMutexDoubleUnlock(t *testing.T) {
 	defer func() {
-		if r := recover(); r == nil {
-			t.Error("did not panic when unlocking an unlocked key")
+		const want = "key is already unlocked"
+		if r := recover(); r != want {
+			t.Errorf("unexpected panic: got %v, want %v", r, want)
 		}
 	}()
 	var km KeyMutex[NoValue]
