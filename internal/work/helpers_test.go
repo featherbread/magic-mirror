@@ -45,11 +45,15 @@ func assertIdentityResults[K comparable](t *testing.T, q *Queue[K, K], keys ...K
 	}
 }
 
-func assertOneReceive[T any](t *testing.T, ch <-chan T) {
-	select {
-	case <-ch:
-	case <-time.After(timeout):
-		t.Fatalf("did not receive within %v", timeout)
+func assertReceiveCount[T any](t *testing.T, count int, ch <-chan T) {
+	t.Helper()
+	bail := time.After(timeout)
+	for range count {
+		select {
+		case <-ch:
+		case <-bail:
+			t.Fatalf("did not finish receiving within %v", timeout)
+		}
 	}
 }
 

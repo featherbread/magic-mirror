@@ -3,7 +3,6 @@ package work
 import (
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 func TestKeyMutexBasic(t *testing.T) {
@@ -33,15 +32,9 @@ func TestKeyMutexBasic(t *testing.T) {
 		}()
 	}
 
-	bail := time.After(timeout)
-	for range nWorkers {
-		select {
-		case <-hasStarted:
-		case <-bail:
-			t.Fatalf("timed out waiting for test goroutines to start")
-		}
-	}
-
+	// Wait for every goroutine to be running, then force them all forward and
+	// check for limit breaches.
+	assertReceiveCount(t, nWorkers, hasStarted)
 	forceRuntimeProgress()
 	for i := range locked {
 		if count := locked[i].Load(); count > 1 {
@@ -49,15 +42,9 @@ func TestKeyMutexBasic(t *testing.T) {
 		}
 	}
 
+	// Wait for the workers to finish.
 	close(canReturn)
-	bail = time.After(timeout)
-	for range nWorkers {
-		select {
-		case <-hasFinished:
-		case <-bail:
-			t.Fatalf("timed out waiting for test goroutines to finish")
-		}
-	}
+	assertReceiveCount(t, nWorkers, hasFinished)
 }
 
 func TestKeyMutexDetachReattach(t *testing.T) {

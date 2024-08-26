@@ -5,7 +5,6 @@ import (
 	"runtime"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -246,14 +245,14 @@ func TestQueueReattachPriority(t *testing.T) {
 
 	// Create a detached handler for 0.
 	go func() { q.Get(0) }()
-	assertOneReceive(t, w0HasDetached)
+	assertReceiveCount(t, 1, w0HasDetached)
 
 	// Ensure that unrelated handlers are unblocked.
 	assertIdentityResults(t, q, -1)
 
 	// Start a non-detached handler for 1, and ensure that 2 and 3 are queued.
 	go func() { q.GetAll(1, 2, 3) }()
-	assertOneReceive(t, w1HasStarted)
+	assertReceiveCount(t, 1, w1HasStarted)
 
 	// Allow the detached handler for 0 to reattach, and try to force it to run
 	// until it actually queues itself up for reattachment.
@@ -307,14 +306,7 @@ func TestQueueReattachConcurrency(t *testing.T) {
 	// Start up a bunch of handlers, and wait for all of them to detach.
 	keys := makeIntKeys(submitCount)
 	go func() { q.GetAll(keys...) }()
-	bail := time.After(timeout)
-	for i := 0; i < submitCount; i++ {
-		select {
-		case <-hasDetached:
-		case <-bail:
-			t.Fatalf("timed out waiting for tasks to detach: %d of %d ready", countDetached.Load(), submitCount)
-		}
-	}
+	assertReceiveCount(t, submitCount, hasDetached)
 
 	// Allow them to start reattaching, and force as many as possible to finish
 	// reattaching and checking the reattach count.
