@@ -11,32 +11,37 @@ func TestKeyMutexBasic(t *testing.T) {
 		nKeys    = 3
 		nWorkers = nKeys * 2
 	)
-
 	var (
-		km      KeyMutex[int]
-		ready   = make(chan struct{})
-		locked  [nKeys]atomic.Int32
-		unblock = make(chan struct{})
-		done    = make(chan struct{}, nWorkers)
+		km          KeyMutex[int]
+		locked      [nKeys]atomic.Int32
+		hasStarted  = make(chan struct{})
+		canReturn   = make(chan struct{})
+		hasFinished = make(chan struct{}, nWorkers)
 	)
 	for i := 0; i < nWorkers; i++ {
 		key := i / 2
 		go func() {
-			defer func() { done <- struct{}{} }()
-			<-ready
+			defer func() { hasFinished <- struct{}{} }()
+			hasStarted <- struct{}{}
 
 			km.Lock(key)
 			defer km.Unlock(key)
 
 			locked[key].Add(1)
 			defer locked[key].Add(-1)
-			<-unblock
+			<-canReturn
 		}()
 	}
 
-	for i := 0; i < nWorkers; i++ {
-		ready <- struct{}{}
+	bail := time.After(2 * time.Second)
+	for range nWorkers {
+		select {
+		case <-hasStarted:
+		case <-bail:
+			t.Fatalf("timed out waiting for test goroutines to start")
+		}
 	}
+
 	forceRuntimeProgress()
 	for i := range locked {
 		if count := locked[i].Load(); count > 1 {
@@ -44,12 +49,12 @@ func TestKeyMutexBasic(t *testing.T) {
 		}
 	}
 
-	close(unblock)
-	timeout := time.After(2 * time.Second)
-	for i := 0; i < nWorkers; i++ {
+	close(canReturn)
+	bail = time.After(2 * time.Second)
+	for range nWorkers {
 		select {
-		case <-done:
-		case <-timeout:
+		case <-hasFinished:
+		case <-bail:
 			t.Fatalf("timed out waiting for test goroutines to finish")
 		}
 	}
