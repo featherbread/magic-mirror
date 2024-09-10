@@ -35,7 +35,7 @@ type Handler[K comparable, V any] func(*QueueHandle, K) (V, error)
 // front of the work queue rather than the back.
 //
 // The behavior of the Urgent variants is equivalent to that of the standard
-// variants when:
+// variants in any of the following cases:
 //
 //   - The results for all requested keys are already cached.
 //   - Ample concurrency is available to handle the requested keys immediately.
