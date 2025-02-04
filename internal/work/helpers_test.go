@@ -24,13 +24,7 @@ func async(t *testing.T, fn func()) {
 		defer close(done)
 		fn()
 	}()
-	cleanup(t, func() {
-		select {
-		case <-done:
-		case <-time.After(timeout):
-			panic("leaked a goroutine from this test")
-		}
-	})
+	assertEventuallyUnblocks(t, done)
 }
 
 func assertIdentityResults[K comparable](t *testing.T, q *Queue[K, K], keys ...K) {
@@ -112,13 +106,7 @@ func assertBlockedAfter[K comparable, V any](settle func(), t *testing.T, q *Que
 	case <-done:
 		t.Errorf("computation of key was not blocked")
 	default:
-		cleanup(t, func() {
-			select {
-			case <-done:
-			case <-time.After(timeout):
-				panic("leaked a blocked handler from this test")
-			}
-		})
+		assertEventuallyUnblocks(t, done)
 	}
 }
 
