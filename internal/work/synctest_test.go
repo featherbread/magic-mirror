@@ -8,7 +8,6 @@ import (
 	"testing"
 	"testing/synctest"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -123,11 +122,14 @@ func TestQueueConcurrencyLimitSynctest(t *testing.T) {
 		go func() { q.GetAll(keys...) }()
 		synctest.Wait()
 
-		// Let them all finish, and make sure they all saw the limit respected.
+		// Let them all finish...
 		close(canReturn)
-		assertIdentityResults(t, q, keys...)
-		assertSubmittedCount(t, q, submitCount)
-		assertDoneCount(t, q, submitCount)
+		got, err := q.GetAll(keys...)
+		assert.NoError(t, err)
+		assert.Equal(t, keys, got)
+		assert.Equal(t, Stats{Done: submitCount, Submitted: submitCount}, q.Stats())
+
+		// ...and make sure they all saw the limit respected.
 		if breached.Load() {
 			t.Errorf("queue breached limit of %d workers in flight", workerCount)
 		}
@@ -158,11 +160,14 @@ func TestQueueOrderingSynctest(t *testing.T) {
 		go func() { q.GetUrgent(-3) }()
 		synctest.Wait()
 
-		// Unblock all the handlers.
+		// Unblock all the handlers...
 		close(unblock)
-		assertIdentityResults(t, q, -3, -2, -1, 0, 1, 2, 3)
+		keys := []int{-3, -2, -1, 0, 1, 2, 3}
+		got, err := q.GetAll(keys...)
+		assert.NoError(t, err)
+		assert.Equal(t, keys, got)
 
-		// Ensure that everything was queued in the correct order.
+		// ...and ensure that everything was queued in the correct order:
 		wantOrder := []int{
 			// The initial blocked handler.
 			0,
@@ -174,9 +179,7 @@ func TestQueueOrderingSynctest(t *testing.T) {
 			1, 2,
 			3,
 		}
-		if diff := cmp.Diff(wantOrder, handledOrder); diff != "" {
-			t.Errorf("incorrect handling order (-want +got):\n%s", diff)
-		}
+		assert.Equal(t, wantOrder, handledOrder)
 	})
 }
 
