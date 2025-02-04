@@ -88,7 +88,16 @@ func assertSubmittedCount[K comparable, V any](t *testing.T, q *Queue[K, V], wan
 	}
 }
 
-func assertBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) {
+// assertBlockedAfter fails a test if a queue is able to process a given key
+// without blocking after a call to settle().
+//
+// The settle function should ensure that any goroutines that might incorrectly
+// unblock the queue have progressed far enough to do so, ideally to the point
+// that they have exited or are durably blocked on another condition.
+// [forceRuntimeProgress] makes a best-effort attempt to ensure this in stable
+// versions of Go as of writing. Future versions of Go may provide a mechanism
+// to robustly guarantee this, like the experimental "testing/synctest" package.
+func assertBlockedAfter[K comparable, V any](settle func(), t *testing.T, q *Queue[K, V], key K) {
 	t.Helper()
 
 	done := make(chan struct{})
@@ -97,9 +106,7 @@ func assertBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) {
 		q.Get(key)
 	}()
 
-	// Make a best-effort attempt to force the key's handler to be in flight when
-	// it should not be.
-	forceRuntimeProgress()
+	settle()
 
 	select {
 	case <-done:
