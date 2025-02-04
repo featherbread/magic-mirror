@@ -6,33 +6,36 @@ import (
 	"runtime"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 
 	"github.com/google/go-cmp/cmp"
 )
 
 func TestQueueGoexitHandlingSynctest(t *testing.T) {
-	stepGoexit := make(chan struct{})
-	q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) {
-		if x == 0 {
-			<-stepGoexit
-			<-stepGoexit
-			runtime.Goexit()
-		}
-		return x, nil
+	synctest.Run(func() {
+		stepGoexit := make(chan struct{})
+		q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) {
+			if x == 0 {
+				<-stepGoexit
+				<-stepGoexit
+				runtime.Goexit()
+			}
+			return x, nil
+		})
+
+		// Start the handler that will Goexit, and ensure that it's blocked.
+		async(t, func() { q.Get(0) })
+		stepGoexit <- struct{}{}
+
+		// Force some more handlers to queue up.
+		async(t, func() { q.GetAll(1, 2) })
+		synctest.Wait()
+
+		// Let all the handlers through, and ensure that the initial Goexit didn't
+		// break the processing of other keys.
+		close(stepGoexit)
+		assertIdentityResults(t, q, 1, 2)
 	})
-
-	// Start the handler that will Goexit, and ensure that it's blocked.
-	async(t, func() { q.Get(0) })
-	stepGoexit <- struct{}{}
-
-	// Force some more handlers to queue up.
-	async(t, func() { q.GetAll(1, 2) })
-	forceRuntimeProgress()
-
-	// Let all the handlers through, and ensure that the initial Goexit didn't
-	// break the processing of other keys.
-	close(stepGoexit)
-	assertIdentityResults(t, q, 1, 2)
 }
 
 func TestQueueDeduplicationSynctest(t *testing.T) {
