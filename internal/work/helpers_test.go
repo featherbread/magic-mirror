@@ -115,29 +115,13 @@ func assertBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) {
 	}
 }
 
-// forceRuntimeProgress attempts to force the Go runtime to make progress on
-// every other live goroutine before resuming the current one.
-//
-// In scenarios where all live goroutines other than the current one are
-// expected to eventually block, this function tries to force those goroutines
-// to execute up to that eventual state so that assertions can be made about it.
-// For example, if an implementation of concurrency limits is broken, or if a
-// goroutine can run to completion when it should be blocked, this function
-// should force those conditions to occur more quickly and reliably than
-// sleeping for a predetermined time.
-//
-// This function operates on a best-effort basis. It works best when no live
-// goroutines in the system are expected to spawn further goroutines, perform
-// CPU-intensive work without blocking, or change GOMAXPROCS.
+// forceRuntimeProgress makes a best-effort attempt to force the Go runtime to
+// make progress on all other goroutines in the system, ideally to the point at
+// which they will next block if not preempted. It works best if no other
+// goroutines are CPU-intensive or change GOMAXPROCS.
 func forceRuntimeProgress() {
-	// We want the runtime to execute this goroutine because others are blocked,
-	// not because they're executing in parallel.
 	gomaxprocs := runtime.GOMAXPROCS(1)
 	defer runtime.GOMAXPROCS(gomaxprocs)
-
-	// This is more of a reasonable heuristic than a guarantee, for the reasons
-	// described above. Yes, this count includes the current goroutine; consider
-	// it extra insurance.
 	for range runtime.NumGoroutine() {
 		runtime.Gosched()
 	}
