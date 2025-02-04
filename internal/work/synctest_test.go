@@ -24,11 +24,11 @@ func TestQueueGoexitHandlingSynctest(t *testing.T) {
 		})
 
 		// Start the handler that will Goexit, and ensure that it's blocked.
-		async(t, func() { q.Get(0) })
+		go func() { q.Get(0) }()
 		stepGoexit <- struct{}{}
 
 		// Force some more handlers to queue up.
-		async(t, func() { q.GetAll(1, 2) })
+		go func() { q.GetAll(1, 2) }()
 		synctest.Wait()
 
 		// Let all the handlers through, and ensure that the initial Goexit didn't
@@ -97,7 +97,7 @@ func TestQueueConcurrencyLimitSynctest(t *testing.T) {
 		// Start up as many handlers as possible, let them check for breaches, then
 		// block them from moving further.
 		keys := makeIntKeys(submitCount)
-		async(t, func() { q.GetAll(keys...) })
+		go func() { q.GetAll(keys...) }()
 		synctest.Wait()
 
 		// Let them all finish, and make sure they all saw the limit respected.
@@ -122,17 +122,17 @@ func TestQueueOrderingSynctest(t *testing.T) {
 		})
 
 		// Start a new blocked handler to force the queueing of subsequent keys.
-		async(t, func() { q.Get(0) })
+		go func() { q.Get(0) }()
 		synctest.Wait()
 
 		// Queue up some keys with various priorities.
-		async(t, func() { q.GetAll(1, 2) })
+		go func() { q.GetAll(1, 2) }()
 		synctest.Wait()
-		async(t, func() { q.GetAllUrgent(-1, -2) })
+		go func() { q.GetAllUrgent(-1, -2) }()
 		synctest.Wait()
-		async(t, func() { q.Get(3) })
+		go func() { q.Get(3) }()
 		synctest.Wait()
-		async(t, func() { q.GetUrgent(-3) })
+		go func() { q.GetUrgent(-3) }()
 		synctest.Wait()
 
 		// Unblock all the handlers.
@@ -191,14 +191,14 @@ func TestQueueReattachPrioritySynctest(t *testing.T) {
 		})
 
 		// Create a detached handler for 0.
-		async(t, func() { q.Get(0) })
+		go func() { q.Get(0) }()
 		assertReceiveCount(t, 1, w0HasDetached)
 
 		// Ensure that unrelated handlers are unblocked.
 		assertIdentityResults(t, q, -1)
 
 		// Start a non-detached handler for 1, and ensure that 2 and 3 are queued.
-		async(t, func() { q.GetAll(1, 2, 3) })
+		go func() { q.GetAll(1, 2, 3) }()
 		assertReceiveCount(t, 1, w1HasStarted)
 
 		// Allow the detached handler for 0 to reattach, and try to force it to run
@@ -254,7 +254,7 @@ func TestQueueReattachConcurrencySynctest(t *testing.T) {
 
 		// Start up a bunch of handlers, and wait for all of them to detach.
 		keys := makeIntKeys(submitCount)
-		async(t, func() { q.GetAll(keys...) })
+		go func() { q.GetAll(keys...) }()
 		assertReceiveCount(t, submitCount, hasDetached)
 
 		// Allow them to start reattaching, and force as many as possible to finish
@@ -301,12 +301,12 @@ func TestQueueDetachReturnSynctest(t *testing.T) {
 
 		// Start up multiple detached handlers that will never reattach.
 		detachedKeys := []int{-2, -1}
-		async(t, func() { q.GetAll(detachedKeys...) })
+		go func() { q.GetAll(detachedKeys...) }()
 		assertReceiveCount(t, len(detachedKeys), hasDetached)
 
 		// Start up some normal handlers, and make sure they block.
 		attachedKeys := makeIntKeys(3 * len(detachedKeys))
-		async(t, func() { q.GetAll(attachedKeys...) })
+		go func() { q.GetAll(attachedKeys...) }()
 		assertBlockedAfter(synctest.Wait, t, q, attachedKeys[0])
 
 		// Let the detached handlers finish, and push them forward if they're going to
@@ -397,7 +397,7 @@ func TestKeyMutexDetachReattachSynctest(t *testing.T) {
 
 		// Start the handler for 0, but force it to detach by holding the lock first.
 		km.Lock(NoValue{})
-		async(t, func() { q.Get(0) })
+		go func() { q.Get(0) }()
 		<-w0HasStarted
 
 		// Ensure that unrelated handlers can proceed while handler 0 awaits the lock.
