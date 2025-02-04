@@ -24,7 +24,7 @@ func async(t *testing.T, fn func()) {
 		defer close(done)
 		fn()
 	}()
-	t.Cleanup(func() {
+	cleanup(t, func() {
 		select {
 		case <-done:
 		case <-time.After(timeout):
@@ -112,7 +112,7 @@ func assertBlockedAfter[K comparable, V any](settle func(), t *testing.T, q *Que
 	case <-done:
 		t.Errorf("computation of key was not blocked")
 	default:
-		t.Cleanup(func() {
+		cleanup(t, func() {
 			select {
 			case <-done:
 			case <-time.After(timeout):
