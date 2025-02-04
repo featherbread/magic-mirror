@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestQueueGoexitHandlingSynctest(t *testing.T) {
@@ -39,7 +38,7 @@ func TestQueueGoexitHandlingSynctest(t *testing.T) {
 		// Ensure that the initial Goexit didn't break the processing of other keys.
 		want := []int{1, 2}
 		got, err := q.GetAll(want...)
-		require.NoError(t, err)
+		assert.NoError(t, err)
 		assert.Equal(t, want, got)
 	})
 }
@@ -58,24 +57,42 @@ func TestQueueDeduplicationSynctest(t *testing.T) {
 
 		// Handle and cache the first half of the keys.
 		close(canReturn)
-		assertIdentityResults(t, q, keys[:half]...)
-		assertSubmittedCount(t, q, half)
-		assertDoneCount(t, q, half)
+		got, err := q.GetAll(keys[:half]...)
+		assert.NoError(t, err)
+		assert.Equal(t, keys[:half], got)
+		assert.Equal(t, Stats{Done: half, Submitted: half}, q.Stats())
 
-		// Re-block the handler and start handling another key.
+		// Re-block the handler.
 		canReturn = make(chan struct{})
-		assertBlockedAfter(synctest.Wait, t, q, keys[half])
-		assertSubmittedCount(t, q, half+1)
-		assertDoneCount(t, q, half)
 
-		// Ensure that the previous results are cached.
-		assertIdentityResults(t, q, keys[:half]...)
+		// Start handling a fresh key...
+		halfResult := make(chan int, 1)
+		go func() {
+			got, err := q.Get(keys[half])
+			assert.NoError(t, err)
+			halfResult <- got
+		}()
+
+		// ...and make sure it really is blocked.
+		synctest.Wait()
+		select {
+		case <-halfResult:
+			t.Error("computation of key was not blocked")
+		default:
+			assert.Equal(t, Stats{Done: half, Submitted: half + 1}, q.Stats())
+		}
+
+		// Ensure that the previous results are cached and available without delay.
+		got, err = q.GetAll(keys[:half]...)
+		assert.NoError(t, err)
+		assert.Equal(t, keys[:half], got)
 
 		// Finish handling the rest of the keys.
 		close(canReturn)
-		assertIdentityResults(t, q, keys...)
-		assertSubmittedCount(t, q, count)
-		assertDoneCount(t, q, count)
+		got, err = q.GetAll(keys...)
+		assert.NoError(t, err)
+		assert.Equal(t, keys, got)
+		assert.Equal(t, Stats{Done: count, Submitted: count}, q.Stats())
 	})
 }
 
