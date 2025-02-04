@@ -27,14 +27,22 @@ func TestQueueGoexitHandlingSynctest(t *testing.T) {
 		go func() { q.Get(0) }()
 		stepGoexit <- struct{}{}
 
-		// Force some more handlers to queue up.
+		// Force some more handlers to queue up...
 		go func() { q.GetAll(1, 2) }()
 		synctest.Wait()
 
-		// Let all the handlers through, and ensure that the initial Goexit didn't
-		// break the processing of other keys.
+		// ...then let them through.
 		close(stepGoexit)
-		assertIdentityResults(t, q, 1, 2)
+
+		// Ensure that the initial Goexit didn't break the processing of other keys.
+		want := []int{1, 2}
+		got, err := q.GetAll(want...)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if diff := cmp.Diff(got, want); diff != "" {
+			t.Errorf("unexpected handler results (-want +got): %s", diff)
+		}
 	})
 }
 
