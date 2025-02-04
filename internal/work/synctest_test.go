@@ -9,6 +9,8 @@ import (
 	"testing/synctest"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestQueueGoexitHandlingSynctest(t *testing.T) {
@@ -37,12 +39,8 @@ func TestQueueGoexitHandlingSynctest(t *testing.T) {
 		// Ensure that the initial Goexit didn't break the processing of other keys.
 		want := []int{1, 2}
 		got, err := q.GetAll(want...)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if diff := cmp.Diff(got, want); diff != "" {
-			t.Errorf("unexpected handler results (-want +got): %s", diff)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, want, got)
 	})
 }
 
