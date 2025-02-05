@@ -5,9 +5,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/samber/lo"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSet(t *testing.T) {
@@ -64,14 +63,10 @@ func TestSet(t *testing.T) {
 			s := SetOf(elements...)
 			t.Logf("encoded set: %q", s.joined)
 
-			if s.Cardinality() != len(elements) {
-				t.Errorf("incorrect cardinality: got %d, want %d", s.Cardinality(), len(elements))
-			}
+			assert.Equal(t, len(elements), s.Cardinality())
 
 			got := s.ToSlice()
-			if diff := cmp.Diff(tc.Elements, got); diff != "" {
-				t.Errorf("got back different elements than put in (-want +got):\n%s", diff)
-			}
+			assert.Equal(t, tc.Elements, got)
 
 			x := SetOf(elements...)
 			lo.Shuffle(elements)
@@ -101,12 +96,8 @@ func TestSetMarshalJSON(t *testing.T) {
 	s := SetOf("one", "two", "three")
 	want := []byte(`["one","three","two"]`)
 	got, err := json.Marshal(s)
-	if err != nil {
-		t.Fatalf("error marshaling to JSON: %v", err)
-	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("unexpected JSON marshaling (-want +got):\n%s", diff)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, want, got)
 }
 
 func TestSetUnmarshalJSON(t *testing.T) {
@@ -116,9 +107,7 @@ func TestSetUnmarshalJSON(t *testing.T) {
 	}
 	want := []string{"one", "three", "two"}
 	got := s.ToSlice()
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("unexpected JSON unmarshaling (-want +got):\n%s", diff)
-	}
+	assert.Equal(t, want, got)
 }
 
 func TestSetUnmarshalJSONInvalid(t *testing.T) {
@@ -145,12 +134,9 @@ func FuzzSetChunkedString(f *testing.F) {
 		slices.Sort(uniqChunks)
 
 		gotChunks := s.ToSlice()
-		if diff := cmp.Diff(uniqChunks, gotChunks, cmpopts.EquateEmpty()); diff != "" {
-			t.Errorf("ToSlice() did not return expected elements (-want +got):\n%s", diff)
-		}
-
-		if len(gotChunks) != s.Cardinality() {
-			t.Errorf("Cardinality() == %d, want %d", s.Cardinality(), len(gotChunks))
+		assert.Equal(t, len(gotChunks), s.Cardinality())
+		if len(gotChunks) > 0 {
+			assert.Equal(t, uniqChunks, gotChunks)
 		}
 	})
 }
