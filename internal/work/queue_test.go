@@ -7,13 +7,13 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestQueueBasic(t *testing.T) {
 	q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) { return x, nil })
 	assertIdentityResults(t, q, 42)
-	assertSubmittedCount(t, q, 1)
-	assertDoneCount(t, q, 1)
+	assert.Equal(t, Stats{Done: 1, Submitted: 1}, q.Stats())
 }
 
 func TestQueueGetAllError(t *testing.T) {
@@ -104,14 +104,12 @@ func TestQueueDeduplication(t *testing.T) {
 	// Handle and cache the first half of the keys.
 	close(canReturn)
 	assertIdentityResults(t, q, keys[:half]...)
-	assertSubmittedCount(t, q, half)
-	assertDoneCount(t, q, half)
+	assert.Equal(t, Stats{Done: half, Submitted: half}, q.Stats())
 
 	// Re-block the handler and start handling another key.
 	canReturn = make(chan struct{})
 	assertBlocked(t, q, keys[half])
-	assertSubmittedCount(t, q, half+1)
-	assertDoneCount(t, q, half)
+	assert.Equal(t, Stats{Done: half, Submitted: half + 1}, q.Stats())
 
 	// Ensure that the previous results are cached.
 	assertIdentityResults(t, q, keys[:half]...)
@@ -119,8 +117,7 @@ func TestQueueDeduplication(t *testing.T) {
 	// Finish handling the rest of the keys.
 	close(canReturn)
 	assertIdentityResults(t, q, keys...)
-	assertSubmittedCount(t, q, count)
-	assertDoneCount(t, q, count)
+	assert.Equal(t, Stats{Done: count, Submitted: count}, q.Stats())
 }
 
 func TestQueueConcurrencyLimit(t *testing.T) {
@@ -152,8 +149,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 	// Let them all finish, and make sure they all saw the limit respected.
 	close(canReturn)
 	assertIdentityResults(t, q, keys...)
-	assertSubmittedCount(t, q, submitCount)
-	assertDoneCount(t, q, submitCount)
+	assert.Equal(t, Stats{Done: submitCount, Submitted: submitCount}, q.Stats())
 	if breached.Load() {
 		t.Errorf("queue breached limit of %d workers in flight", workerCount)
 	}
@@ -309,8 +305,7 @@ func TestQueueReattachConcurrency(t *testing.T) {
 	// flight.
 	close(canReturn)
 	assertIdentityResults(t, q, keys...)
-	assertSubmittedCount(t, q, submitCount)
-	assertDoneCount(t, q, submitCount)
+	assert.Equal(t, Stats{Done: submitCount, Submitted: submitCount}, q.Stats())
 	if breached.Load() {
 		t.Errorf("queue breached limit of %d workers in flight during reattach", workerCount)
 	}

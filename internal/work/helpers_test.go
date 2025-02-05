@@ -66,22 +66,6 @@ func assertReceiveCount[T any](t *testing.T, count int, ch <-chan T) {
 	}
 }
 
-func assertDoneCount[K comparable, V any](t *testing.T, q *Queue[K, V], want uint64) {
-	t.Helper()
-	stats := q.Stats()
-	if stats.Done != want {
-		t.Errorf("queue reports %d tasks done, want %d", stats.Done, want)
-	}
-}
-
-func assertSubmittedCount[K comparable, V any](t *testing.T, q *Queue[K, V], want uint64) {
-	t.Helper()
-	stats := q.Stats()
-	if stats.Submitted != want {
-		t.Errorf("queue reports %d tasks submitted, want %d", stats.Submitted, want)
-	}
-}
-
 // assertBlockedAfter fails a test if a queue is able to process a given key
 // without blocking after a call to settle().
 //
