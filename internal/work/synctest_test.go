@@ -216,30 +216,34 @@ func TestQueueReattachPrioritySynctest(t *testing.T) {
 			return x, nil
 		})
 
-		// Create a detached handler for 0.
+		// Start the handler for 0, which will detach and block.
 		go func() { q.Get(0) }()
-		assertReceiveCount(t, 1, w0HasDetached)
+		<-w0HasDetached
 
-		// Ensure that unrelated handlers are unblocked.
-		assertIdentityResults(t, q, -1)
+		// Ensure that unrelated handlers are unblocked after 0 detaches.
+		q.Get(-1)
 
-		// Start a non-detached handler for 1, and ensure that 2 and 3 are queued.
+		// Start the handler for 1 (which will block) and queue up some extra keys
+		// behind it.
 		go func() { q.GetAll(1, 2, 3) }()
-		assertReceiveCount(t, 1, w1HasStarted)
+		<-w1HasStarted
 
-		// Allow the detached handler for 0 to reattach, and try to force it to run
-		// until it actually queues itself up for reattachment.
+		// Allow the detached handler for 0 to reattach, and wait until it's durably
+		// blocked on 1's completion.
 		close(w0CanReattach)
 		synctest.Wait()
 
-		// Allow the handler for 1 to finish, unblocking all the rest as well.
+		// Allow the handler for 1 to finish, unblocking everything else too.
 		close(w1CanReturn)
-		assertIdentityResults(t, q, 0, 1, 2, 3)
+		keys := []int{0, 1, 2, 3}
+		got, err := q.GetAll(keys...)
+		assert.NoError(t, err)
+		assert.Equal(t, keys, got)
 
-		lastHandled := handleOrder[len(handleOrder)-1]
-		if lastHandled == 0 {
-			t.Error("reattaching handler did not receive priority over new keys")
-		}
+		// Make sure the detached handler (0) finished in the correct order relative
+		// to others.
+		wantOrder := []int{-1, 1, 0, 2, 3}
+		assert.Equal(t, wantOrder, handleOrder)
 	})
 }
 
@@ -281,19 +285,22 @@ func TestQueueReattachConcurrencySynctest(t *testing.T) {
 		// Start up a bunch of handlers, and wait for all of them to detach.
 		keys := makeIntKeys(submitCount)
 		go func() { q.GetAll(keys...) }()
-		assertReceiveCount(t, submitCount, hasDetached)
+		for range submitCount {
+			<-hasDetached
+		}
 
-		// Allow them to start reattaching, and force as many as possible to finish
-		// reattaching and checking the reattach count.
+		// Allow them all to start reattaching, and wait until all possible
+		// reattachments have finished.
 		close(canReattach)
 		synctest.Wait()
 
-		// Let them all finish and return, and make sure none saw too many handlers in
+		// Let them all return, and make sure none of them saw too many handlers in
 		// flight.
 		close(canReturn)
-		assertIdentityResults(t, q, keys...)
-		assertSubmittedCount(t, q, submitCount)
-		assertDoneCount(t, q, submitCount)
+		got, err := q.GetAll(keys...)
+		assert.NoError(t, err)
+		assert.Equal(t, keys, got)
+		assert.Equal(t, Stats{Done: submitCount, Submitted: submitCount}, q.Stats())
 		if breached.Load() {
 			t.Errorf("queue breached limit of %d workers in flight during reattach", workerCount)
 		}
@@ -328,22 +335,34 @@ func TestQueueDetachReturnSynctest(t *testing.T) {
 		// Start up multiple detached handlers that will never reattach.
 		detachedKeys := []int{-2, -1}
 		go func() { q.GetAll(detachedKeys...) }()
-		assertReceiveCount(t, len(detachedKeys), hasDetached)
+		for range detachedKeys {
+			<-hasDetached
+		}
 
 		// Start up some normal handlers, and make sure they block.
+		attachedDone := make(chan struct{})
 		attachedKeys := makeIntKeys(3 * len(detachedKeys))
-		go func() { q.GetAll(attachedKeys...) }()
-		assertBlockedAfter(synctest.Wait, t, q, attachedKeys[0])
+		go func() {
+			defer close(attachedDone)
+			q.GetAll(attachedKeys...)
+		}()
+		synctest.Wait()
+		select {
+		case <-attachedDone:
+			t.Error("computation of keys was not blocked")
+		default:
+		}
 
 		// Let the detached handlers finish, and push them forward if they're going to
 		// incorrectly pick up keys rather than exit.
 		close(detachedCanReturn)
-		assertIdentityResults(t, q, detachedKeys...)
 		synctest.Wait()
 
-		// Unblock all handlers and make sure the limit wasn't breached.
+		// Unblock the rest of the handlers, and make sure the limit wasn't breached.
 		close(attachedCanReturn)
-		assertIdentityResults(t, q, attachedKeys...)
+		got, err := q.GetAll(attachedKeys...)
+		assert.NoError(t, err)
+		assert.Equal(t, attachedKeys, got)
 		if breached.Load() {
 			t.Error("queue breached limit of 1 worker in flight")
 		}
