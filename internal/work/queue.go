@@ -263,12 +263,14 @@ func (q *Queue[K, V]) work(initialKey *K) {
 		}
 		func() {
 			defer func() {
-				q.tasksDone.Add(1)
 				if task.goexit {
 					go q.work(nil) // We can't stop Goexit, so we must transfer our work grant.
 				}
 			}()
-			task.Do(func() (V, error) { return q.handle(qh, key) })
+			task.Do(func() (V, error) {
+				defer q.tasksDone.Add(1)
+				return q.handle(qh, key)
+			})
 		}()
 		if qh.detached {
 			return // We no longer have a work grant.
