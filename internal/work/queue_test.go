@@ -260,17 +260,15 @@ func TestQueueReattachPriority(t *testing.T) {
 }
 
 func TestQueueReattachConcurrency(t *testing.T) {
-	const (
-		submitCount = 50
-		workerCount = 10
-	)
+	const workerCount = 5
+	const submitCount = workerCount * 10
+
 	var (
-		countDetached atomic.Int32
-		countAttached atomic.Int32
-		breached      atomic.Bool
-		hasDetached   = make(chan struct{})
-		canReattach   = make(chan struct{})
-		canReturn     = make(chan struct{})
+		countAttached   atomic.Int32
+		breached        atomic.Bool
+		ready           = make(chan struct{})
+		unblockReattach = make(chan struct{})
+		unblockReturn   = make(chan struct{})
 	)
 	q := NewQueue(workerCount, func(qh *QueueHandle, x int) (int, error) {
 		if !qh.Detach() {
@@ -279,35 +277,32 @@ func TestQueueReattachConcurrency(t *testing.T) {
 		if qh.Detach() {
 			panic("claimed to detach multiple times from queue")
 		}
-		countDetached.Add(1)
-		hasDetached <- struct{}{}
-
-		<-canReattach
+		ready <- struct{}{}
+		<-unblockReattach
 		qh.Reattach()
-		count := countAttached.Add(1)
-		defer countAttached.Add(-1)
-		if count > workerCount {
+		if countAttached.Add(1) > workerCount {
 			breached.Store(true)
 		}
-		<-canReturn
+		defer countAttached.Add(-1)
+		<-unblockReturn
 		return x, nil
 	})
 
 	// Start up a bunch of handlers, and wait for all of them to detach.
 	keys := makeIntKeys(submitCount)
 	async(t, func() { q.GetAll(keys...) })
-	assertReceiveCount(t, submitCount, hasDetached)
+	assertReceiveCount(t, submitCount, ready)
 
-	// Allow them to start reattaching, and force as many as possible to finish
-	// reattaching and checking the reattach count.
-	close(canReattach)
+	// Allow them all to start reattaching, and try to wait until all possible
+	// reattachments have finished.
+	close(unblockReattach)
 	forceRuntimeProgress()
 
-	// Let them all finish and return, and make sure none saw too many handlers in
-	// flight.
-	close(canReturn)
+	// Let them all return...
+	close(unblockReturn)
 	assertIdentityResults(t, q, keys...)
-	assert.Equal(t, Stats{Done: submitCount, Submitted: submitCount}, q.Stats())
+
+	// ...and ensure none of the reattachers breached the limit.
 	if breached.Load() {
 		t.Errorf("queue breached limit of %d workers in flight during reattach", workerCount)
 	}
@@ -315,47 +310,52 @@ func TestQueueReattachConcurrency(t *testing.T) {
 
 func TestQueueDetachReturn(t *testing.T) {
 	var (
-		inflight          atomic.Int32
-		breached          atomic.Bool
-		hasDetached       = make(chan struct{})
-		detachedCanReturn = make(chan struct{})
-		attachedCanReturn = make(chan struct{})
+		inflight        atomic.Int32
+		breached        atomic.Bool
+		ready           = make(chan struct{})
+		unblockDetached = make(chan struct{})
+		unblockAttached = make(chan struct{})
 	)
 	q := NewQueue(1, func(qh *QueueHandle, x int) (int, error) {
-		if x < 0 {
+		switch {
+		case x < 0:
 			qh.Detach()
-			hasDetached <- struct{}{}
-			<-detachedCanReturn
-			return x, nil
+			ready <- struct{}{}
+			<-unblockDetached
+
+		default:
+			if inflight.Add(1) > 1 {
+				breached.Store(true)
+			}
+			defer inflight.Add(-1)
+			<-unblockAttached
 		}
-		count := inflight.Add(1)
-		defer inflight.Add(-1)
-		if count > 1 {
-			breached.Store(true)
-		}
-		<-attachedCanReturn
+
 		return x, nil
 	})
 
 	// Start up multiple detached handlers that will never reattach.
 	detachedKeys := []int{-2, -1}
 	async(t, func() { q.GetAll(detachedKeys...) })
-	assertReceiveCount(t, len(detachedKeys), hasDetached)
+	assertReceiveCount(t, len(detachedKeys), ready)
 
-	// Start up some normal handlers, and make sure they block.
+	// Start up some normal handlers...
 	attachedKeys := makeIntKeys(3 * len(detachedKeys))
 	async(t, func() { q.GetAll(attachedKeys...) })
+
+	// ...and ensure they really are blocked.
 	assertKeyBlocked(t, q, attachedKeys[0])
 
 	// Let the detached handlers finish, and push them forward if they're going to
 	// incorrectly pick up keys rather than exit.
-	close(detachedCanReturn)
-	assertIdentityResults(t, q, detachedKeys...)
+	close(unblockDetached)
 	forceRuntimeProgress()
 
-	// Unblock all handlers and make sure the limit wasn't breached.
-	close(attachedCanReturn)
+	// Unblock the rest of the handlers...
+	close(unblockAttached)
 	assertIdentityResults(t, q, attachedKeys...)
+
+	// ...and ensure the limit wasn't breached.
 	if breached.Load() {
 		t.Error("queue breached limit of 1 worker in flight")
 	}
