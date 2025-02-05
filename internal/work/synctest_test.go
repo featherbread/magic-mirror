@@ -63,16 +63,16 @@ func TestQueueDeduplicationSynctest(t *testing.T) {
 		unblock = make(chan struct{})
 
 		// Start handling a fresh key...
-		halfResult := make(chan int, 1)
+		done := make(chan struct{})
 		go func() {
-			got, _ := q.Get(keys[half])
-			halfResult <- got
+			defer close(done)
+			q.Get(keys[half])
 		}()
 
-		// ...and make sure it really is blocked.
+		// ...and ensure it really is blocked.
 		synctest.Wait()
 		select {
-		case <-halfResult:
+		case <-done:
 			t.Error("computation of key was not blocked")
 		default:
 			assert.Equal(t, Stats{Done: half, Submitted: half + 1}, q.Stats())
@@ -122,7 +122,7 @@ func TestQueueConcurrencyLimitSynctest(t *testing.T) {
 		assert.Equal(t, keys, got)
 		assert.Equal(t, Stats{Done: submitCount, Submitted: submitCount}, q.Stats())
 
-		// ...and make sure they all saw the limit respected.
+		// ...and ensure they all saw the limit respected.
 		if breached.Load() {
 			t.Errorf("queue breached limit of %d workers in flight", workerCount)
 		}
