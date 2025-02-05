@@ -91,7 +91,7 @@ func assertSubmittedCount[K comparable, V any](t *testing.T, q *Queue[K, V], wan
 // [forceRuntimeProgress] makes a best-effort attempt to ensure this in stable
 // versions of Go as of writing. Future versions of Go may provide a mechanism
 // to robustly guarantee this, like the experimental "testing/synctest" package.
-func assertBlockedAfter[K comparable, V any](settle func(), t *testing.T, q *Queue[K, V], key K) {
+func assertBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) {
 	t.Helper()
 
 	done := make(chan struct{})
@@ -100,8 +100,7 @@ func assertBlockedAfter[K comparable, V any](settle func(), t *testing.T, q *Que
 		q.Get(key)
 	}()
 
-	settle()
-
+	forceRuntimeProgress()
 	select {
 	case <-done:
 		t.Errorf("computation of key was not blocked")

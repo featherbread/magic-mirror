@@ -109,7 +109,7 @@ func TestQueueDeduplication(t *testing.T) {
 
 	// Re-block the handler and start handling another key.
 	canReturn = make(chan struct{})
-	assertBlockedAfter(forceRuntimeProgress, t, q, keys[half])
+	assertBlocked(t, q, keys[half])
 	assertSubmittedCount(t, q, half+1)
 	assertDoneCount(t, q, half)
 
@@ -348,7 +348,7 @@ func TestQueueDetachReturn(t *testing.T) {
 	// Start up some normal handlers, and make sure they block.
 	attachedKeys := makeIntKeys(3 * len(detachedKeys))
 	async(t, func() { q.GetAll(attachedKeys...) })
-	assertBlockedAfter(forceRuntimeProgress, t, q, attachedKeys[0])
+	assertBlocked(t, q, attachedKeys[0])
 
 	// Let the detached handlers finish, and push them forward if they're going to
 	// incorrectly pick up keys rather than exit.
