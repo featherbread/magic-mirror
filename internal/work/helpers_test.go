@@ -109,6 +109,16 @@ func assertBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) {
 	}
 }
 
+func assertEventuallyUnblocks(t *testing.T, done <-chan struct{}) {
+	t.Cleanup(func() {
+		select {
+		case <-done:
+		case <-time.After(timeout):
+			panic("leaked a blocked goroutine from this test")
+		}
+	})
+}
+
 // forceRuntimeProgress makes a best-effort attempt to force the Go runtime to
 // make progress on all other goroutines in the system, ideally to the point at
 // which they will next block if not preempted. It works best if no other
