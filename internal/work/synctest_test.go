@@ -399,7 +399,9 @@ func TestKeyMutexBasicSynctest(t *testing.T) {
 
 		// Wait for every goroutine to be running, then force them all forward and
 		// check for limit breaches.
-		assertReceiveCount(t, nWorkers, hasStarted)
+		for range nWorkers {
+			<-hasStarted
+		}
 		synctest.Wait()
 		for i := range locked {
 			if count := locked[i].Load(); count > 1 {
@@ -409,7 +411,9 @@ func TestKeyMutexBasicSynctest(t *testing.T) {
 
 		// Wait for the workers to finish.
 		close(canReturn)
-		assertReceiveCount(t, nWorkers, hasFinished)
+		for range nWorkers {
+			<-hasFinished
+		}
 	})
 }
 
@@ -446,17 +450,32 @@ func TestKeyMutexDetachReattachSynctest(t *testing.T) {
 		<-w0HasStarted
 
 		// Ensure that unrelated handlers can proceed while handler 0 awaits the lock.
-		assertIdentityResults(t, q, 1)
+		got, err := q.GetAll(1)
+		assert.NoError(t, err)
+		assert.Equal(t, []int{1}, got)
 
 		// Allow handler 0 to obtain the lock.
 		km.Unlock(NoValue{})
 		<-w0HasLocked
 
 		// Ensure that unrelated handlers are blocked.
-		assertBlockedAfter(synctest.Wait, t, q, 2)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			q.Get(2)
+		}()
+		synctest.Wait()
+		select {
+		case <-done:
+			t.Error("computation of key was not blocked")
+		default:
+		}
 
 		// Allow both handlers to finish.
 		close(w0CanUnlock)
-		assertIdentityResults(t, q, 0, 2)
+		keys := []int{0, 2}
+		got, err = q.GetAll(keys...)
+		assert.NoError(t, err)
+		assert.Equal(t, keys, got)
 	})
 }
