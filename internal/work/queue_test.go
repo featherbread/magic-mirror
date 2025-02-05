@@ -92,44 +92,45 @@ func TestQueueGoexitHandling(t *testing.T) {
 }
 
 func TestQueueDeduplication(t *testing.T) {
-	const count = 10
-	const half = count / 2
-	canReturn := make(chan struct{})
+	unblock := make(chan struct{})
 	q := NewQueue(0, func(_ *QueueHandle, x int) (int, error) {
-		<-canReturn
+		<-unblock
 		return x, nil
 	})
 
+	const count = 10
+	const half = count / 2
 	keys := makeIntKeys(count)
 
 	// Handle and cache the first half of the keys.
-	close(canReturn)
+	close(unblock)
 	assertIdentityResults(t, q, keys[:half]...)
 	assert.Equal(t, Stats{Done: half, Submitted: half}, q.Stats())
 
-	// Re-block the handler and start handling another key.
-	canReturn = make(chan struct{})
+	// Re-block the handler.
+	unblock = make(chan struct{})
+
+	// Start handling a fresh key, and ensure it really is blocked.
 	assertKeyBlocked(t, q, keys[half])
 	assert.Equal(t, Stats{Done: half, Submitted: half + 1}, q.Stats())
 
-	// Ensure that the previous results are cached.
+	// Ensure that the previous results are cached and available without delay.
 	assertIdentityResults(t, q, keys[:half]...)
 
 	// Finish handling the rest of the keys.
-	close(canReturn)
+	close(unblock)
 	assertIdentityResults(t, q, keys...)
 	assert.Equal(t, Stats{Done: count, Submitted: count}, q.Stats())
 }
 
 func TestQueueConcurrencyLimit(t *testing.T) {
-	const (
-		submitCount = 50
-		workerCount = 10
-	)
+	const workerCount = 5
+	const submitCount = workerCount * 10
+
 	var (
-		inflight  atomic.Int32
-		breached  atomic.Bool
-		canReturn = make(chan struct{})
+		inflight atomic.Int32
+		breached atomic.Bool
+		unblock  = make(chan struct{})
 	)
 	q := NewQueue(workerCount, func(_ *QueueHandle, x int) (int, error) {
 		count := inflight.Add(1)
@@ -137,20 +138,22 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 		if count > workerCount {
 			breached.Store(true)
 		}
-		<-canReturn
+		<-unblock
 		return x, nil
 	})
 
-	// Start up as many handlers as possible, let them check for breaches, then
-	// block them from moving further.
+	// Start up as many handlers as possible, and let them check for breaches
+	// before they're blocked from returning.
 	keys := makeIntKeys(submitCount)
 	async(t, func() { q.GetAll(keys...) })
 	forceRuntimeProgress()
 
-	// Let them all finish, and make sure they all saw the limit respected.
-	close(canReturn)
+	// Let them all finish...
+	close(unblock)
 	assertIdentityResults(t, q, keys...)
 	assert.Equal(t, Stats{Done: submitCount, Submitted: submitCount}, q.Stats())
+
+	// ...and ensure they all saw the limit respected.
 	if breached.Load() {
 		t.Errorf("queue breached limit of %d workers in flight", workerCount)
 	}
@@ -179,11 +182,12 @@ func TestQueueOrdering(t *testing.T) {
 	async(t, func() { q.GetUrgent(-3) })
 	forceRuntimeProgress()
 
-	// Unblock all the handlers.
+	// Unblock all the handlers...
 	close(unblock)
-	assertIdentityResults(t, q, -3, -2, -1, 0, 1, 2, 3)
+	keys := []int{-3, -2, -1, 0, 1, 2, 3}
+	assertIdentityResults(t, q, keys...)
 
-	// Ensure that everything was queued in the correct order.
+	// ...and ensure that everything was queued in the correct order:
 	wantOrder := []int{
 		// The initial blocked handler.
 		0,
@@ -201,24 +205,22 @@ func TestQueueOrdering(t *testing.T) {
 func TestQueueReattachPriority(t *testing.T) {
 	var workers [2]func(*QueueHandle)
 
-	var (
-		w0HasDetached = make(chan struct{})
-		w0CanReattach = make(chan struct{})
-	)
+	// Create a special handler that will detach as soon as it starts...
+	ready0 := make(chan struct{})
+	unblock0 := make(chan struct{})
 	workers[0] = func(qh *QueueHandle) {
 		qh.Detach()
-		close(w0HasDetached)
-		<-w0CanReattach
+		close(ready0)
+		<-unblock0
 		qh.Reattach()
 	}
 
-	var (
-		w1HasStarted = make(chan struct{})
-		w1CanReturn  = make(chan struct{})
-	)
+	// ...and a handler that will simply block.
+	ready1 := make(chan struct{})
+	unblock1 := make(chan struct{})
 	workers[1] = func(qh *QueueHandle) {
-		close(w1HasStarted)
-		<-w1CanReturn
+		close(ready1)
+		<-unblock1
 	}
 
 	var handleOrder []int
@@ -230,26 +232,29 @@ func TestQueueReattachPriority(t *testing.T) {
 		return x, nil
 	})
 
-	// Create a detached handler for 0.
+	// Start the handler for 0 that will detach itself from the queue...
 	async(t, func() { q.Get(0) })
-	assertReceiveCount(t, 1, w0HasDetached)
+	assertReceiveCount(t, 1, ready0)
 
-	// Ensure that unrelated handlers are unblocked.
+	// ..and ensure that unrelated handlers are, in fact, unblocked.
 	assertIdentityResults(t, q, -1)
 
-	// Start a non-detached handler for 1, and ensure that 2 and 3 are queued.
+	// Start the handler for 1 that will simply block, and queue up some extra
+	// keys behind it.
 	async(t, func() { q.GetAll(1, 2, 3) })
-	assertReceiveCount(t, 1, w1HasStarted)
+	assertReceiveCount(t, 1, ready1)
 
-	// Allow the detached handler for 0 to reattach, and try to force it to run
-	// until it actually queues itself up for reattachment.
-	close(w0CanReattach)
+	// Allow the detached handler for 0 to reattach, and try to wait until it's
+	// blocked on 1's completion.
+	close(unblock0)
 	forceRuntimeProgress()
 
-	// Allow the handler for 1 to finish, unblocking all the rest as well.
-	close(w1CanReturn)
+	// Allow the handler for 1 to finish, unblocking everything else too.
+	close(unblock1)
 	assertIdentityResults(t, q, 0, 1, 2, 3)
 
+	// Ensure the detached handler for 0 finished before the previously queued
+	// keys.
 	lastHandled := handleOrder[len(handleOrder)-1]
 	if lastHandled == 0 {
 		t.Error("reattaching handler did not receive priority over new keys")

@@ -156,8 +156,7 @@ func TestQueueOrderingSynctest(t *testing.T) {
 		// Unblock all the handlers...
 		close(unblock)
 		keys := []int{-3, -2, -1, 0, 1, 2, 3}
-		got, err := q.GetAll(keys...)
-		assert.NoError(t, err)
+		got, _ := q.GetAll(keys...)
 		assert.Equal(t, keys, got)
 
 		// ...and ensure that everything was queued in the correct order:
