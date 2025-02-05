@@ -15,6 +15,32 @@ func TestQueueBasic(t *testing.T) {
 	assert.Equal(t, Stats{Done: 1, Submitted: 1}, q.Stats())
 }
 
+func TestQueuePanicPropagation(t *testing.T) {
+	const want = "the expected panic value"
+	q := NewNoValueQueue(1, func(_ *QueueHandle, _ NoValue) error { panic(want) })
+	defer func() {
+		got := recover()
+		assert.Equal(t, want, got)
+	}()
+	q.Get(NoValue{})
+}
+
+func TestQueueGoexitPropagation(t *testing.T) {
+	q := NewNoValueQueue(1, func(_ *QueueHandle, _ NoValue) error {
+		runtime.Goexit()
+		return nil
+	})
+	done := make(chan bool)
+	go func() {
+		defer close(done)
+		q.Get(NoValue{})
+		done <- true
+	}()
+	if <-done {
+		t.Fatalf("runtime.Goexit did not propagate")
+	}
+}
+
 func TestQueueGetAllError(t *testing.T) {
 	keys := makeIntKeys(10)
 	done := make(chan struct{}, len(keys))

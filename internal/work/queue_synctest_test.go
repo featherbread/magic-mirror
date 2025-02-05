@@ -22,6 +22,36 @@ func TestQueueBasicSynctest(t *testing.T) {
 	})
 }
 
+func TestQueuePanicPropagationSynctest(t *testing.T) {
+	synctest.Run(func() {
+		const want = "the expected panic value"
+		q := NewNoValueQueue(1, func(_ *QueueHandle, _ NoValue) error { panic(want) })
+		defer func() {
+			got := recover()
+			assert.Equal(t, want, got)
+		}()
+		q.Get(NoValue{})
+	})
+}
+
+func TestQueueGoexitPropagationSynctest(t *testing.T) {
+	synctest.Run(func() {
+		q := NewNoValueQueue(1, func(_ *QueueHandle, _ NoValue) error {
+			runtime.Goexit()
+			return nil
+		})
+		done := make(chan bool)
+		go func() {
+			defer close(done)
+			q.Get(NoValue{})
+			done <- true
+		}()
+		if <-done {
+			t.Error("runtime.Goexit did not propagate")
+		}
+	})
+}
+
 func TestQueueGetAllErrorSynctest(t *testing.T) {
 	synctest.Run(func() {
 		keys := makeIntKeys(10)
