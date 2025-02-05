@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
 )
 
 const timeout = 2 * time.Second
@@ -20,37 +20,25 @@ func makeIntKeys(n int) (keys []int) {
 
 func async(t *testing.T, fn func()) {
 	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		fn()
-	}()
+	go func() { defer close(done); fn() }()
 	assertEventuallyUnblocks(t, done)
 }
 
 func assertIdentityResults[K comparable](t *testing.T, q *Queue[K, K], keys ...K) {
 	t.Helper()
 
-	var (
-		done = make(chan struct{})
-		got  []K
-		err  error
-	)
+	result := make(chan []K, 1)
 	go func() {
-		defer close(done)
-		got, err = q.GetAll(keys...)
+		got, err := q.GetAll(keys...)
+		assert.NoError(t, err)
+		result <- got
 	}()
 
 	select {
-	case <-done:
-		if err != nil {
-			t.Errorf("unexpected handler error: %v", err)
-		}
-		if diff := cmp.Diff(keys, got); diff != "" {
-			t.Errorf("unexpected handler results (-want +got): %s", diff)
-		}
-
+	case got := <-result:
+		assert.Equal(t, keys, got)
 	case <-time.After(timeout):
-		t.Fatalf("did not get result for key within %v", timeout)
+		t.Fatalf("did not get result for keys within %v", timeout)
 	}
 }
 
@@ -66,7 +54,7 @@ func assertReceiveCount[T any](t *testing.T, count int, ch <-chan T) {
 	}
 }
 
-// assertBlockedAfter fails a test if a queue is able to process a given key
+// assertKeyBlocked fails a test if a queue is able to process a given key
 // without blocking after a call to settle().
 //
 // The settle function should ensure that any goroutines that might incorrectly
@@ -75,16 +63,13 @@ func assertReceiveCount[T any](t *testing.T, count int, ch <-chan T) {
 // [forceRuntimeProgress] makes a best-effort attempt to ensure this in stable
 // versions of Go as of writing. Future versions of Go may provide a mechanism
 // to robustly guarantee this, like the experimental "testing/synctest" package.
-func assertBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) {
+func assertKeyBlocked[K comparable, V any](t *testing.T, q *Queue[K, V], key K) {
 	t.Helper()
 
 	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		q.Get(key)
-	}()
-
+	go func() { defer close(done); q.Get(key) }()
 	forceRuntimeProgress()
+
 	select {
 	case <-done:
 		t.Errorf("computation of key was not blocked")

@@ -6,7 +6,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -108,7 +107,7 @@ func TestQueueDeduplication(t *testing.T) {
 
 	// Re-block the handler and start handling another key.
 	canReturn = make(chan struct{})
-	assertBlocked(t, q, keys[half])
+	assertKeyBlocked(t, q, keys[half])
 	assert.Equal(t, Stats{Done: half, Submitted: half + 1}, q.Stats())
 
 	// Ensure that the previous results are cached.
@@ -194,9 +193,7 @@ func TestQueueOrdering(t *testing.T) {
 		1, 2,
 		3,
 	}
-	if diff := cmp.Diff(wantOrder, handledOrder); diff != "" {
-		t.Errorf("incorrect handling order (-want +got):\n%s", diff)
-	}
+	assert.Equal(t, wantOrder, handledOrder)
 }
 
 func TestQueueReattachPriority(t *testing.T) {
@@ -343,7 +340,7 @@ func TestQueueDetachReturn(t *testing.T) {
 	// Start up some normal handlers, and make sure they block.
 	attachedKeys := makeIntKeys(3 * len(detachedKeys))
 	async(t, func() { q.GetAll(attachedKeys...) })
-	assertBlocked(t, q, attachedKeys[0])
+	assertKeyBlocked(t, q, attachedKeys[0])
 
 	// Let the detached handlers finish, and push them forward if they're going to
 	// incorrectly pick up keys rather than exit.
