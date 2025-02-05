@@ -3,15 +3,16 @@ package work
 import (
 	"runtime"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
-func TestQueuePanic(t *testing.T) {
-	want := "the expected panic value"
+func TestQueuePanicPropagation(t *testing.T) {
+	const want = "the expected panic value"
 	q := NewNoValueQueue(1, func(_ *QueueHandle, _ NoValue) error { panic(want) })
 	defer func() {
-		if got := recover(); got != want {
-			t.Errorf("unexpected panic: got %v, want %v", got, want)
-		}
+		got := recover()
+		assert.Equal(t, want, got)
 	}()
 	q.Get(NoValue{})
 }
