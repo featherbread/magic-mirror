@@ -68,8 +68,8 @@ func TestQueueGoexitHandling(t *testing.T) {
 	stepGoexit := make(chan struct{})
 	q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) {
 		if x == 0 {
-			<-stepGoexit
-			<-stepGoexit
+			for range stepGoexit {
+			}
 			runtime.Goexit()
 		}
 		return x, nil
@@ -79,14 +79,16 @@ func TestQueueGoexitHandling(t *testing.T) {
 	async(t, func() { q.Get(0) })
 	stepGoexit <- struct{}{}
 
-	// Force some more handlers to queue up.
-	async(t, func() { q.GetAll(1, 2) })
+	// Force some more handlers to queue up...
+	keys := []int{1, 2}
+	async(t, func() { q.GetAll(keys...) })
 	forceRuntimeProgress()
 
-	// Let all the handlers through, and ensure that the initial Goexit didn't
-	// break the processing of other keys.
+	// ...then let them through.
 	close(stepGoexit)
-	assertIdentityResults(t, q, 1, 2)
+
+	// Ensure that the Goexit didn't break the handling of those new keys.
+	assertIdentityResults(t, q, keys...)
 }
 
 func TestQueueDeduplication(t *testing.T) {
