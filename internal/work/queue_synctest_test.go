@@ -3,6 +3,7 @@
 package work
 
 import (
+	"fmt"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -18,6 +19,21 @@ func TestQueueBasicSynctest(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 42, got)
 		assert.Equal(t, Stats{Done: 1, Submitted: 1}, q.Stats())
+	})
+}
+
+func TestQueueGetAllErrorSynctest(t *testing.T) {
+	synctest.Run(func() {
+		keys := makeIntKeys(10)
+		q := NewNoValueQueue(0, func(_ *QueueHandle, x int) error {
+			if x >= 5 {
+				return fmt.Errorf("%d", x)
+			}
+			return nil
+		})
+
+		_, err := q.GetAll(keys...)
+		assert.EqualError(t, err, "5")
 	})
 }
 

@@ -1,6 +1,7 @@
 package work
 
 import (
+	"fmt"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -12,6 +13,22 @@ func TestQueueBasic(t *testing.T) {
 	q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) { return x, nil })
 	assertIdentityResults(t, q, 42)
 	assert.Equal(t, Stats{Done: 1, Submitted: 1}, q.Stats())
+}
+
+func TestQueueGetAllError(t *testing.T) {
+	keys := makeIntKeys(10)
+	done := make(chan struct{}, len(keys))
+	q := NewNoValueQueue(0, func(_ *QueueHandle, x int) error {
+		defer func() { done <- struct{}{} }()
+		if x >= 5 {
+			return fmt.Errorf("%d", x)
+		}
+		return nil
+	})
+
+	_, err := q.GetAll(keys...)
+	assert.EqualError(t, err, "5")
+	assertReceiveCount(t, len(keys), done)
 }
 
 func TestQueueGoexitHandling(t *testing.T) {
