@@ -255,10 +255,8 @@ func TestQueueReattachPriority(t *testing.T) {
 
 	// Ensure the detached handler for 0 finished before the previously queued
 	// keys.
-	lastHandled := handleOrder[len(handleOrder)-1]
-	if lastHandled == 0 {
-		t.Error("reattaching handler did not receive priority over new keys")
-	}
+	wantOrder := []int{-1, 1, 0, 2, 3}
+	assert.Equal(t, wantOrder, handleOrder)
 }
 
 func TestQueueReattachConcurrency(t *testing.T) {
