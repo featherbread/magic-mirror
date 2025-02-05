@@ -11,6 +11,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestQueueBasicSynctest(t *testing.T) {
+	synctest.Run(func() {
+		q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) { return x, nil })
+		got, err := q.Get(42)
+		assert.NoError(t, err)
+		assert.Equal(t, 42, got)
+		assert.Equal(t, Stats{Done: 1, Submitted: 1}, q.Stats())
+	})
+}
+
 func TestQueueGoexitHandlingSynctest(t *testing.T) {
 	synctest.Run(func() {
 		stepGoexit := make(chan struct{})

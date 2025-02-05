@@ -8,6 +8,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestQueueBasic(t *testing.T) {
+	q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) { return x, nil })
+	assertIdentityResults(t, q, 42)
+	assert.Equal(t, Stats{Done: 1, Submitted: 1}, q.Stats())
+}
+
 func TestQueueGoexitHandling(t *testing.T) {
 	stepGoexit := make(chan struct{})
 	q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) {
