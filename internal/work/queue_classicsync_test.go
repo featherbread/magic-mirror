@@ -184,8 +184,8 @@ func TestQueueOrdering(t *testing.T) {
 	wantOrder := []int{
 		// The initial blocked handler.
 		0,
-		// The urgent handlers, reversed from their queueing order but with keys in
-		// a single GetAllUrgent call queued in the order provided.
+		// The urgent handlers, reversed from their queueing order but with keys
+		// in a single GetAllUrgent call queued in the order provided.
 		-3,
 		-1, -2,
 		// The normal handlers, in the order queued.
@@ -246,8 +246,8 @@ func TestQueueReattachPriority(t *testing.T) {
 	close(unblock1)
 	assertIdentityResults(t, q, 0, 1, 2, 3)
 
-	// Ensure the detached handler for 0 finished before the previously queued
-	// keys.
+	// Ensure the detached handler for 0 finished in the correct order relative
+	// to others.
 	wantOrder := []int{-1, 1, 0, 2, 3}
 	assert.Equal(t, wantOrder, handleOrder)
 }
@@ -339,8 +339,8 @@ func TestQueueDetachReturn(t *testing.T) {
 	// ...and ensure they really are blocked.
 	assertKeyBlocked(t, q, attachedKeys[0])
 
-	// Let the detached handlers finish, and push them forward if they're going to
-	// incorrectly pick up keys rather than exit.
+	// Let the detached handlers finish, and push them forward if they're going
+	// to incorrectly pick up keys rather than exit.
 	close(unblockDetached)
 	forceRuntimeProgress()
 

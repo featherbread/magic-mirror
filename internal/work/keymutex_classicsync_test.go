@@ -61,8 +61,8 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 	// Take the lock.
 	km.Lock(NoValue{})
 
-	// Start the handler for 0, which will have to detach since we're holding the
-	// lock.
+	// Start the handler for 0, which will have to detach since we're holding
+	// the lock.
 	async(t, func() { q.Get(0) })
 	assertReceiveCount(t, 1, started0)
 
