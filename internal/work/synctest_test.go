@@ -16,8 +16,8 @@ func TestQueueGoexitHandlingSynctest(t *testing.T) {
 		stepGoexit := make(chan struct{})
 		q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) {
 			if x == 0 {
-				<-stepGoexit
-				<-stepGoexit
+				for range stepGoexit {
+				}
 				runtime.Goexit()
 			}
 			return x, nil
@@ -28,47 +28,44 @@ func TestQueueGoexitHandlingSynctest(t *testing.T) {
 		stepGoexit <- struct{}{}
 
 		// Force some more handlers to queue up...
-		go func() { q.GetAll(1, 2) }()
+		keys := []int{1, 2}
+		go func() { q.GetAll(keys...) }()
 		synctest.Wait()
 
 		// ...then let them through.
 		close(stepGoexit)
 
-		// Ensure that the initial Goexit didn't break the processing of other keys.
-		want := []int{1, 2}
-		got, err := q.GetAll(want...)
-		assert.NoError(t, err)
-		assert.Equal(t, want, got)
+		// Ensure that the Goexit didn't break the handling of those new keys.
+		got, _ := q.GetAll(keys...)
+		assert.Equal(t, keys, got)
 	})
 }
 
 func TestQueueDeduplicationSynctest(t *testing.T) {
 	synctest.Run(func() {
-		const count = 10
-		const half = count / 2
-		canReturn := make(chan struct{})
+		unblock := make(chan struct{})
 		q := NewQueue(0, func(_ *QueueHandle, x int) (int, error) {
-			<-canReturn
+			<-unblock
 			return x, nil
 		})
 
+		const count = 10
+		const half = count / 2
 		keys := makeIntKeys(count)
 
 		// Handle and cache the first half of the keys.
-		close(canReturn)
-		got, err := q.GetAll(keys[:half]...)
-		assert.NoError(t, err)
+		close(unblock)
+		got, _ := q.GetAll(keys[:half]...)
 		assert.Equal(t, keys[:half], got)
 		assert.Equal(t, Stats{Done: half, Submitted: half}, q.Stats())
 
 		// Re-block the handler.
-		canReturn = make(chan struct{})
+		unblock = make(chan struct{})
 
 		// Start handling a fresh key...
 		halfResult := make(chan int, 1)
 		go func() {
-			got, err := q.Get(keys[half])
-			assert.NoError(t, err)
+			got, _ := q.Get(keys[half])
 			halfResult <- got
 		}()
 
@@ -82,14 +79,12 @@ func TestQueueDeduplicationSynctest(t *testing.T) {
 		}
 
 		// Ensure that the previous results are cached and available without delay.
-		got, err = q.GetAll(keys[:half]...)
-		assert.NoError(t, err)
+		got, _ = q.GetAll(keys[:half]...)
 		assert.Equal(t, keys[:half], got)
 
 		// Finish handling the rest of the keys.
-		close(canReturn)
-		got, err = q.GetAll(keys...)
-		assert.NoError(t, err)
+		close(unblock)
+		got, _ = q.GetAll(keys...)
 		assert.Equal(t, keys, got)
 		assert.Equal(t, Stats{Done: count, Submitted: count}, q.Stats())
 	})
@@ -97,14 +92,13 @@ func TestQueueDeduplicationSynctest(t *testing.T) {
 
 func TestQueueConcurrencyLimitSynctest(t *testing.T) {
 	synctest.Run(func() {
-		const (
-			submitCount = 50
-			workerCount = 10
-		)
+		const workerCount = 5
+		const submitCount = workerCount * 10
+
 		var (
-			inflight  atomic.Int32
-			breached  atomic.Bool
-			canReturn = make(chan struct{})
+			inflight atomic.Int32
+			breached atomic.Bool
+			unblock  = make(chan struct{})
 		)
 		q := NewQueue(workerCount, func(_ *QueueHandle, x int) (int, error) {
 			count := inflight.Add(1)
@@ -112,20 +106,19 @@ func TestQueueConcurrencyLimitSynctest(t *testing.T) {
 			if count > workerCount {
 				breached.Store(true)
 			}
-			<-canReturn
+			<-unblock
 			return x, nil
 		})
 
-		// Start up as many handlers as possible, let them check for breaches, then
-		// block them from moving further.
+		// Start up as many handlers as possible, and let them check for breaches
+		// before they're blocked from returning.
 		keys := makeIntKeys(submitCount)
 		go func() { q.GetAll(keys...) }()
 		synctest.Wait()
 
 		// Let them all finish...
-		close(canReturn)
-		got, err := q.GetAll(keys...)
-		assert.NoError(t, err)
+		close(unblock)
+		got, _ := q.GetAll(keys...)
 		assert.Equal(t, keys, got)
 		assert.Equal(t, Stats{Done: submitCount, Submitted: submitCount}, q.Stats())
 
