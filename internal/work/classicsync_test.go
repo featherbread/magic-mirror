@@ -10,14 +10,6 @@ import (
 
 const timeout = 2 * time.Second
 
-func makeIntKeys(n int) (keys []int) {
-	keys = make([]int, n)
-	for i := range keys {
-		keys[i] = i
-	}
-	return
-}
-
 func async(t *testing.T, fn func()) {
 	done := make(chan struct{})
 	go func() { defer close(done); fn() }()
