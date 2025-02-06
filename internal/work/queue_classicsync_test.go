@@ -229,7 +229,7 @@ func TestQueueReattachPriority(t *testing.T) {
 	async(t, func() { q.Get(0) })
 	assertReceiveCount(t, 1, ready0)
 
-	// ..and ensure that unrelated handlers are, in fact, unblocked.
+	// ...and ensure that unrelated handlers are, in fact, unblocked.
 	assertIdentityResults(t, q, -1)
 
 	// Start the handler for 1 that will simply block, and queue up some extra
