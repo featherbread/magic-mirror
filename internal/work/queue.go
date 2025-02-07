@@ -283,10 +283,7 @@ func (q *Queue[K, V]) work(initialKey *K) {
 // the caller must execute.
 func (q *Queue[K, V]) tryGetQueuedKey() (key K, ok bool) {
 	q.stateMu.Lock()
-	return q.tryGetQueuedKeyLocked()
-}
 
-func (q *Queue[K, V]) tryGetQueuedKeyLocked() (key K, ok bool) {
 	if q.state.reattachers > 0 {
 		// We can transfer our work grant to a reattacher; see handleReattach for
 		// details.
@@ -314,16 +311,13 @@ func (q *Queue[K, V]) tryGetQueuedKeyLocked() (key K, ok bool) {
 // handleDetach relinquishes the current goroutine's work grant. Its behavior is
 // undefined if its caller does not hold a work grant.
 func (q *Queue[K, V]) handleDetach() {
-	if q.stateMu.TryLock() {
-		// If we can quickly lock the state, try to relinquish the work grant
-		// without starting a new worker.
-		key, ok := q.tryGetQueuedKeyLocked()
-		if ok {
-			go q.work(&key)
-		}
-	} else {
-		// Otherwise, transfer the work grant so we don't block the detach.
-		go q.work(nil)
+	// `go q.work(nil)` would be a correct implementation of this function that
+	// biases toward unblocking the detacher as quickly as possible. But since the
+	// typical use for detaching is to block on another resource, we can afford to
+	// spend some quality time with the state lock, and perhaps relinquish our
+	// work grant instead of spawning a new goroutine to transfer it.
+	if key, ok := q.tryGetQueuedKey(); ok {
+		go q.work(&key)
 	}
 }
 
