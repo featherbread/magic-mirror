@@ -19,7 +19,7 @@ import (
 
 // blobCopier handles requests to copy blob content between repositories.
 type blobCopier struct {
-	*work.Queue[blobCopyRequest, work.NoValue]
+	*work.SetQueue[blobCopyRequest]
 
 	sourceMap   map[digest.Digest]mapset.Set[image.Repository]
 	sourceMapMu sync.Mutex
@@ -39,7 +39,7 @@ type blobCopyMutexKey struct {
 
 func newBlobCopier(concurrency int) *blobCopier {
 	c := &blobCopier{sourceMap: make(map[digest.Digest]mapset.Set[image.Repository])}
-	c.Queue = work.NewNoValueQueue(concurrency, c.copyOneBlob)
+	c.SetQueue = work.NewSetQueue(concurrency, c.copyOneBlob)
 	return c
 }
 
@@ -65,7 +65,7 @@ func (c *blobCopier) CopyAll(src, dst image.Repository, dgsts ...digest.Digest) 
 		c.RegisterSource(dgst, src)
 		requests[i] = blobCopyRequest{Digest: dgst, Dst: dst}
 	}
-	_, err := c.Queue.GetAll(requests...)
+	_, err := c.SetQueue.GetAll(requests...)
 	return err
 }
 

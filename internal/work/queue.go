@@ -10,11 +10,17 @@ import (
 	"github.com/gammazero/deque"
 )
 
-// NoValue is the canonical empty value type for a [Queue].
-type NoValue = struct{}
-
 // Handler is the type for a [Queue]'s handler function.
-type Handler[K comparable, V any] func(*QueueHandle, K) (V, error)
+type Handler[K comparable, V any] = func(*QueueHandle, K) (V, error)
+
+// Empty is the canonical empty value type for a [Queue].
+type Empty = struct{}
+
+// SetQueue represents a [Queue] whose handlers return no meaningful value.
+type SetQueue[K comparable] = Queue[K, Empty]
+
+// SetHandler is a type for a [SetQueue]'s handler function.
+type SetHandler[K comparable] = func(*QueueHandle, K) error
 
 // Queue is a concurrency-limited deduplicating work queue. It acts like a map
 // that computes and caches the value for each requested key while limiting the
@@ -122,10 +128,10 @@ func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue
 	}
 }
 
-// NewNoValueQueue wraps a handler that only returns an error to create a
-// [Queue] that produces [NoValue] for each key.
-func NewNoValueQueue[K comparable](concurrency int, handle func(*QueueHandle, K) error) *Queue[K, NoValue] {
-	return NewQueue(concurrency, func(qh *QueueHandle, key K) (_ NoValue, err error) {
+// NewSetQueue creates a [SetQueue] in a manner equivalent to how [NewQueue]
+// creates a [Queue].
+func NewSetQueue[K comparable](concurrency int, handle SetHandler[K]) *SetQueue[K] {
+	return NewQueue(concurrency, func(qh *QueueHandle, key K) (_ Empty, err error) {
 		err = handle(qh, key)
 		return
 	})

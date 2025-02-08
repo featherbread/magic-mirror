@@ -17,23 +17,23 @@ func TestQueueBasic(t *testing.T) {
 
 func TestQueuePanicPropagation(t *testing.T) {
 	const want = "the expected panic value"
-	q := NewNoValueQueue(1, func(_ *QueueHandle, _ NoValue) error { panic(want) })
+	q := NewSetQueue(1, func(_ *QueueHandle, _ Empty) error { panic(want) })
 	defer func() {
 		got := recover()
 		assert.Equal(t, want, got)
 	}()
-	q.Get(NoValue{})
+	q.Get(Empty{})
 }
 
 func TestQueueGoexitPropagation(t *testing.T) {
-	q := NewNoValueQueue(1, func(_ *QueueHandle, _ NoValue) error {
+	q := NewSetQueue(1, func(_ *QueueHandle, _ Empty) error {
 		runtime.Goexit()
 		return nil
 	})
 	done := make(chan bool)
 	go func() {
 		defer close(done)
-		q.Get(NoValue{})
+		q.Get(Empty{})
 		done <- true
 	}()
 	if <-done {
@@ -44,7 +44,7 @@ func TestQueueGoexitPropagation(t *testing.T) {
 func TestQueueGetAllError(t *testing.T) {
 	keys := makeIntKeys(10)
 	done := make(chan struct{}, len(keys))
-	q := NewNoValueQueue(0, func(_ *QueueHandle, x int) error {
+	q := NewSetQueue(0, func(_ *QueueHandle, x int) error {
 		defer func() { done <- struct{}{} }()
 		if x >= 5 {
 			return fmt.Errorf("%d", x)

@@ -50,20 +50,20 @@ func TestKeyMutexBasicSynctest(t *testing.T) {
 func TestKeyMutexDetachReattachSynctest(t *testing.T) {
 	synctest.Run(func() {
 		var (
-			km       KeyMutex[NoValue]
+			km       KeyMutex[Empty]
 			unblock0 = make(chan struct{})
 		)
 		q := NewQueue(1, func(qh *QueueHandle, x int) (int, error) {
 			if x == 0 {
-				km.LockDetached(qh, NoValue{})
+				km.LockDetached(qh, Empty{})
 				<-unblock0
-				km.Unlock(NoValue{})
+				km.Unlock(Empty{})
 			}
 			return x, nil
 		})
 
 		// Take the lock.
-		km.Lock(NoValue{})
+		km.Lock(Empty{})
 
 		// Start the handler for 0, which will have to detach since we're holding
 		// the lock.
@@ -74,7 +74,7 @@ func TestKeyMutexDetachReattachSynctest(t *testing.T) {
 		q.Get(1)
 
 		// Release the lock so handler 0 can obtain it.
-		km.Unlock(NoValue{})
+		km.Unlock(Empty{})
 		synctest.Wait()
 
 		// Start another handler...

@@ -42,7 +42,7 @@ func TestKeyMutexBasic(t *testing.T) {
 
 func TestKeyMutexDetachReattach(t *testing.T) {
 	var (
-		km       KeyMutex[NoValue]
+		km       KeyMutex[Empty]
 		started0 = make(chan struct{})
 		locked0  = make(chan struct{})
 		unblock0 = make(chan struct{})
@@ -50,16 +50,16 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 	q := NewQueue(1, func(qh *QueueHandle, x int) (int, error) {
 		if x == 0 {
 			close(started0)
-			km.LockDetached(qh, NoValue{})
+			km.LockDetached(qh, Empty{})
 			close(locked0)
 			<-unblock0
-			km.Unlock(NoValue{})
+			km.Unlock(Empty{})
 		}
 		return x, nil
 	})
 
 	// Take the lock.
-	km.Lock(NoValue{})
+	km.Lock(Empty{})
 
 	// Start the handler for 0, which will have to detach since we're holding
 	// the lock.
@@ -70,7 +70,7 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 	assertIdentityResults(t, q, 1)
 
 	// Release the lock so handler 0 can obtain it.
-	km.Unlock(NoValue{})
+	km.Unlock(Empty{})
 	assertReceiveCount(t, 1, locked0)
 
 	// Start another handler, and ensure it really is blocked behind handler 0.
@@ -89,6 +89,6 @@ func TestKeyMutexDoubleUnlock(t *testing.T) {
 			t.Errorf("unexpected panic: got %v, want %v", r, want)
 		}
 	}()
-	var km KeyMutex[NoValue]
-	km.Unlock(NoValue{})
+	var km KeyMutex[Empty]
+	km.Unlock(Empty{})
 }

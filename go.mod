@@ -1,6 +1,6 @@
 module github.com/ahamlinman/magic-mirror
 
-go 1.23.0
+go 1.24rc3
 
 require (
 	github.com/containerd/platforms v0.2.1
