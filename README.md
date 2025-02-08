@@ -4,35 +4,32 @@ Magic Mirror is an **experimental** and **rough** tool to efficiently copy large
 sets of container images between registries.
 
 Unlike tools that work with single images at a time, Magic Mirror is designed to
-leverage the fundamental properties of container images and the features of
-typical registries to deduplicate work and minimize data transfers, especially
-when the images in a copy set share some of their layers or have only had some
-layers changed since the last copy. It can also perform some lightweight
-transformations during the copy process, such as mirroring only a subset of the
-platforms in a multi-platform source image.
+leverage fundamental properties of container images and common registry features
+to deduplicate work and minimize data transfers, especially when some layers are
+shared between images or already exist in the target registry. It can also
+perform some lightweight transformations during the copy process, such as
+mirroring only a subset of the platforms in a multi-platform source image.
 
 **Magic Mirror is not actively maintained, and not considered appropriate for
-production use.** While it is not known to have any correctness issues (e.g.
-corrupting the contents of images that it mirrors), it is known to have
-implementation deficiencies that limit its effectiveness in certain use cases
-(for example, treating HTTP 429 responses as hard errors rather than backing off
-and retrying). It is provided in the hope that it may be useful as a reference
-or basis for other work, but is mostly intended as a playground for my personal
-learning and exploration with Go, concurrency patterns, and working with
-container image registries.
+production use.** While it is not known to have correctness issues (e.g.
+corrupting image contents), it is known to have implementation deficiencies that
+limit its effectiveness for some use cases (for example, treating HTTP 429
+responses as hard errors rather than backing off and retrying). It is provided
+in the hope that it may be useful as a reference or basis for other work, but is
+mostly intended as a playground for my personal learning and exploration with
+Go, concurrency patterns, and container image registries.
 
 ## Usage
 
 ### Copy Specs
 
-Magic Mirror is designed as a relatively flexible and unopinionated _backend_
-for an image mirroring process, and not so much as a user-friendly frontend to
-be used directly. It works from a sequence of JSON-encoded **copy specs** piped
-from standard input or read from a file, each of which represents a copy from a
-single source image to a single destination image.
+Magic Mirror is designed as a flexible _backend_ for an image mirroring process,
+rather than a user-friendly frontend to be used directly. It reads a sequence of
+JSON-encoded **copy specs** from standard input or a file, each of which
+requests the copy of a specific source image to a specific destination.
 
-Copy specs can be provided as a sequence of JSON objects or arrays of objects
-including the following keys:
+The input must contain a sequence of copy specs, arrays of copy specs, or both.
+Each copy spec must respect the following schema:
 
 - **`src`** (string, required): The name of an image just as you would provide
   to `docker pull`. For example, `alpine` corresponds to the `latest` tag of the
@@ -49,40 +46,37 @@ including the following keys:
     requested platforms, the copy will fail. When `src` is a single-platform
     image, this option is ignored and the image is copied as-is.
 
-The `specs.json` file in this repository is an example of a fully valid input
-that could be provided as-is to the `magic-mirror` CLI. However, **it is
-expected that you will generate specs in some kind of script** using upstream
-data, rather than writing them out by hand like this. For example, you might use
-`skopeo list-tags` to dynamically list the valid tags in a source repository, or
-you might define images and tags in a custom YAML or TOML schema and add a
-hardcoded `limitPlatforms` transform to every spec you generate.
+The `specs.json` file in this repository is an example of a valid input that
+could be provided as-is to the `magic-mirror` CLI. However, **it is expected
+that you will _generate_ specs** from another data source rather than write them
+by hand. For example, you might write a script that pipes `skopeo list-tags`
+into a `jq` filter, or you might list images and tags in a custom YAML or TOML
+schema and add a hardcoded `limitPlatforms` transform to every spec.
 
 ### Validation
 
-To ensure the consistency of a copy operation, Magic Mirror imposes a few
-requirements on the overall set of copy specs provided to a single run:
+To avoid undefined or confusing behavior, the input to a single Magic Mirror run
+must satisfy these requirements:
 
-- A single image reference cannot appear as both a source and a destination.
+- A single image reference must not appear as both a source and a destination.
 - Copy specs can be duplicated, but all copy specs for a given destination image
   must be equivalent, including the full source reference and transformations.
-- When a `sha256:…` digest is specified on a destination reference, the source
+- When a destination reference includes a `sha256:…` digest, the source
   reference must explicitly specify that same digest.
-- A `sha256:…` digest cannot be included in the destination reference of a copy
-  spec that includes transformations.
+- A copy spec that includes transformations must not include a `sha256:…` digest
+  in the destination reference.
 
 ### Registry Authentication
 
-Magic Mirror authenticates to registries when necessary using credentials set by
-`docker login` or `podman login`. [See the go-containerregistry documentation][authn docs]
-for more information about where credentials are found and the format of the
-relevant config files.
+Magic Mirror authenticates to registries using credentials set by `docker login`
+or `podman login`. [See the go-containerregistry documentation][authn docs]
+for information about how credentials are found and the format of relevant
+config files.
 
-Note that if your configuration uses Docker credential helpers, you will need to
-ensure that any requirements for using those helpers are met before running
-Magic Mirror. For example, if you have Docker Desktop installed and are using
-its default credential helper, you may need to have Docker Desktop running to
-use Magic Mirror with private registries, even though Magic Mirror does not
-touch the Docker daemon in any way.
+Note that if your configuration uses Docker credential helpers, you may need to
+satisfy their requirements to run Magic Mirror. For example, if you use Docker
+Desktop, you may need to have it running to authenticate with private registries
+even though Magic Mirror will not touch your Docker daemon in any way.
 
 [authn docs]: https://pkg.go.dev/github.com/google/go-containerregistry@v0.13.0/pkg/authn#section-readme
 
@@ -113,8 +107,7 @@ Later on, to `docker pull` an image, the Docker daemon will:
    **blob** hashes from the manifest.
 
 Since Magic Mirror works with sets of images instead of a single image at a
-time, it can work on several different parts of a large transfer operation at
-the same time, including:
+time, it can work on several parts of a large transfer concurrently, including:
 
 - Downloading image manifests from source registries to determine which blobs
   will need to exist in the destination.
@@ -128,10 +121,9 @@ the same time, including:
 - Writing manifests to destination registries as soon as the required blobs are
   known to exist there.
 
-As Magic Mirror discovers which blobs and platform-specific manifests it will
-need to copy, you may see the total blob and platform counts in the progress
-output continuously increase at the start of the operation and eventually level
-off. Even though Magic Mirror can have copies for many different images in
-flight at the same time, it will try to group blobs and platforms together to
-increase the number of full images that finish copying in the event that things
-get interrupted.
+When Magic Mirror starts a copy operation, you may see the total blob and
+platform counts in the progress output increase as it discovers the specific
+blobs and manifests for the source images, and eventually level off. Even though
+Magic Mirror can have copies for many different images in flight at the same
+time, it will try to group blobs and platforms together to increase the number
+of fully copied images if it gets interrupted.
