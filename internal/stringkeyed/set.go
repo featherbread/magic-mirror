@@ -68,8 +68,8 @@ func (s *Set) Add(elems ...string) {
 	s.joined = strings.Join(all, unitSeparator)
 }
 
-// Cardinality returns the number of elements in s. It is more efficient than
-// computing the length of the slice returned by ToSlice.
+// Cardinality returns the number of elements in s in O(n) time. It is more
+// efficient than computing the length of the slice returned by ToSlice.
 func (s Set) Cardinality() int {
 	switch s.joined {
 	case "":
