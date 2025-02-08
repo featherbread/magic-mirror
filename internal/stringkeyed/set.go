@@ -49,17 +49,19 @@ func SetOf(elems ...string) (s Set) {
 
 // Add turns s into the union of s and the provided elements.
 func (s *Set) Add(elems ...string) {
-	all := append(s.ToSlice(), elems...)
+	all := make([]string, 0, s.Cardinality()+len(elems))
+	all = slices.AppendSeq(all, s.All())
+	all = append(all, elems...)
 	slices.Sort(all)
 	all = slices.Compact(all)
 	if len(all) == 1 && all[0] == "" {
 		s.joined = unitSeparator
-	} else {
-		for i, elem := range all {
-			all[i] = encode(elem)
-		}
-		s.joined = strings.Join(all, unitSeparator)
+		return
 	}
+	for i, elem := range all {
+		all[i] = encode(elem)
+	}
+	s.joined = strings.Join(all, unitSeparator)
 }
 
 // Cardinality returns the number of elements in s. It is more efficient than
