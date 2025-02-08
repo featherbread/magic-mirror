@@ -85,16 +85,8 @@ func (s Set) All() iter.Seq[string] {
 			yield("")
 			return
 		}
-
-		next, rest := "", s.joined
-		for {
-			idx := strings.Index(rest, unitSeparator)
-			if idx < 0 {
-				yield(decode(rest))
-				return
-			}
-			next, rest = rest[:idx], rest[idx+len(unitSeparator):]
-			if !yield(decode(next)) {
+		for elem := range strings.SplitSeq(s.joined, unitSeparator) {
+			if !yield(decode(elem)) {
 				return
 			}
 		}
