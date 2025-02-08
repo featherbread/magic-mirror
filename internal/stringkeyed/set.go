@@ -50,10 +50,35 @@ func SetOf(elems ...string) (s Set) {
 // Add turns s into the union of s and the provided elements.
 func (s *Set) Add(elems ...string) {
 	all := make([]string, 0, s.Cardinality()+len(elems))
-	all = slices.AppendSeq(all, s.All())
-	all = append(all, elems...)
-	slices.Sort(all)
-	all = slices.Compact(all)
+
+	next, stop := iter.Pull(s.All())
+	defer stop()
+	old, ok := next()
+
+	slices.Sort(elems)
+	i := 0
+
+	for ok && i < len(elems) {
+		switch {
+		case old == elems[i]:
+			all = appendUnique(all, old)
+			old, ok = next()
+			i++
+		case old < elems[i]:
+			all = appendUnique(all, old)
+			old, ok = next()
+		case elems[i] < old:
+			all = appendUnique(all, elems[i])
+			i++
+		}
+	}
+	for _, elem := range elems[i:] {
+		all = appendUnique(all, elem)
+	}
+	for ; ok; old, ok = next() {
+		all = append(all, old)
+	}
+
 	if len(all) == 1 && all[0] == "" {
 		s.joined = unitSeparator
 		return
@@ -62,6 +87,13 @@ func (s *Set) Add(elems ...string) {
 		all[i] = encode(elem)
 	}
 	s.joined = strings.Join(all, unitSeparator)
+}
+
+func appendUnique(all []string, elem string) []string {
+	if len(all) == 0 || all[len(all)-1] != elem {
+		return append(all, elem)
+	}
+	return all
 }
 
 // Cardinality returns the number of elements in s. It is more efficient than
