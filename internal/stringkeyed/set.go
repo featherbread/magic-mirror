@@ -38,8 +38,7 @@ type Set struct {
 	// The representation of a particular set of elements is not guaranteed to
 	// remain stable over time. This internal representation must not be stored or
 	// transmitted outside of the process that created it.
-	joined      string
-	cardinality int
+	joined string
 }
 
 // SetOf returns a new [Set] containing the provided elements.
@@ -60,20 +59,26 @@ func (s *Set) Add(elems ...string) {
 	slices.Sort(all)
 	all = slices.Compact(all)
 	if len(all) == 1 && all[0] == "" {
-		s.joined, s.cardinality = unitSeparator, 1
+		s.joined = unitSeparator
 		return
 	}
 	for i, elem := range all {
 		all[i] = encode(elem)
 	}
 	s.joined = strings.Join(all, unitSeparator)
-	s.cardinality = len(all)
 }
 
 // Cardinality returns the number of elements in s. It is more efficient than
 // computing the length of the slice returned by ToSlice.
 func (s Set) Cardinality() int {
-	return s.cardinality
+	switch s.joined {
+	case "":
+		return 0
+	case unitSeparator:
+		return 1
+	default:
+		return 1 + strings.Count(s.joined, unitSeparator)
+	}
 }
 
 // All returns an iterator over the sorted elements in s.
