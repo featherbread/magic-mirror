@@ -48,6 +48,10 @@ func SetOf(elems ...string) (s Set) {
 }
 
 // Add turns s into the union of s and the provided elements.
+//
+// In the worst case, the time complexity of Add is O(n log n) in the size of
+// the combined set. Typical implementations of Go can Add a single element in
+// O(n) time.
 func (s *Set) Add(elems ...string) {
 	all := make([]string, 0, s.Cardinality()+len(elems))
 	all = slices.AppendSeq(all, s.All())
