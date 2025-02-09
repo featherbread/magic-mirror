@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"iter"
 	"slices"
 	"strings"
@@ -152,11 +151,27 @@ func decode(elem string) string {
 }
 
 func decodeAscii85Element(elem string) string {
-	var builder strings.Builder
-	encoded := elem[1:] // Strip off the Shift Out byte used to mark the Ascii85 encoding.
-	_, err := io.Copy(&builder, ascii85.NewDecoder(strings.NewReader(encoded)))
-	if err != nil {
-		panic(fmt.Errorf("invalid stringkeyed.Set encoding: %q: %v", elem, err))
+	// In the general case, Ascii85 encodes 4 bytes into 5 ASCII characters.
+	// A major exception is that 4 zero bytes encode to the single character "z".
+	// It's not impossible to pre-compute the length of the decoded output,
+	// but it's far trickier than this strategy of estimating and reallocating.
+	var (
+		encoded = []byte(elem[1:]) // Strip the Shift Out byte used to mark Ascii85 elements.
+		decoded = make([]byte, max(4, len(encoded)))
+		outlen  int
+	)
+	for len(encoded) > 0 {
+		if len(decoded[outlen:]) < 4 {
+			realloc := make([]byte, len(decoded)*2)
+			copy(realloc, decoded)
+			decoded = realloc
+		}
+		ndst, nsrc, err := ascii85.Decode(decoded[outlen:], encoded, true)
+		if err != nil {
+			panic(fmt.Errorf("invalid stringkeyed.Set encoding: %q: %v", elem, err))
+		}
+		encoded = encoded[nsrc:]
+		outlen += ndst
 	}
-	return builder.String()
+	return string(decoded[:outlen])
 }
