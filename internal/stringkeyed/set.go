@@ -20,8 +20,11 @@ type assertComparable[T comparable] struct{}
 
 var _ assertComparable[Set]
 
-// Set is a set of strings that is comparable with == and !=. The zero value is
-// a valid and empty set.
+// Set is a set of strings that supports comparison with == and != by foregoing
+// O(1) insertion and membership tests. The zero value is the empty set.
+//
+// This implementation of Set may handle elements containing the byte values of
+// ASCII control characters less efficiently than elements without such bytes.
 type Set struct {
 	// The internal representation of a Set is formed by sorting its raw elements,
 	// encoding each one, and concatenating them with the byte 0x1F (the ASCII
