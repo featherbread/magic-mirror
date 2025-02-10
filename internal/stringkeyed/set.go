@@ -1,11 +1,10 @@
 package stringkeyed
 
 import (
-	"encoding/ascii85"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"iter"
 	"slices"
 	"strings"
@@ -32,7 +31,7 @@ type Set struct {
 	//
 	// The per-element encoding has two forms. If the encoded element begins with
 	// the byte 0x0E (the ASCII Shift Out character), the remaining bytes of the
-	// encoded element are an Ascii85 encoding of the original raw element.
+	// encoded element are the base64 encoding of the original raw element.
 	// Otherwise, the encoded element is equivalent to the original raw element.
 	//
 	// As a special case, the set containing only the empty string is represented
@@ -130,36 +129,33 @@ func (s *Set) UnmarshalJSON(b []byte) error {
 
 func encode(elem string) string {
 	// The per-element encoding is defined in terms of the final encoded form,
-	// so we can be flexible about when we apply Ascii85. For now, we do so in
+	// so we can be flexible about when we apply base64. For now, we do so in
 	// the two cases that absolutely require it: when the raw element contains
 	// a Unit Separator (confusable with the element separator) or starts with
-	// a Shift Out (confusable with the Ascii85 marker).
+	// a Shift Out (confusable with the base64 marker).
 	if strings.Contains(elem, unitSeparator) || strings.HasPrefix(elem, shiftOut) {
-		return encodeAscii85Element(elem)
+		return encodeBase64Element(elem)
 	}
 	return elem
 }
 
-func encodeAscii85Element(elem string) string {
-	out := make([]byte, 1+ascii85.MaxEncodedLen(len(elem)))
-	out[0] = shiftOut[0]
-	outlen := ascii85.Encode(out[1:], []byte(elem))
-	return string(out[:1+outlen])
+func encodeBase64Element(elem string) string {
+	// Note that AppendEncode grows the slice once based on EncodeLen;
+	// no further work is required of us to make this allocation efficient.
+	return string(base64.StdEncoding.AppendEncode([]byte(shiftOut), []byte(elem)))
 }
 
 func decode(elem string) string {
 	if strings.HasPrefix(elem, shiftOut) {
-		return decodeAscii85Element(elem)
+		return decodeBase64Element(elem)
 	}
 	return elem
 }
 
-func decodeAscii85Element(elem string) string {
-	var builder strings.Builder
-	encoded := elem[1:] // Strip off the Shift Out byte used to mark the Ascii85 encoding.
-	_, err := io.Copy(&builder, ascii85.NewDecoder(strings.NewReader(encoded)))
+func decodeBase64Element(elem string) string {
+	out, err := base64.StdEncoding.DecodeString(elem[1:]) // Strip the Shift Out byte.
 	if err != nil {
 		panic(fmt.Errorf("invalid stringkeyed.Set encoding: %q: %v", elem, err))
 	}
-	return builder.String()
+	return string(out)
 }
