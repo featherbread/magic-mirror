@@ -321,7 +321,7 @@ func (q *Queue[K, V]) handleDetach() {
 	// biases toward unblocking the detacher as quickly as possible. But since the
 	// typical use for detaching is to block on another resource, we can afford to
 	// spend some quality time with the state lock, and perhaps relinquish our
-	// work grant instead of spawning a new goroutine to transfer it.
+	// work grant directly instead of spawning a new goroutine to transfer it.
 	if key, ok := q.tryGetQueuedKey(); ok {
 		go q.work(&key)
 	}
