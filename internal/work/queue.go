@@ -105,7 +105,7 @@ type workState[K comparable] struct {
 	grants      int
 	maxGrants   int
 	reattachers int
-	keys        *deque.Deque[K]
+	keys        deque.Deque[K]
 }
 
 // NewQueue creates a [Queue] with the provided concurrency limit and handler.
@@ -113,10 +113,7 @@ type workState[K comparable] struct {
 // If concurrency <= 0, the queue is created with an effectively unlimited
 // concurrency of [math.MaxInt].
 func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue[K, V] {
-	state := workState[K]{
-		keys:      deque.New[K](),
-		maxGrants: concurrency,
-	}
+	state := workState[K]{maxGrants: concurrency}
 	if state.maxGrants <= 0 {
 		state.maxGrants = math.MaxInt
 	}
@@ -221,7 +218,7 @@ func (q *Queue[K, V]) scheduleNewKeys(enqueue enqueueFunc[K], keys []K) {
 	newGrants := min(q.state.maxGrants-q.state.grants, len(keys))
 	initialKeys, queuedKeys := keys[:newGrants], keys[newGrants:]
 	q.state.grants += newGrants
-	enqueue(q.state.keys, queuedKeys)
+	enqueue(&q.state.keys, queuedKeys)
 	q.stateMu.Unlock()
 
 	for _, key := range initialKeys {
