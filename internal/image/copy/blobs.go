@@ -109,9 +109,17 @@ func (c *blobCopier) copyOneBlob(qh *work.QueueHandle, req blobCopyRequest) (err
 		return nil
 	}
 
+	// Since the source set is a Go map under the hood, we expect Go's random map
+	// iteration order to balance the use of different sources when the same blob
+	// is copied to multiple destinations.
+	allSources := srcSet.ToSlice()
+	source := allSources[0]
+
+	// If we have access to another repository on the same destination registry
+	// that we know contains this blob, it's cheaper for the registry to copy it
+	// locally ("mounting" it) than for us to send it.
 	var mountRepo image.Repository
-	sources := srcSet.ToSlice()
-	for _, src := range sources {
+	for _, src := range allSources {
 		if src.Registry == req.Dst.Registry {
 			mountRepo = src
 			break
@@ -127,10 +135,9 @@ func (c *blobCopier) copyOneBlob(qh *work.QueueHandle, req blobCopyRequest) (err
 		return nil
 	}
 
-	blob, size, err := downloadBlob(sources[0], req.Digest)
+	blob, size, err := downloadBlob(source, req.Digest)
 	if err != nil {
-		// TODO: DELETE the upload request to cancel it.
-		return err
+		return err // TODO: DELETE the upload request to cancel it.
 	}
 	defer blob.Close()
 
@@ -162,7 +169,7 @@ func (c *blobCopier) copyOneBlob(qh *work.QueueHandle, req blobCopyRequest) (err
 		return err
 	}
 
-	log.Verbosef("[blob]\tcopied %s@%s to %s", sources[0], req.Digest, req.Dst)
+	log.Verbosef("[blob]\tcopied %s@%s to %s", source, req.Digest, req.Dst)
 	return nil
 }
 
