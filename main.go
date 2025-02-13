@@ -88,17 +88,13 @@ func readNextCopySpecs(decoder *json.Decoder) ([]copy.Spec, error) {
 		return []copy.Spec{nextValue}, nil
 	}
 
-	var (
-		realErr          error
-		unmarshalTypeErr *json.UnmarshalTypeError
-	)
+	var unmarshalTypeErr *json.UnmarshalTypeError
 	switch {
 	case errors.As(sliceErr, &unmarshalTypeErr):
-		realErr = valueErr
+		return nil, valueErr
 	default:
-		realErr = sliceErr
+		return nil, sliceErr
 	}
-	return nil, realErr
 }
 
 type stdinWarningReader struct {
