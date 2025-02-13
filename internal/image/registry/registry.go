@@ -12,6 +12,31 @@ import (
 	"github.com/ahamlinman/magic-mirror/internal/image"
 )
 
+// Error is the type of the structured error that [Client.DoExpecting] returns
+// when a request yields an unexpected response code.
+type Error = transport.Error
+
+// Client is an HTTP client with registry-specific helpers.
+type Client struct {
+	http.Client
+}
+
+// DoExpecting performs an HTTP request, then asserts that the status code of
+// the response is among those listed. If it is not, DoExpecting consumes and
+// closes resp.Body to return a non-nil error based on the response content,
+// along with the remainder of the response value.
+func (c Client) DoExpecting(req *http.Request, codes ...int) (resp *http.Response, err error) {
+	resp, err = c.Client.Do(req)
+	if err != nil {
+		return
+	}
+	err = transport.CheckError(resp, codes...)
+	if err != nil {
+		resp.Body.Close()
+	}
+	return
+}
+
 // Scope represents a permission on a particular image repository.
 type Scope string
 
@@ -31,7 +56,7 @@ type clientKey struct {
 }
 
 var (
-	clients   = make(map[clientKey]http.Client)
+	clients   = make(map[clientKey]Client)
 	clientsMu sync.Mutex
 )
 
@@ -39,7 +64,7 @@ var (
 // requests to the provided image repository with the provided scope. The
 // returned client is safe for concurrent use by multiple goroutines, and may be
 // shared with other callers.
-func GetClient(repo image.Repository, scope Scope) (http.Client, error) {
+func GetClient(repo image.Repository, scope Scope) (Client, error) {
 	clientsMu.Lock()
 	defer clientsMu.Unlock()
 
@@ -49,18 +74,11 @@ func GetClient(repo image.Repository, scope Scope) (http.Client, error) {
 	}
 
 	transport, err := getTransport(repo, string(scope))
-	client := http.Client{Transport: transport}
+	client := Client{http.Client{Transport: transport}}
 	if err == nil {
 		clients[key] = client
 	}
 	return client, err
-}
-
-// CheckResponse validates that the response code is within the provided set of
-// codes. If it is not, CheckResponse consumes the response body and returns a
-// detailed error.
-func CheckResponse(resp *http.Response, codes ...int) error {
-	return transport.CheckError(resp, codes...)
 }
 
 func getTransport(repo image.Repository, scope string) (http.RoundTripper, error) {

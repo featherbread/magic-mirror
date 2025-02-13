@@ -36,12 +36,13 @@ func uploadManifest(img image.Image, manifest image.ManifestKind) error {
 	}
 	req.Header.Add("Content-Type", manifest.Descriptor().MediaType)
 
-	resp, err := client.Do(req)
+	resp, err := client.DoExpecting(req, http.StatusCreated)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	return registry.CheckResponse(resp, http.StatusCreated)
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	return nil
 }
 
 type manifestCache struct {
@@ -75,15 +76,11 @@ func (d *manifestCache) handleRequest(_ *work.QueueHandle, img image.Image) (res
 	}
 	downloadReq.Header.Add("Accept", strings.Join(image.AllManifestMediaTypes, ","))
 
-	downloadResp, err := client.Do(downloadReq)
+	downloadResp, err := client.DoExpecting(downloadReq, http.StatusOK)
 	if err != nil {
 		return
 	}
 	defer downloadResp.Body.Close()
-	err = registry.CheckResponse(downloadResp, http.StatusOK)
-	if err != nil {
-		return
-	}
 
 	contentType := image.MediaType(downloadResp.Header.Get("Content-Type"))
 	body, err := io.ReadAll(downloadResp.Body)

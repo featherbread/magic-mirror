@@ -160,14 +160,12 @@ func (c *blobCopier) copyOneBlob(qh *work.QueueHandle, req blobCopyRequest) (err
 		return err
 	}
 
-	uploadResp, err := client.Do(uploadReq)
+	uploadResp, err := client.DoExpecting(uploadReq, http.StatusCreated)
 	if err != nil {
 		return err
 	}
-	defer uploadResp.Body.Close()
-	if err := registry.CheckResponse(uploadResp, http.StatusCreated); err != nil {
-		return err
-	}
+	io.Copy(io.Discard, uploadResp.Body)
+	uploadResp.Body.Close()
 
 	log.Verbosef("[blob]\tcopied %s@%s to %s", source, req.Digest, req.Dst)
 	return nil
@@ -186,12 +184,13 @@ func checkForExistingBlob(repo image.Repository, dgst digest.Digest) (bool, erro
 		return false, err
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.DoExpecting(req, http.StatusOK, http.StatusNotFound)
 	if err != nil {
 		return false, err
 	}
-	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK, registry.CheckResponse(resp, http.StatusOK, http.StatusNotFound)
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK, nil
 }
 
 func downloadBlob(repo image.Repository, dgst digest.Digest) (r io.ReadCloser, size int64, err error) {
@@ -207,12 +206,8 @@ func downloadBlob(repo image.Repository, dgst digest.Digest) (r io.ReadCloser, s
 		return nil, 0, err
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.DoExpecting(req, http.StatusOK)
 	if err != nil {
-		return nil, 0, err
-	}
-	if err := registry.CheckResponse(resp, http.StatusOK); err != nil {
-		resp.Body.Close()
 		return nil, 0, err
 	}
 
@@ -243,14 +238,12 @@ func requestBlobUploadURL(repo image.Repository, dgst digest.Digest, mountNamesp
 		return nil, false, err
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.DoExpecting(req, http.StatusCreated, http.StatusAccepted)
 	if err != nil {
 		return nil, false, err
 	}
-	defer resp.Body.Close()
-	if err := registry.CheckResponse(resp, http.StatusCreated, http.StatusAccepted); err != nil {
-		return nil, false, err
-	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
 
 	if resp.StatusCode == http.StatusCreated {
 		// The mount was successful.
