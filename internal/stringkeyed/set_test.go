@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/samber/lo"
+	"github.com/samber/lo/mutable"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -58,7 +59,7 @@ func TestSet(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Description, func(t *testing.T) {
 			elements := slices.Clone(tc.Elements)
-			lo.Shuffle(elements)
+			mutable.Shuffle(elements)
 
 			s := SetOf(elements...)
 			t.Logf("encoded set: %q", s.joined)
@@ -69,7 +70,7 @@ func TestSet(t *testing.T) {
 			assert.Equal(t, tc.Elements, got)
 
 			x := SetOf(elements...)
-			lo.Shuffle(elements)
+			mutable.Shuffle(elements)
 			x.Add(elements...)
 			if s != x {
 				t.Errorf("sets with the same content compared unequal: %q vs. %q", s.joined, x.joined)
