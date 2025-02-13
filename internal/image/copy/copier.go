@@ -2,6 +2,7 @@ package copy
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -58,9 +59,18 @@ func newCopier(concurrency int) *copier {
 }
 
 func (c *copier) CopyAll(specs ...Spec) error {
-	_, err := c.queue.GetAll(specs...)
+	// Pre-submit everything to the queue to get it going.
+	go func() { c.queue.GetAll(specs...) }()
+
+	// Then, aggregate all of the errors, rather than GetAll's behavior of
+	// stopping on the first one.
+	errs := make([]error, len(specs))
+	for i, spec := range specs {
+		_, errs[i] = c.queue.Get(spec)
+	}
+
 	c.printStats()
-	return err
+	return errors.Join(errs...)
 }
 
 const statsInterval = 5 * time.Second
