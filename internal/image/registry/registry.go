@@ -42,7 +42,7 @@ func (c Client) DoExpecting(req *http.Request, codes ...int) (resp *http.Respons
 // closes resp.Body. Body will always be nil in the returned response, which
 // differs from [http.Client]'s behavior of always returning a non-nil Body.
 func (c Client) DoExpectingNoBody(req *http.Request, codes ...int) (resp *http.Response, err error) {
-	resp, err = c.DoExpecting(req)
+	resp, err = c.DoExpecting(req, codes...)
 	if err == nil {
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
