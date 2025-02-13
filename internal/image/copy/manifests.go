@@ -36,13 +36,8 @@ func uploadManifest(img image.Image, manifest image.ManifestKind) error {
 	}
 	req.Header.Add("Content-Type", manifest.Descriptor().MediaType)
 
-	resp, err := client.DoExpecting(req, http.StatusCreated)
-	if err != nil {
-		return err
-	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
-	return nil
+	_, err = client.DoExpectingNoBody(req, http.StatusCreated)
+	return err
 }
 
 type manifestCache struct {
@@ -55,7 +50,7 @@ func newManifestCache(concurrency int) *manifestCache {
 	return d
 }
 
-func (d *manifestCache) handleRequest(_ *work.QueueHandle, img image.Image) (resp image.ManifestKind, err error) {
+func (d *manifestCache) handleRequest(_ *work.QueueHandle, img image.Image) (image.ManifestKind, error) {
 	reference := img.Digest.String()
 	if reference == "" {
 		reference = img.Tag
@@ -65,46 +60,48 @@ func (d *manifestCache) handleRequest(_ *work.QueueHandle, img image.Image) (res
 
 	client, err := registry.GetClient(img.Repository, registry.PullScope)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	u := img.Registry.APIBaseURL()
 	u.Path = fmt.Sprintf("/v2/%s/manifests/%s", img.Namespace, reference)
-	downloadReq, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return
+		return nil, err
 	}
-	downloadReq.Header.Add("Accept", strings.Join(image.AllManifestMediaTypes, ","))
+	req.Header.Add("Accept", strings.Join(image.AllManifestMediaTypes, ","))
 
-	downloadResp, err := client.DoExpecting(downloadReq, http.StatusOK)
+	resp, err := client.DoExpecting(req, http.StatusOK)
 	if err != nil {
-		return
+		return nil, err
 	}
-	defer downloadResp.Body.Close()
-
-	contentType := image.MediaType(downloadResp.Header.Get("Content-Type"))
-	body, err := io.ReadAll(downloadResp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body.Close()
 
 	if img.Digest != "" {
 		verifier := img.Digest.Verifier()
 		io.Copy(verifier, bytes.NewReader(body))
 		if !verifier.Verified() {
-			err = fmt.Errorf("content of %s does not match specified digest", img)
-			return
+			return nil, fmt.Errorf("content of %s does not match specified digest", img)
 		}
 	}
 
+	var result image.ManifestKind
+	contentType := image.MediaType(resp.Header.Get("Content-Type"))
 	switch {
 	case contentType.IsIndex():
 		var index image.RawIndex
 		err = json.Unmarshal(body, &index)
-		resp = index
+		result = index
 	case contentType.IsManifest():
 		var manifest image.RawManifest
 		err = json.Unmarshal(body, &manifest)
-		resp = manifest
+		result = manifest
 	default:
 		err = fmt.Errorf("unknown manifest type for %s: %s", img, contentType)
 	}
-	return
+	return result, err
 }

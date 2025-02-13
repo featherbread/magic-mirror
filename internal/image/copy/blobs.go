@@ -160,12 +160,10 @@ func (c *blobCopier) copyOneBlob(qh *work.QueueHandle, req blobCopyRequest) (err
 		return err
 	}
 
-	uploadResp, err := client.DoExpecting(uploadReq, http.StatusCreated)
+	_, err = client.DoExpectingNoBody(uploadReq, http.StatusCreated)
 	if err != nil {
 		return err
 	}
-	io.Copy(io.Discard, uploadResp.Body)
-	uploadResp.Body.Close()
 
 	log.Verbosef("[blob]\tcopied %s@%s to %s", source, req.Digest, req.Dst)
 	return nil
@@ -184,12 +182,10 @@ func checkForExistingBlob(repo image.Repository, dgst digest.Digest) (bool, erro
 		return false, err
 	}
 
-	resp, err := client.DoExpecting(req, http.StatusOK, http.StatusNotFound)
+	resp, err := client.DoExpectingNoBody(req, http.StatusOK, http.StatusNotFound)
 	if err != nil {
 		return false, err
 	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
 	return resp.StatusCode == http.StatusOK, nil
 }
 
@@ -238,12 +234,10 @@ func requestBlobUploadURL(repo image.Repository, dgst digest.Digest, mountNamesp
 		return nil, false, err
 	}
 
-	resp, err := client.DoExpecting(req, http.StatusCreated, http.StatusAccepted)
+	resp, err := client.DoExpectingNoBody(req, http.StatusCreated, http.StatusAccepted)
 	if err != nil {
 		return nil, false, err
 	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
 
 	if resp.StatusCode == http.StatusCreated {
 		// The mount was successful.

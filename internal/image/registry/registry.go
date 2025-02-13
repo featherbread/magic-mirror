@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"sync"
 
@@ -34,6 +35,19 @@ func (c Client) DoExpecting(req *http.Request, codes ...int) (resp *http.Respons
 	if err != nil {
 		resp.Body.Close()
 	}
+	return
+}
+
+// DoExpectingNoBody behaves like [Client.DoExpecting], but always discards and
+// closes resp.Body. Body will always be nil in the returned response, which
+// differs from [http.Client]'s behavior of always returning a non-nil Body.
+func (c Client) DoExpectingNoBody(req *http.Request, codes ...int) (resp *http.Response, err error) {
+	resp, err = c.DoExpecting(req)
+	if err == nil {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}
+	resp.Body = nil
 	return
 }
 
