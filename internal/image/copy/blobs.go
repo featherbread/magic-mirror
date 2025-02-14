@@ -39,7 +39,7 @@ type blobCopyMutexKey struct {
 
 func newBlobCopier(concurrency int) *blobCopier {
 	c := &blobCopier{sourceMap: make(map[digest.Digest]mapset.Set[image.Repository])}
-	c.SetQueue = work.NewSetQueue(concurrency, c.copyOneBlob)
+	c.SetQueue = work.NewSetQueue(concurrency, c.copyBlob)
 	return c
 }
 
@@ -80,7 +80,7 @@ func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {
 	return set
 }
 
-func (c *blobCopier) copyOneBlob(qh *work.QueueHandle, req blobCopyRequest) (err error) {
+func (c *blobCopier) copyBlob(qh *work.QueueHandle, req blobCopyRequest) (err error) {
 	// If another handler is copying this blob to the same registry, wait for it
 	// to finish so we can do a cross-repository mount instead of pulling from the
 	// source again.

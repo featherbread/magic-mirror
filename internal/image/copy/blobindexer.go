@@ -48,7 +48,6 @@ func (bi *blobIndexer) Submit(repo image.Repository, manifest image.ManifestKind
 func (bi *blobIndexer) queueManifestsFromIndex(repo image.Repository, index image.Index) {
 	descriptors := index.Parsed().Manifests
 	for _, desc := range descriptors {
-		desc := desc
 		go func() {
 			manifest, err := bi.manifests.Get(image.Image{Repository: repo, Digest: desc.Digest})
 			if err == nil {

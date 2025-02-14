@@ -46,11 +46,11 @@ type manifestCache struct {
 
 func newManifestCache(concurrency int) *manifestCache {
 	d := &manifestCache{}
-	d.Queue = work.NewQueue(concurrency, d.handleRequest)
+	d.Queue = work.NewQueue(concurrency, d.getManifest)
 	return d
 }
 
-func (d *manifestCache) handleRequest(_ *work.QueueHandle, img image.Image) (image.ManifestKind, error) {
+func (d *manifestCache) getManifest(_ *work.QueueHandle, img image.Image) (image.ManifestKind, error) {
 	reference := img.Digest.String()
 	if reference == "" {
 		reference = img.Tag

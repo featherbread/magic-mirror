@@ -53,7 +53,7 @@ func newCopier(concurrency int) *copier {
 		dstManifests: dstManifests,
 		dstIndexer:   dstIndexer,
 	}
-	c.queue = work.NewSetQueue(0, c.handleRequest)
+	c.queue = work.NewSetQueue(0, c.copySpec)
 	c.statsTimer = time.AfterFunc(statsInterval, c.printStats)
 	return c
 }
@@ -91,7 +91,7 @@ func (c *copier) printStats() {
 	c.statsTimer.Reset(statsInterval)
 }
 
-func (c *copier) handleRequest(_ *work.QueueHandle, spec Spec) error {
+func (c *copier) copySpec(_ *work.QueueHandle, spec Spec) error {
 	log.Verbosef("[image]\tstarting copy from %s to %s", spec.Src, spec.Dst)
 
 	var (

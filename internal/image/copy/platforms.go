@@ -27,7 +27,7 @@ func newPlatformCopier(manifests *manifestCache, blobs *blobCopier) *platformCop
 		manifests: manifests,
 		blobs:     blobs,
 	}
-	c.Queue = work.NewQueue(0, c.handleRequest)
+	c.Queue = work.NewQueue(0, c.copyPlatform)
 	return c
 }
 
@@ -49,7 +49,7 @@ func (c *platformCopier) CopyAll(dst image.Repository, srcs ...image.Image) ([]i
 	return c.Queue.GetAll(reqs...)
 }
 
-func (c *platformCopier) handleRequest(_ *work.QueueHandle, req platformCopyRequest) (m image.Manifest, err error) {
+func (c *platformCopier) copyPlatform(_ *work.QueueHandle, req platformCopyRequest) (m image.Manifest, err error) {
 	// We share this manifest cache with the top-level copier. The top level
 	// requests both indexes and platform manifests, without knowing in advance
 	// what it'll get. This level always gets platform manifests, which are
