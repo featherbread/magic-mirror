@@ -360,10 +360,9 @@ type QueueHandle struct {
 // [QueueHandle.Reattach] permits a detached handler to reestablish itself
 // within the queue's concurrency limit ahead of the handling of new keys.
 //
-// A typical use for detaching is to block on the completion of another handler
-// for the same queue, where caching or other side effects from that handler
-// may be useful. [KeyMutex] facilitates this by detaching from a queue while
-// awaiting a lock on a key.
+// A typical use for detaching is to block on the availability of another
+// resource. [KeyMutex] can facilitate this by detaching from a queue while
+// awaiting a lock on a comparable key representing the resource.
 func (qh *QueueHandle) Detach() bool {
 	if qh.detached {
 		return false
