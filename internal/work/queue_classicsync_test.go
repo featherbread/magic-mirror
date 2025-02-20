@@ -310,20 +310,17 @@ func TestQueueDetachReturn(t *testing.T) {
 		unblockAttached = make(chan struct{})
 	)
 	q := NewQueue(1, func(qh *QueueHandle, x int) (int, error) {
-		switch {
-		case x < 0:
+		if x < 0 {
 			qh.Detach()
 			ready <- struct{}{}
 			<-unblockDetached
-
-		default:
+		} else {
 			if inflight.Add(1) > 1 {
 				breached.Store(true)
 			}
 			defer inflight.Add(-1)
 			<-unblockAttached
 		}
-
 		return x, nil
 	})
 
