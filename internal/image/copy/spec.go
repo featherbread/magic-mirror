@@ -18,7 +18,7 @@ import (
 type Spec struct {
 	Src       image.Image `json:"src"`
 	Dst       image.Image `json:"dst"`
-	Transform Transform   `json:"transform,omitempty"`
+	Transform Transform   `json:"transform,omitzero"`
 }
 
 // Transform represents an optional set of transformations to perform while
@@ -28,7 +28,7 @@ type Transform struct {
 	// source image to those listed. If it is empty, all platforms from the source
 	// image will be copied. If the source image is a single-platform image, this
 	// setting will be ignored and the image will be copied as-is.
-	LimitPlatforms platformSet `json:"limitPlatforms,omitempty"`
+	LimitPlatforms platformSet `json:"limitPlatforms,omitzero"`
 }
 
 type platformSet struct {

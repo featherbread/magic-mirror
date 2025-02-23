@@ -20,7 +20,7 @@ func TestKeyMutexBasicSynctest(t *testing.T) {
 			locked  [keyCount]atomic.Int32
 			unblock = make(chan struct{})
 		)
-		for i := 0; i < workerCount; i++ {
+		for i := range workerCount {
 			key := i / 2
 			go func() {
 				km.Lock(key)
