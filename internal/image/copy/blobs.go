@@ -183,10 +183,8 @@ func checkForExistingBlob(repo image.Repository, dgst digest.Digest) (bool, erro
 	}
 
 	resp, err := client.DoExpectingNoBody(req, http.StatusOK, http.StatusNotFound)
-	if err != nil {
-		return false, err
-	}
-	return resp.StatusCode == http.StatusOK, nil
+	ok := (err == nil && resp.StatusCode == http.StatusOK)
+	return ok, err
 }
 
 func downloadBlob(repo image.Repository, dgst digest.Digest) (r io.ReadCloser, size int64, err error) {
