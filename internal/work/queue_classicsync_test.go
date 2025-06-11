@@ -23,6 +23,7 @@ func TestQueuePanicPropagation(t *testing.T) {
 		assert.Equal(t, want, got)
 	}()
 	q.Get(Empty{})
+	t.Fatal("panic did not propagate")
 }
 
 func TestQueueGoexitPropagation(t *testing.T) {
