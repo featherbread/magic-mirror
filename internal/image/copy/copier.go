@@ -99,11 +99,9 @@ func (c *copier) copySpec(_ *work.QueueHandle, spec Spec) error {
 		dstManifest image.ManifestKind
 		dstErr      error
 	)
-	dstWait.Add(1)
-	go func() {
-		defer dstWait.Done()
+	dstWait.Go(func() {
 		dstManifest, dstErr = c.dstManifests.Get(spec.Dst)
-	}()
+	})
 
 	srcManifest, err := c.srcManifests.Get(spec.Src)
 	if err != nil {
