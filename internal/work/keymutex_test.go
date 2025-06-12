@@ -1,5 +1,3 @@
-//go:build go1.25
-
 package work
 
 import (
@@ -10,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestKeyMutexBasicSynctest(t *testing.T) {
+func TestKeyMutexBasic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const keyCount = 3
 		const workerCount = 2 * keyCount
@@ -47,7 +45,7 @@ func TestKeyMutexBasicSynctest(t *testing.T) {
 	})
 }
 
-func TestKeyMutexDetachReattachSynctest(t *testing.T) {
+func TestKeyMutexDetachReattach(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var (
 			km       KeyMutex[Empty]
