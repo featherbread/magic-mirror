@@ -2,11 +2,10 @@ package stringkeyed
 
 import (
 	"encoding/json"
+	"math/rand/v2"
 	"slices"
 	"testing"
 
-	"github.com/samber/lo"
-	"github.com/samber/lo/mutable"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -59,7 +58,7 @@ func TestSet(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Description, func(t *testing.T) {
 			elements := slices.Clone(tc.Elements)
-			mutable.Shuffle(elements)
+			shuffle(elements)
 
 			s := SetOf(elements...)
 			t.Logf("encoded set: %q", s.joined)
@@ -70,13 +69,17 @@ func TestSet(t *testing.T) {
 			assert.Equal(t, tc.Elements, got)
 
 			x := SetOf(elements...)
-			mutable.Shuffle(elements)
+			shuffle(elements)
 			x.Add(elements...)
 			if s != x {
 				t.Errorf("sets with the same content compared unequal: %q vs. %q", s.joined, x.joined)
 			}
 		})
 	}
+}
+
+func shuffle[T any, S ~[]T](ts S) {
+	rand.Shuffle(len(ts), func(i, j int) { ts[i], ts[j] = ts[j], ts[i] })
 }
 
 func TestSetIterateEmpty(t *testing.T) {
@@ -119,27 +122,6 @@ func TestSetUnmarshalJSONInvalid(t *testing.T) {
 	} else {
 		t.Logf("unmarshal error was: %v", err)
 	}
-}
-
-func FuzzSetChunkedString(f *testing.F) {
-	f.Fuzz(func(t *testing.T, chunkSize uint, input string) {
-		if chunkSize == 0 {
-			t.SkipNow()
-		}
-
-		chunks := lo.ChunkString(input, int(chunkSize))
-		s := SetOf(chunks...)
-		t.Logf("encoded set: %q", s.joined)
-
-		uniqChunks := lo.Uniq(chunks)
-		slices.Sort(uniqChunks)
-
-		gotChunks := s.ToSlice()
-		assert.Equal(t, len(gotChunks), s.Cardinality())
-		if len(gotChunks) > 0 {
-			assert.Equal(t, uniqChunks, gotChunks)
-		}
-	})
 }
 
 func FuzzSetChunkedBytes(f *testing.F) {
