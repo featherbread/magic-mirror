@@ -58,7 +58,7 @@ func TestSet(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Description, func(t *testing.T) {
 			elements := slices.Clone(tc.Elements)
-			shuffle(elements)
+			rand.Shuffle(len(elements), swapper(elements))
 
 			s := SetOf(elements...)
 			t.Logf("encoded set: %q", s.joined)
@@ -69,7 +69,7 @@ func TestSet(t *testing.T) {
 			assert.Equal(t, tc.Elements, got)
 
 			x := SetOf(elements...)
-			shuffle(elements)
+			rand.Shuffle(len(elements), swapper(elements))
 			x.Add(elements...)
 			if s != x {
 				t.Errorf("sets with the same content compared unequal: %q vs. %q", s.joined, x.joined)
@@ -78,8 +78,14 @@ func TestSet(t *testing.T) {
 	}
 }
 
-func shuffle[T any, S ~[]T](ts S) {
-	rand.Shuffle(len(ts), func(i, j int) { ts[i], ts[j] = ts[j], ts[i] })
+func swapper[T any, S ~[]T](slice S) func(i, j int) {
+	return func(i, j int) { slice[i], slice[j] = slice[j], slice[i] }
+}
+
+func TestTestSwapper(t *testing.T) { // That's right: testing the tests.
+	s := []string{"a", "b", "c"}
+	swapper(s)(0, 1)
+	assert.Equal(t, []string{"b", "a", "c"}, s)
 }
 
 func TestSetIterateEmpty(t *testing.T) {
