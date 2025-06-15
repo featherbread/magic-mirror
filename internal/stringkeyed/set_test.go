@@ -141,3 +141,28 @@ func FuzzSetChunkedString(f *testing.F) {
 		}
 	})
 }
+
+func FuzzSetChunkedBytes(f *testing.F) {
+	f.Fuzz(func(t *testing.T, chunkSize uint, input string) {
+		if chunkSize == 0 {
+			t.SkipNow()
+		}
+
+		var chunks []string
+		for chunk := range slices.Chunk([]byte(input), int(chunkSize)) {
+			chunks = append(chunks, string(chunk))
+		}
+
+		s := SetOf(chunks...)
+		t.Logf("encoded set: %q", s.joined)
+
+		slices.Sort(chunks)
+		chunks = slices.Compact(chunks)
+
+		gotChunks := s.ToSlice()
+		assert.Equal(t, len(gotChunks), s.Cardinality())
+		if len(gotChunks) > 0 {
+			assert.Equal(t, chunks, gotChunks)
+		}
+	})
+}
