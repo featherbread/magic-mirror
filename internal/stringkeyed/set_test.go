@@ -120,13 +120,33 @@ func TestSetUnmarshalJSON(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
-func TestSetUnmarshalJSONInvalid(t *testing.T) {
-	var s Set
-	err := json.Unmarshal([]byte(`["one","two","one"]`), &s)
-	if err == nil {
-		t.Error("successfully unmarshaled an invalid Set from JSON")
-	} else {
-		t.Logf("unmarshal error was: %v", err)
+func TestSetUnmarshalBadJSON(t *testing.T) {
+	testCases := []struct {
+		Description string
+		JSON        string
+	}{
+		{
+			Description: "duplicate values",
+			JSON:        `["one","two","one"]`,
+		},
+		{
+			Description: "object at top level",
+			JSON:        `{"test":true}`,
+		},
+		{
+			Description: "number in array",
+			JSON:        `["one","two",3,"four"]`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Description, func(t *testing.T) {
+			var s Set
+			err := json.Unmarshal([]byte(tc.JSON), &s)
+			if assert.Error(t, err) {
+				t.Logf("error was: %v", err)
+			}
+		})
 	}
 }
 
