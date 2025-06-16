@@ -12,8 +12,9 @@ import (
 
 func TestSetMarshalJSONTo(t *testing.T) {
 	s := SetOf("one", "two", "three")
-	_, err := json.Marshal(s)
-	assert.ErrorIs(t, err, errors.ErrUnsupported)
+	got, err := json.Marshal(s)
+	assert.NoError(t, err)
+	assert.Equal(t, []byte(`["one","three","two"]`), got)
 }
 
 func TestSetUnmarshalJSONFrom(t *testing.T) {
