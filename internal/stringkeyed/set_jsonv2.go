@@ -6,6 +6,9 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
+	"maps"
+	"reflect"
+	"slices"
 )
 
 func (s Set) MarshalJSONTo(e *jsontext.Encoder) error {
@@ -24,16 +27,57 @@ func (s Set) MarshalJSONTo(e *jsontext.Encoder) error {
 }
 
 func (s *Set) UnmarshalJSONFrom(d *jsontext.Decoder) error {
-	var elems []string
-	if err := json.UnmarshalDecode(d, &elems); err != nil {
+	at := d.InputOffset()
+	tok, err := d.ReadToken()
+	if err != nil {
 		return err
 	}
-
-	set := SetOf(elems...)
-	if set.Cardinality() < len(elems) {
-		return errors.New("cannot unmarshal duplicate elements in a set")
+	if tok.Kind() != '[' {
+		return &json.SemanticError{
+			ByteOffset:  at,
+			JSONPointer: d.StackPointer(),
+			JSONKind:    tok.Kind(),
+			GoType:      reflect.TypeFor[Set](),
+			Err:         errors.New("array of strings required"),
+		}
 	}
 
-	*s = set
+	elems := make(map[string]struct{})
+	for {
+		at := d.InputOffset()
+		tok, err := d.ReadToken()
+		if err != nil {
+			return err
+		}
+
+		switch tok.Kind() {
+		case ']':
+			break
+
+		case '"':
+			oldLen := len(elems)
+			elems[tok.String()] = struct{}{}
+			if len(elems) == oldLen {
+				return &json.SemanticError{
+					ByteOffset:  at,
+					JSONPointer: d.StackPointer(),
+					JSONKind:    tok.Kind(),
+					GoType:      reflect.TypeFor[string](),
+					Err:         errors.New("cannot unmarshal duplicate elements in a set"),
+				}
+			}
+
+		default:
+			return &json.SemanticError{
+				ByteOffset:  at,
+				JSONPointer: d.StackPointer(),
+				JSONKind:    tok.Kind(),
+				GoType:      reflect.TypeFor[string](),
+			}
+		}
+	}
+
+	allElems := slices.Collect(maps.Keys(elems))
+	*s = SetOf(allElems...)
 	return nil
 }
