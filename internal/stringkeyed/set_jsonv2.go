@@ -43,6 +43,8 @@ func (s *Set) UnmarshalJSONFrom(d *jsontext.Decoder) error {
 	}
 
 	elems := make(map[string]struct{})
+
+tokenLoop:
 	for {
 		at := d.InputOffset()
 		tok, err := d.ReadToken()
@@ -52,7 +54,7 @@ func (s *Set) UnmarshalJSONFrom(d *jsontext.Decoder) error {
 
 		switch tok.Kind() {
 		case ']':
-			break
+			break tokenLoop
 
 		case '"':
 			oldLen := len(elems)
