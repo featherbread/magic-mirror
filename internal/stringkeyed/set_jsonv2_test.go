@@ -11,6 +11,10 @@ import (
 
 type jsonv1Set struct{ inner Set }
 
+func (s jsonv1Set) MarshalJSON() ([]byte, error) {
+	return s.inner.MarshalJSON()
+}
+
 func (s *jsonv1Set) UnmarshalJSON(b []byte) error {
 	return s.inner.UnmarshalJSON(b)
 }
@@ -35,5 +39,21 @@ func FuzzSetJSONVersions(f *testing.F) {
 		}
 
 		assert.Equal(t, set1.inner.ToSlice(), set2.ToSlice())
+	})
+}
+
+func BenchmarkSetMarshalJSON(b *testing.B) {
+	b.Run("iface=Marshaler", func(b *testing.B) {
+		setv1 := jsonv1Set{SetOf("one", "two", "three", "four", "five")}
+		for b.Loop() {
+			json.Marshal(setv1)
+		}
+	})
+
+	b.Run("iface=MarshalerTo", func(b *testing.B) {
+		setv2 := SetOf("one", "two", "three", "four", "five")
+		for b.Loop() {
+			json.Marshal(setv2)
+		}
 	})
 }
