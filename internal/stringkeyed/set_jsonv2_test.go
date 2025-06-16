@@ -43,17 +43,36 @@ func FuzzSetJSONVersions(f *testing.F) {
 }
 
 func BenchmarkSetMarshalJSON(b *testing.B) {
+	set := SetOf("one", "two", "three", "four", "five")
+
 	b.Run("iface=Marshaler", func(b *testing.B) {
-		setv1 := jsonv1Set{SetOf("one", "two", "three", "four", "five")}
+		setv1 := jsonv1Set{set}
 		for b.Loop() {
 			json.Marshal(setv1)
 		}
 	})
 
 	b.Run("iface=MarshalerTo", func(b *testing.B) {
-		setv2 := SetOf("one", "two", "three", "four", "five")
 		for b.Loop() {
-			json.Marshal(setv2)
+			json.Marshal(set)
+		}
+	})
+}
+
+func BenchmarkSetUnmarshalJSON(b *testing.B) {
+	input := []byte(`["one","two","three","four","five"]`)
+
+	b.Run("iface=Unmarshaler", func(b *testing.B) {
+		for b.Loop() {
+			var set jsonv1Set
+			json.Unmarshal(input, &set)
+		}
+	})
+
+	b.Run("iface=UnmarshalerFrom", func(b *testing.B) {
+		for b.Loop() {
+			var set Set
+			json.Unmarshal(input, &set)
 		}
 	})
 }
