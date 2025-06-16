@@ -22,3 +22,13 @@ func TestSetUnmarshalJSONFrom(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"one", "three", "two"}, s.ToSlice())
 }
+
+func TestSetUnmarshalJSONFromInvalid(t *testing.T) {
+	var s Set
+	err := json.Unmarshal([]byte(`["one","two","one"]`), &s)
+	if err == nil {
+		t.Error("successfully unmarshaled an invalid Set from JSON")
+	} else {
+		t.Logf("unmarshal error was: %v", err)
+	}
+}
