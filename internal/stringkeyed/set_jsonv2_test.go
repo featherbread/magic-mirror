@@ -2,6 +2,9 @@
 
 package stringkeyed
 
+// Note the intentional use of the v1 encoding/json package. For now, I just
+// want to see how the new (un)marshaling implementations work with the older
+// API and semantics. Maybe I'll change this later.
 import (
 	"encoding/json"
 	"testing"
@@ -9,6 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// jsonv1Set hides MarshalJSONTo and UnmarshalJSONFrom to prevent encoding/json
+// from preferring them over the old interfaces.
 type jsonv1Set struct{ inner Set }
 
 func (s jsonv1Set) MarshalJSON() ([]byte, error) {
