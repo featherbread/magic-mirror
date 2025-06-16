@@ -4,6 +4,7 @@ package stringkeyed
 
 import (
 	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 )
 
@@ -22,6 +23,17 @@ func (s Set) MarshalJSONTo(e *jsontext.Encoder) error {
 	return nil
 }
 
-func (s *Set) UnmarshalJSONFrom(*jsontext.Decoder) error {
-	return errors.ErrUnsupported
+func (s *Set) UnmarshalJSONFrom(d *jsontext.Decoder) error {
+	var elems []string
+	if err := json.UnmarshalDecode(d, &elems); err != nil {
+		return err
+	}
+
+	set := SetOf(elems...)
+	if set.Cardinality() < len(elems) {
+		return errors.New("cannot unmarshal duplicate elements in a set")
+	}
+
+	*s = set
+	return nil
 }

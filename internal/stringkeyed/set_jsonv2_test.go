@@ -4,7 +4,6 @@ package stringkeyed
 
 import (
 	"encoding/json"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,5 +19,6 @@ func TestSetMarshalJSONTo(t *testing.T) {
 func TestSetUnmarshalJSONFrom(t *testing.T) {
 	var s Set
 	err := json.Unmarshal([]byte(`["one","two","three"]`), &s)
-	assert.ErrorIs(t, err, errors.ErrUnsupported)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"one", "three", "two"}, s.ToSlice())
 }
