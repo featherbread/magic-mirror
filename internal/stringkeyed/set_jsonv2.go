@@ -11,19 +11,19 @@ import (
 	"slices"
 )
 
-func (s Set) MarshalJSONTo(e *jsontext.Encoder) error {
-	if err := e.WriteToken(jsontext.BeginArray); err != nil {
-		return err
-	}
-	for element := range s.All() {
-		if err := e.WriteToken(jsontext.String(element)); err != nil {
-			return err
+func (s Set) MarshalJSONTo(e *jsontext.Encoder) (err error) {
+	writeToken := func(tok jsontext.Token) {
+		if err == nil {
+			err = e.WriteToken(tok)
 		}
 	}
-	if err := e.WriteToken(jsontext.EndArray); err != nil {
-		return err
+
+	writeToken(jsontext.BeginArray)
+	for element := range s.All() {
+		writeToken(jsontext.String(element))
 	}
-	return nil
+	writeToken(jsontext.EndArray)
+	return
 }
 
 func (s *Set) UnmarshalJSONFrom(d *jsontext.Decoder) error {
