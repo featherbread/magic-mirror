@@ -28,14 +28,12 @@ func (s Set) MarshalJSONTo(e *jsontext.Encoder) (err error) {
 }
 
 func (s *Set) UnmarshalJSONFrom(d *jsontext.Decoder) error {
-	at := d.InputOffset()
 	tok, err := d.ReadToken()
 	if err != nil {
 		return err
 	}
 	if tok.Kind() != '[' {
 		return &json.SemanticError{
-			ByteOffset:  at,
 			JSONPointer: d.StackPointer(),
 			JSONKind:    tok.Kind(),
 			GoType:      reflect.TypeFor[Set](),
@@ -47,7 +45,6 @@ func (s *Set) UnmarshalJSONFrom(d *jsontext.Decoder) error {
 
 tokenLoop:
 	for {
-		at := d.InputOffset()
 		tok, err := d.ReadToken()
 		if err != nil {
 			return err
@@ -62,7 +59,6 @@ tokenLoop:
 			elems[tok.String()] = struct{}{}
 			if len(elems) == oldLen {
 				return &json.SemanticError{
-					ByteOffset:  at,
 					JSONPointer: d.StackPointer(),
 					JSONKind:    tok.Kind(),
 					GoType:      reflect.TypeFor[string](),
@@ -72,7 +68,6 @@ tokenLoop:
 
 		default:
 			return &json.SemanticError{
-				ByteOffset:  at,
 				JSONPointer: d.StackPointer(),
 				JSONKind:    tok.Kind(),
 				GoType:      reflect.TypeFor[string](),
