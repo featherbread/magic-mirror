@@ -20,11 +20,9 @@ func (s Set) MarshalJSONTo(e *jsontext.Encoder) (err error) {
 	}
 
 	emit(jsontext.BeginArray)
-	for element := range s.All() {
-		if !emit(jsontext.String(element)) {
-			return
-		}
-	}
+	s.All()(func(element string) bool {
+		return emit(jsontext.String(element))
+	})
 	emit(jsontext.EndArray)
 	return
 }
