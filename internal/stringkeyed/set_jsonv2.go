@@ -12,15 +12,18 @@ import (
 )
 
 func (s Set) MarshalJSONTo(e *jsontext.Encoder) (err error) {
-	emit := func(token jsontext.Token) {
+	emit := func(token jsontext.Token) bool {
 		if err == nil {
 			err = e.WriteToken(token)
 		}
+		return err == nil
 	}
 
 	emit(jsontext.BeginArray)
 	for element := range s.All() {
-		emit(jsontext.String(element))
+		if !emit(jsontext.String(element)) {
+			return
+		}
 	}
 	emit(jsontext.EndArray)
 	return
