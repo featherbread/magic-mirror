@@ -28,39 +28,39 @@ func (s Set) MarshalJSONTo(e *jsontext.Encoder) (err error) {
 }
 
 func (s *Set) UnmarshalJSONFrom(d *jsontext.Decoder) error {
-	tok, err := d.ReadToken()
+	t, err := d.ReadToken()
 	if err != nil {
 		return err
 	}
-	if tok.Kind() != '[' {
+	if t.Kind() != '[' {
 		return &json.SemanticError{
 			JSONPointer: d.StackPointer(),
-			JSONKind:    tok.Kind(),
+			JSONKind:    t.Kind(),
 			GoType:      reflect.TypeFor[Set](),
 			Err:         errors.New("array of strings required"),
 		}
 	}
 
-	elems := make(map[string]struct{})
+	elements := make(map[string]struct{})
 
 tokenLoop:
 	for {
-		tok, err := d.ReadToken()
+		t, err := d.ReadToken()
 		if err != nil {
 			return err
 		}
 
-		switch tok.Kind() {
+		switch t.Kind() {
 		case ']':
 			break tokenLoop
 
 		case '"':
-			oldLen := len(elems)
-			elems[tok.String()] = struct{}{}
-			if len(elems) == oldLen {
+			oldLen := len(elements)
+			elements[t.String()] = struct{}{}
+			if len(elements) == oldLen {
 				return &json.SemanticError{
 					JSONPointer: d.StackPointer(),
-					JSONKind:    tok.Kind(),
+					JSONKind:    t.Kind(),
 					GoType:      reflect.TypeFor[string](),
 					Err:         errors.New("cannot unmarshal duplicate elements in a set"),
 				}
@@ -69,13 +69,13 @@ tokenLoop:
 		default:
 			return &json.SemanticError{
 				JSONPointer: d.StackPointer(),
-				JSONKind:    tok.Kind(),
+				JSONKind:    t.Kind(),
 				GoType:      reflect.TypeFor[string](),
 			}
 		}
 	}
 
-	allElems := slices.Collect(maps.Keys(elems))
-	*s = SetOf(allElems...)
+	allElements := slices.Collect(maps.Keys(elements))
+	*s = SetOf(allElements...)
 	return nil
 }
