@@ -60,11 +60,9 @@ func newCopier(concurrency int) *copier {
 
 func (c *copier) CopyAll(specs ...Spec) error {
 	// Pre-submit everything to the queue to get it going.
-	// TODO: Consider Queue.Submit* to not require another goroutine?
-	go func() { c.queue.GetAll(specs...) }()
+	c.queue.Submit(specs...)
 
-	// Then, aggregate all of the errors, rather than GetAll's behavior of
-	// stopping on the first one.
+	// Then, wait for each spec and aggregate the errors (unlike Queue.Collect).
 	errs := make([]error, len(specs))
 	for i, spec := range specs {
 		_, errs[i] = c.queue.Get(spec)

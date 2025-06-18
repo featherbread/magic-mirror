@@ -93,7 +93,7 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 		// Allow all of the handlers to finish.
 		close(unblock0)
 		keys := []int{0, 1, 2}
-		got, _ := q.GetAll(keys...)
+		got, _ := q.Collect(keys...)
 		assert.Equal(t, keys, got)
 	})
 }

@@ -51,7 +51,7 @@ func TestQueueGoexitPropagation(t *testing.T) {
 	})
 }
 
-func TestQueueGetAllError(t *testing.T) {
+func TestQueueCollectError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		keys := makeIntKeys(10)
 		q := NewSetQueue(0, func(_ *QueueHandle, x int) error {
@@ -61,7 +61,7 @@ func TestQueueGetAllError(t *testing.T) {
 			return nil
 		})
 
-		_, err := q.GetAll(keys...)
+		_, err := q.Collect(keys...)
 		assert.EqualError(t, err, "5")
 	})
 }
@@ -79,19 +79,18 @@ func TestQueueGoexitHandling(t *testing.T) {
 		})
 
 		// Start the handler that will Goexit, and ensure that it's blocked.
-		go func() { q.Get(0) }()
+		q.Submit(0)
 		stepGoexit <- struct{}{}
 
 		// Force some more handlers to queue up...
 		keys := []int{1, 2}
-		go func() { q.GetAll(keys...) }()
-		synctest.Wait()
+		q.Submit(keys...)
 
 		// ...then let them through.
 		close(stepGoexit)
 
 		// Ensure that the Goexit didn't break the handling of those new keys.
-		got, _ := q.GetAll(keys...)
+		got, _ := q.Collect(keys...)
 		assert.Equal(t, keys, got)
 	})
 }
@@ -110,7 +109,7 @@ func TestQueueDeduplication(t *testing.T) {
 
 		// Handle and cache the first half of the keys.
 		close(unblock)
-		got, _ := q.GetAll(keys[:half]...)
+		got, _ := q.Collect(keys[:half]...)
 		assert.Equal(t, keys[:half], got)
 		assert.Equal(t, Stats{Done: half, Submitted: half}, q.Stats())
 
@@ -134,12 +133,12 @@ func TestQueueDeduplication(t *testing.T) {
 		}
 
 		// Ensure that the previous results are cached and available without delay.
-		got, _ = q.GetAll(keys[:half]...)
+		got, _ = q.Collect(keys[:half]...)
 		assert.Equal(t, keys[:half], got)
 
 		// Finish handling the rest of the keys.
 		close(unblock)
-		got, _ = q.GetAll(keys...)
+		got, _ = q.Collect(keys...)
 		assert.Equal(t, keys, got)
 		assert.Equal(t, Stats{Done: count, Submitted: count}, q.Stats())
 	})
@@ -168,12 +167,12 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 		// Start up as many handlers as possible, and let them check for breaches
 		// before they're blocked from returning.
 		keys := makeIntKeys(submitCount)
-		go func() { q.GetAll(keys...) }()
+		q.Submit(keys...)
 		synctest.Wait()
 
 		// Let them all finish...
 		close(unblock)
-		got, _ := q.GetAll(keys...)
+		got, _ := q.Collect(keys...)
 		assert.Equal(t, keys, got)
 		assert.Equal(t, Stats{Done: submitCount, Submitted: submitCount}, q.Stats())
 
@@ -195,23 +194,19 @@ func TestQueueOrdering(t *testing.T) {
 		})
 
 		// Start a new blocked handler to force the queueing of subsequent keys.
-		go func() { q.Get(0) }()
+		q.Submit(0)
 		synctest.Wait()
 
 		// Queue up some keys with various priorities.
-		go func() { q.GetAll(1, 2) }()
-		synctest.Wait()
-		go func() { q.GetAllUrgent(-1, -2) }()
-		synctest.Wait()
-		go func() { q.Get(3) }()
-		synctest.Wait()
-		go func() { q.GetUrgent(-3) }()
-		synctest.Wait()
+		q.Submit(1, 2)
+		q.SubmitUrgent(-1, -2)
+		q.Submit(3)
+		q.SubmitUrgent(-3)
 
 		// Unblock all the handlers...
 		close(unblock)
 		keys := []int{-3, -2, -1, 0, 1, 2, 3}
-		got, _ := q.GetAll(keys...)
+		got, _ := q.Collect(keys...)
 		assert.Equal(t, keys, got)
 
 		// ...and ensure that everything was queued in the correct order:
@@ -219,7 +214,7 @@ func TestQueueOrdering(t *testing.T) {
 			// The initial blocked handler.
 			0,
 			// The urgent handlers, reversed from their queueing order but with keys
-			// in a single GetAllUrgent call queued in the order provided.
+			// in a single SubmitUrgent call queued in the order provided.
 			-3,
 			-1, -2,
 			// The normal handlers, in the order queued.
@@ -264,7 +259,7 @@ func TestQueueReattachPriority(t *testing.T) {
 
 		// Start the handler for 1 that will simply block, and queue up some extra
 		// keys behind it.
-		go func() { q.GetAll(1, 2, 3) }()
+		q.Submit(1, 2, 3)
 		synctest.Wait()
 
 		// Allow the detached handler for 0 to reattach, and wait until it's durably
@@ -275,7 +270,7 @@ func TestQueueReattachPriority(t *testing.T) {
 		// Allow the handler for 1 to finish, unblocking everything else too.
 		close(unblock1)
 		keys := []int{0, 1, 2, 3}
-		got, _ := q.GetAll(keys...)
+		got, _ := q.Collect(keys...)
 		assert.Equal(t, keys, got)
 
 		// Ensure the detached handler for 0 finished in the correct order relative
@@ -315,7 +310,7 @@ func TestQueueReattachConcurrency(t *testing.T) {
 
 		// Start up a bunch of handlers, and wait for all of them to detach.
 		keys := makeIntKeys(submitCount)
-		go func() { q.GetAll(keys...) }()
+		q.Submit(keys...)
 		synctest.Wait()
 
 		// Allow them all to start reattaching, and wait until all possible
@@ -325,7 +320,7 @@ func TestQueueReattachConcurrency(t *testing.T) {
 
 		// Let them all return...
 		close(unblockReturn)
-		got, _ := q.GetAll(keys...)
+		got, _ := q.Collect(keys...)
 		assert.Equal(t, keys, got)
 
 		// ...and ensure none of the reattachers breached the limit.
@@ -359,7 +354,7 @@ func TestQueueDetachReturn(t *testing.T) {
 
 		// Start up multiple detached handlers that will never reattach.
 		detachedKeys := []int{-2, -1}
-		go func() { q.GetAll(detachedKeys...) }()
+		q.Submit(detachedKeys...)
 		synctest.Wait()
 
 		// Start up some normal handlers...
@@ -367,7 +362,7 @@ func TestQueueDetachReturn(t *testing.T) {
 		attachedKeys := makeIntKeys(3 * len(detachedKeys))
 		go func() {
 			defer close(attachedDone)
-			q.GetAll(attachedKeys...)
+			q.Collect(attachedKeys...)
 		}()
 
 		// ...and ensure they really are blocked.
@@ -385,7 +380,7 @@ func TestQueueDetachReturn(t *testing.T) {
 
 		// Unblock the rest of the handlers...
 		close(unblockAttached)
-		got, _ := q.GetAll(attachedKeys...)
+		got, _ := q.Collect(attachedKeys...)
 		assert.Equal(t, attachedKeys, got)
 
 		// ...and ensure the limit wasn't breached.

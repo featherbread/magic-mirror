@@ -22,54 +22,20 @@ type SetQueue[K comparable] = Queue[K, Empty]
 // SetHandler is a type for a [SetQueue]'s handler function.
 type SetHandler[K comparable] = func(*QueueHandle, K) error
 
-// Queue is a concurrency-limited deduplicating work queue. It acts like a map
-// that computes and caches the value for each requested key while limiting the
-// number of computations in flight.
+// Queue runs a [Handler] once per key in a distinct goroutine and caches the
+// result, while imposing dynamic concurrency limits on handler executions.
 //
-// Each queue makes one or more concurrent calls to its [Handler] in new
-// goroutines to compute a result for each requested key. It handles each key
-// once regardless of the number of concurrent requests for that key, and caches
-// and returns a single result for all requests.
+// The result for each key nominally consists of a value and error, but may
+// instead capture a panic or a call to [runtime.Goexit], which the queue
+// propagates to any caller retrieving that key's result.
 //
-// The result for each key nominally consists of a value and an error, but may
-// instead capture a panic or a call to [runtime.Goexit]. In the latter cases,
-// the queue's Get* methods propagate the panic or Goexit to their caller.
-//
-// # Urgent Variants
-//
-// The Urgent variants of the queue's Get* methods push unhandled keys to the
-// front of the work queue rather than the back.
-//
-// The behavior of the Urgent variants is equivalent to that of the standard
-// variants in any of the following cases:
-//
-//   - The results for all requested keys are already cached.
-//   - Ample concurrency is available to handle the requested keys immediately.
-//   - The requested keys were previously queued by a non-Urgent call. Urgent
-//     calls cannot "promote" these earlier non-Urgent calls.
-//
-// # All Variants
-//
-// The All variants of the queue's Get* methods coalesce the results for
-// multiple keys into a single call. If every result consists of a value and
-// non-nil error, the method returns a slice of values corresponding to the
-// requested keys. Otherwise, it returns the first error or propagates the first
-// panic or Goexit with respect to the order of the keys, without waiting for
-// subsequent handlers to finish. To associate a result with a specific key or
-// wait for all handlers, use the non-All variants instead.
-//
-// When the queue's concurrency limit requires some keys to be queued for later
-// handling, the All variants enqueue the unhandled keys in the order given,
-// without interleaving keys from any other Get* call. However, a future Urgent
-// call may interpose its unhandled key(s) between those enqueued by an earlier
-// All call.
-//
-// # Concurrency Limits and Detaching
-//
-// Each queue is initialized with a limit on the number of goroutines that will
+// Each queue is initialized with a limit on the number of goroutines that may
 // concurrently handle new keys. However, [QueueHandle.Detach] permits a handler
-// to increase the queue's effective concurrency limit for as long as it runs,
-// or until it calls [QueueHandle.Reattach]. See [QueueHandle] for details.
+// to exclude itself from the concurrency limit for the remainder of its own
+// lifetime, or until it calls [QueueHandle.Reattach]. [KeyMutex] in particular
+// helps handlers temporarily detach from their queue while awaiting exclusive
+// use of a shared resource, typically one identified by a subset of the
+// handler's current key.
 type Queue[K comparable, V any] struct {
 	handle Handler[K, V]
 
@@ -134,31 +100,38 @@ func NewSetQueue[K comparable](concurrency int, handle SetHandler[K]) *SetQueue[
 	})
 }
 
-// Get returns the result or propagates the panic or Goexit for the provided key
-// as described in the [Queue] documentation, blocking if necessary until the
-// corresponding call to the queue's handler finishes.
+// Submit enqueues any unhandled keys among those provided at the back of the
+// queue, in the order given, without interleaving keys from any other enqueue
+// operation. It does not affect the queueing order of any keys previously
+// enqueued, and does not wait for any of the keys to be handled.
+func (q *Queue[K, V]) Submit(keys ...K) {
+	q.getTasks(pushAllBack, keys...)
+}
+
+// SubmitUrgent behaves like [Queue.Submit], but enqueues unhandled keys at the
+// front of the queue rather than the back. As with Submit, it enqueues the
+// unhandled keys in the order given, and does not affect the queueing order of
+// keys previously enqueued.
+func (q *Queue[K, V]) SubmitUrgent(keys ...K) {
+	q.getTasks(pushAllFront, keys...)
+}
+
+// Get blocks until the queue has handled this key, then propagates its result:
+// returning its value and error, or forwarding a panic or [runtime.Goexit] call
+// captured from its handler. If necessary, Get enqueues the key as if by a call
+// to [Queue.Submit].
 func (q *Queue[K, V]) Get(key K) (V, error) {
 	return q.getTasks(pushAllBack, key)[0].Wait()
 }
 
-// GetUrgent behaves like [Queue.Get], but pushes new keys to the front of the
-// queue as described in the "Urgent Variants" section of the [Queue]
-// documentation.
-func (q *Queue[K, V]) GetUrgent(key K) (V, error) {
-	return q.getTasks(pushAllFront, key)[0].Wait()
-}
-
-// GetAll coalesces the results for multiple keys as described in the "All
-// Variants" section of the [Queue] documentation.
-func (q *Queue[K, V]) GetAll(keys ...K) ([]V, error) {
+// Collect coalesces the results for multiple keys. If any key's handler returns
+// an error, panics, or calls [runtime.Goexit], Collect propagates the first of
+// those results with respect to the order of the keys, without waiting for the
+// queue to handle the remaining keys. Otherwise, it returns a slice of values
+// corresponding to the keys. If necessary, Collect enqueues the keys as if by a
+// call to [Queue.Submit].
+func (q *Queue[K, V]) Collect(keys ...K) ([]V, error) {
 	return q.getTasks(pushAllBack, keys...).Wait()
-}
-
-// GetAllUrgent behaves like [Queue.GetAll], but pushes new keys to the front of
-// the queue as described in the "Urgent Variants" section of the [Queue]
-// documentation.
-func (q *Queue[K, V]) GetAllUrgent(keys ...K) ([]V, error) {
-	return q.getTasks(pushAllFront, keys...).Wait()
 }
 
 // Stats conveys information about the keys and results in a [Queue].
@@ -358,11 +331,7 @@ type QueueHandle struct {
 // already detached.
 //
 // [QueueHandle.Reattach] permits a detached handler to reestablish itself
-// within the queue's concurrency limit ahead of the handling of new keys.
-//
-// A typical use for detaching is to block on the availability of another
-// resource. [KeyMutex] can facilitate this by detaching from a queue while
-// awaiting a lock on a comparable key representing the resource.
+// within the queue's concurrency limit ahead of other queued keys.
 func (qh *QueueHandle) Detach() bool {
 	if qh.detached {
 		return false
