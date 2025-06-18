@@ -132,6 +132,22 @@ func (q *Queue[K, V]) GetAllUrgent(keys ...K) ([]V, error) {
 	return q.getTasks(pushAllFront, keys...).Wait()
 }
 
+// Submit enqueues any unhandled keys among those provided at the back of the
+// queue, in the order given, without interleaving keys from any other enqueue
+// operation. It does not affect the queueing order of any keys previously
+// enqueued, and does not wait for any of the keys to be handled.
+func (q *Queue[K, V]) Submit(keys ...K) {
+	q.getTasks(pushAllBack, keys...)
+}
+
+// SubmitUrgent behaves like [Queue.Submit], but enqueues unhandled keys at the
+// front of the queue rather than the back. As with Submit, it enqueues the
+// unhandled keys in the order given, and does not affect the queueing order of
+// keys previously enqueued.
+func (q *Queue[K, V]) SubmitUrgent(keys ...K) {
+	q.getTasks(pushAllFront, keys...)
+}
+
 // Stats conveys information about the keys and results in a [Queue].
 type Stats struct {
 	// Done is the number of handled keys, whose results are computed and cached.

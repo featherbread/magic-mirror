@@ -79,13 +79,12 @@ func TestQueueGoexitHandling(t *testing.T) {
 		})
 
 		// Start the handler that will Goexit, and ensure that it's blocked.
-		go func() { q.Get(0) }()
+		q.Submit(0)
 		stepGoexit <- struct{}{}
 
 		// Force some more handlers to queue up...
 		keys := []int{1, 2}
-		go func() { q.GetAll(keys...) }()
-		synctest.Wait()
+		q.Submit(keys...)
 
 		// ...then let them through.
 		close(stepGoexit)
@@ -168,7 +167,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 		// Start up as many handlers as possible, and let them check for breaches
 		// before they're blocked from returning.
 		keys := makeIntKeys(submitCount)
-		go func() { q.GetAll(keys...) }()
+		q.Submit(keys...)
 		synctest.Wait()
 
 		// Let them all finish...
@@ -195,18 +194,14 @@ func TestQueueOrdering(t *testing.T) {
 		})
 
 		// Start a new blocked handler to force the queueing of subsequent keys.
-		go func() { q.Get(0) }()
+		q.Submit(0)
 		synctest.Wait()
 
 		// Queue up some keys with various priorities.
-		go func() { q.GetAll(1, 2) }()
-		synctest.Wait()
-		go func() { q.GetAllUrgent(-1, -2) }()
-		synctest.Wait()
-		go func() { q.Get(3) }()
-		synctest.Wait()
-		go func() { q.GetUrgent(-3) }()
-		synctest.Wait()
+		q.Submit(1, 2)
+		q.SubmitUrgent(-1, -2)
+		q.Submit(3)
+		q.SubmitUrgent(-3)
 
 		// Unblock all the handlers...
 		close(unblock)
@@ -219,7 +214,7 @@ func TestQueueOrdering(t *testing.T) {
 			// The initial blocked handler.
 			0,
 			// The urgent handlers, reversed from their queueing order but with keys
-			// in a single GetAllUrgent call queued in the order provided.
+			// in a single SubmitUrgent call queued in the order provided.
 			-3,
 			-1, -2,
 			// The normal handlers, in the order queued.
@@ -264,7 +259,7 @@ func TestQueueReattachPriority(t *testing.T) {
 
 		// Start the handler for 1 that will simply block, and queue up some extra
 		// keys behind it.
-		go func() { q.GetAll(1, 2, 3) }()
+		q.Submit(1, 2, 3)
 		synctest.Wait()
 
 		// Allow the detached handler for 0 to reattach, and wait until it's durably
@@ -315,7 +310,7 @@ func TestQueueReattachConcurrency(t *testing.T) {
 
 		// Start up a bunch of handlers, and wait for all of them to detach.
 		keys := makeIntKeys(submitCount)
-		go func() { q.GetAll(keys...) }()
+		q.Submit(keys...)
 		synctest.Wait()
 
 		// Allow them all to start reattaching, and wait until all possible
@@ -359,7 +354,7 @@ func TestQueueDetachReturn(t *testing.T) {
 
 		// Start up multiple detached handlers that will never reattach.
 		detachedKeys := []int{-2, -1}
-		go func() { q.GetAll(detachedKeys...) }()
+		q.Submit(detachedKeys...)
 		synctest.Wait()
 
 		// Start up some normal handlers...
