@@ -2,7 +2,9 @@ package stringkeyed
 
 import (
 	"encoding/json"
+	"iter"
 	"math/rand/v2"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -148,6 +150,77 @@ func TestSetUnmarshalBadJSON(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSetUnmarshalJSONInner(t *testing.T) {
+	testCases := []struct {
+		Description string
+		JSON        string
+		Value       any
+		Want        []Set
+	}{
+		{
+			Description: "value of an object",
+			JSON:        `{"ignore": true, "set": ["first", "second"], "alsoIgnore": true}`,
+			Value: &struct {
+				Ignore     bool `json:"ignore"`
+				AlsoIgnore bool `json:"alsoIgnore"`
+				Set        Set  `json:"set"`
+			}{},
+			Want: []Set{
+				SetOf("first", "second"),
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.Description, func(t *testing.T) {
+			value := reflect.New(reflect.ValueOf(tc.Value).Elem().Type())
+			err := json.Unmarshal([]byte(tc.JSON), value.Interface())
+			assert.NoError(t, err)
+
+			got := slices.Collect(digForSets(value))
+			assert.Equal(t, tc.Want, got)
+		})
+	}
+}
+
+func digForSets(value reflect.Value) iter.Seq[Set] {
+	return func(yield func(Set) bool) {
+		reallyDigForSets(value, yield)
+	}
+}
+
+func reallyDigForSets(value reflect.Value, yield func(Set) bool) bool {
+	switch value.Kind() {
+	case reflect.Struct:
+		if value.Type() == reflect.TypeFor[Set]() {
+			return yield(value.Interface().(Set))
+		}
+		for i := range value.NumField() {
+			if !reallyDigForSets(value.Field(i), yield) {
+				return false
+			}
+		}
+
+	case reflect.Pointer:
+		return reallyDigForSets(value.Elem(), yield)
+
+	case reflect.Array, reflect.Slice:
+		for i := range value.Len() {
+			if !reallyDigForSets(value.Index(i), yield) {
+				return false
+			}
+		}
+
+	case reflect.Map:
+		for _, key := range value.MapKeys() {
+			if !reallyDigForSets(value.MapIndex(key), yield) {
+				return false
+			}
+		}
+
+	}
+	return true
 }
 
 func FuzzSetChunkedBytes(f *testing.F) {
