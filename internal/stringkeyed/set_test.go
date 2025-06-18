@@ -162,13 +162,31 @@ func TestSetUnmarshalJSONInner(t *testing.T) {
 		{
 			Description: "value of an object",
 			JSON:        `{"ignore": true, "set": ["first", "second"], "alsoIgnore": true}`,
-			Value: &struct {
+			Value: new(struct {
 				Ignore     bool `json:"ignore"`
 				AlsoIgnore bool `json:"alsoIgnore"`
 				Set        Set  `json:"set"`
-			}{},
+			}),
 			Want: []Set{
 				SetOf("first", "second"),
+			},
+		},
+		{
+			Description: "array of sets",
+			JSON:        `[["first", "second"], ["third", "fourth", "fifth"]]`,
+			Value:       new([]Set),
+			Want: []Set{
+				SetOf("first", "second"),
+				SetOf("third", "fourth", "fifth"),
+			},
+		},
+		{
+			Description: "map of sets",
+			JSON:        `{"one": ["a", "b"], "two": ["c", "d", "e"]}`,
+			Value:       new(map[string]Set),
+			Want: []Set{
+				SetOf("a", "b"),
+				SetOf("c", "d", "e"),
 			},
 		},
 	}
@@ -179,7 +197,7 @@ func TestSetUnmarshalJSONInner(t *testing.T) {
 			assert.NoError(t, err)
 
 			got := slices.Collect(digForSets(value))
-			assert.Equal(t, tc.Want, got)
+			assert.ElementsMatch(t, tc.Want, got)
 		})
 	}
 }
@@ -218,7 +236,6 @@ func reallyDigForSets(value reflect.Value, yield func(Set) bool) bool {
 				return false
 			}
 		}
-
 	}
 	return true
 }
