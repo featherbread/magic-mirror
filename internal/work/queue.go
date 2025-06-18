@@ -22,25 +22,20 @@ type SetQueue[K comparable] = Queue[K, Empty]
 // SetHandler is a type for a [SetQueue]'s handler function.
 type SetHandler[K comparable] = func(*QueueHandle, K) error
 
-// Queue is a concurrency-limited deduplicating work queue. It acts like a map
-// that computes and caches the value for each requested key while limiting the
-// number of computations in flight.
+// Queue runs a [Handler] once per key in a distinct goroutine and caches the
+// result, while imposing dynamic concurrency limits on handler executions.
 //
-// Each queue makes one or more concurrent calls to its [Handler] in new
-// goroutines to compute a result for each requested key. It handles each key
-// once regardless of the number of concurrent requests for that key, and caches
-// and returns a single result for all requests.
-//
-// The result for each key nominally consists of a value and an error, but may
+// The result for each key nominally consists of a value and error, but may
 // instead capture a panic or a call to [runtime.Goexit], which the queue
-// propagates to any caller retrieving that key's value.
+// propagates to any caller retrieving that key's result.
 //
-// # Concurrency Limits and Detaching
-//
-// Each queue is initialized with a limit on the number of goroutines that will
+// Each queue is initialized with a limit on the number of goroutines that may
 // concurrently handle new keys. However, [QueueHandle.Detach] permits a handler
-// to increase the queue's effective concurrency limit for as long as it runs,
-// or until it calls [QueueHandle.Reattach]. See [QueueHandle] for details.
+// to exclude itself from the concurrency limit for the remainder of its own
+// lifetime, or until it calls [QueueHandle.Reattach]. [KeyMutex] in particular
+// helps handlers temporarily detach from their queue while awaiting exclusive
+// use of a shared resource, typically one identified by a subset of the
+// handler's current key.
 type Queue[K comparable, V any] struct {
 	handle Handler[K, V]
 
@@ -336,11 +331,7 @@ type QueueHandle struct {
 // already detached.
 //
 // [QueueHandle.Reattach] permits a detached handler to reestablish itself
-// within the queue's concurrency limit ahead of the handling of new keys.
-//
-// A typical use for detaching is to block on the availability of another
-// resource. [KeyMutex] can facilitate this by detaching from a queue while
-// awaiting a lock on a comparable key representing the resource.
+// within the queue's concurrency limit ahead of other queued keys.
 func (qh *QueueHandle) Detach() bool {
 	if qh.detached {
 		return false
