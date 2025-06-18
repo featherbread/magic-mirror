@@ -32,37 +32,8 @@ type SetHandler[K comparable] = func(*QueueHandle, K) error
 // and returns a single result for all requests.
 //
 // The result for each key nominally consists of a value and an error, but may
-// instead capture a panic or a call to [runtime.Goexit]. In the latter cases,
-// the queue's Get* methods propagate the panic or Goexit to their caller.
-//
-// # Urgent Variants
-//
-// The Urgent variants of the queue's Get* methods push unhandled keys to the
-// front of the work queue rather than the back.
-//
-// The behavior of the Urgent variants is equivalent to that of the standard
-// variants in any of the following cases:
-//
-//   - The results for all requested keys are already cached.
-//   - Ample concurrency is available to handle the requested keys immediately.
-//   - The requested keys were previously queued by a non-Urgent call. Urgent
-//     calls cannot "promote" these earlier non-Urgent calls.
-//
-// # All Variants
-//
-// The All variants of the queue's Get* methods coalesce the results for
-// multiple keys into a single call. If every result consists of a value and
-// non-nil error, the method returns a slice of values corresponding to the
-// requested keys. Otherwise, it returns the first error or propagates the first
-// panic or Goexit with respect to the order of the keys, without waiting for
-// subsequent handlers to finish. To associate a result with a specific key or
-// wait for all handlers, use the non-All variants instead.
-//
-// When the queue's concurrency limit requires some keys to be queued for later
-// handling, the All variants enqueue the unhandled keys in the order given,
-// without interleaving keys from any other Get* call. However, a future Urgent
-// call may interpose its unhandled key(s) between those enqueued by an earlier
-// All call.
+// instead capture a panic or a call to [runtime.Goexit], which the queue
+// propagates to any caller retrieving that key's value.
 //
 // # Concurrency Limits and Detaching
 //
