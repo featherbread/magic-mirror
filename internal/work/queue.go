@@ -112,24 +112,10 @@ func (q *Queue[K, V]) Get(key K) (V, error) {
 	return q.getTasks(pushAllBack, key)[0].Wait()
 }
 
-// GetUrgent behaves like [Queue.Get], but pushes new keys to the front of the
-// queue as described in the "Urgent Variants" section of the [Queue]
-// documentation.
-func (q *Queue[K, V]) GetUrgent(key K) (V, error) {
-	return q.getTasks(pushAllFront, key)[0].Wait()
-}
-
 // GetAll coalesces the results for multiple keys as described in the "All
 // Variants" section of the [Queue] documentation.
 func (q *Queue[K, V]) GetAll(keys ...K) ([]V, error) {
 	return q.getTasks(pushAllBack, keys...).Wait()
-}
-
-// GetAllUrgent behaves like [Queue.GetAll], but pushes new keys to the front of
-// the queue as described in the "Urgent Variants" section of the [Queue]
-// documentation.
-func (q *Queue[K, V]) GetAllUrgent(keys ...K) ([]V, error) {
-	return q.getTasks(pushAllFront, keys...).Wait()
 }
 
 // Submit enqueues any unhandled keys among those provided at the back of the

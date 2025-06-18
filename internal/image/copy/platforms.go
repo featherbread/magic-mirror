@@ -55,7 +55,8 @@ func (c *platformCopier) copyPlatform(_ *work.QueueHandle, req platformCopyReque
 	// what it'll get. This level always gets platform manifests, which are
 	// required to discover source blobs, so we request them urgently to fill up
 	// the blob queue faster.
-	srcManifest, err := c.manifests.GetUrgent(req.Src)
+	c.manifests.SubmitUrgent(req.Src)
+	srcManifest, err := c.manifests.Get(req.Src)
 	if err != nil {
 		return
 	}
