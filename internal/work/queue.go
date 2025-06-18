@@ -105,19 +105,6 @@ func NewSetQueue[K comparable](concurrency int, handle SetHandler[K]) *SetQueue[
 	})
 }
 
-// Get returns the result or propagates the panic or Goexit for the provided key
-// as described in the [Queue] documentation, blocking if necessary until the
-// corresponding call to the queue's handler finishes.
-func (q *Queue[K, V]) Get(key K) (V, error) {
-	return q.getTasks(pushAllBack, key)[0].Wait()
-}
-
-// GetAll coalesces the results for multiple keys as described in the "All
-// Variants" section of the [Queue] documentation.
-func (q *Queue[K, V]) GetAll(keys ...K) ([]V, error) {
-	return q.getTasks(pushAllBack, keys...).Wait()
-}
-
 // Submit enqueues any unhandled keys among those provided at the back of the
 // queue, in the order given, without interleaving keys from any other enqueue
 // operation. It does not affect the queueing order of any keys previously
@@ -132,6 +119,24 @@ func (q *Queue[K, V]) Submit(keys ...K) {
 // keys previously enqueued.
 func (q *Queue[K, V]) SubmitUrgent(keys ...K) {
 	q.getTasks(pushAllFront, keys...)
+}
+
+// Get blocks until the queue has handled this key, then propagates its result:
+// returning its value and error, or forwarding a panic or [runtime.Goexit] call
+// captured from its handler. If necessary, Get enqueues the key as if by a call
+// to [Queue.Submit].
+func (q *Queue[K, V]) Get(key K) (V, error) {
+	return q.getTasks(pushAllBack, key)[0].Wait()
+}
+
+// Collect coalesces the results for multiple keys. If any key's handler returns
+// an error, panics, or calls [runtime.Goexit], Collect propagates the first of
+// those results with respect to the order of the keys, without waiting for the
+// queue to handle the remaining keys. Otherwise, it returns a slice of values
+// corresponding to the keys. If necessary, Collect enqueues the keys as if by a
+// call to [Queue.Submit].
+func (q *Queue[K, V]) Collect(keys ...K) ([]V, error) {
+	return q.getTasks(pushAllBack, keys...).Wait()
 }
 
 // Stats conveys information about the keys and results in a [Queue].

@@ -46,7 +46,7 @@ func (c *platformCopier) CopyAll(dst image.Repository, srcs ...image.Image) ([]i
 			},
 		}
 	}
-	return c.Queue.GetAll(reqs...)
+	return c.Queue.Collect(reqs...)
 }
 
 func (c *platformCopier) copyPlatform(_ *work.QueueHandle, req platformCopyRequest) (m image.Manifest, err error) {
