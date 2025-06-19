@@ -1,3 +1,4 @@
+//go:debug panicnil=1
 package work_test
 
 import (
@@ -50,6 +51,49 @@ func TestQueuePanicPropagation(t *testing.T) {
 		}()
 		q.Get(0)
 		t.Fatal("panic did not propagate")
+	})
+}
+
+func TestQueuePanicNil(t *testing.T) {
+	var someNilValue any // Will never be assigned; quiets lints for literal panic(nil).
+	synctest.Test(t, func(t *testing.T) {
+		stepPanic := make(chan struct{})
+		q := work.NewQueue(1, func(_ *work.QueueHandle, x int) (int, error) {
+			if x == 0 {
+				for range stepPanic {
+				}
+				panic(someNilValue)
+			}
+			return x, nil
+		})
+
+		// Start the handler that will panic(nil), and ensure that it's blocked.
+		q.Submit(0)
+		stepPanic <- struct{}{}
+
+		// Force some more handlers to queue up...
+		keys := []int{1, 2}
+		q.Submit(keys...)
+
+		// ...then let them through.
+		close(stepPanic)
+
+		// Ensure that the panic(nil) didn't break the handling of those new keys.
+		got, _ := q.Collect(keys...)
+		assert.Equal(t, keys, got)
+
+		// Ensure that we correctly pass the panic(nil) through.
+		var recovered bool
+		defer func() { assert.True(t, recovered) }()
+
+		var panicval any
+		func() {
+			defer func() { panicval = recover() }()
+			q.Get(0)
+			t.Error("panic(nil) did not propagate")
+		}()
+		recovered = true
+		assert.Nil(t, panicval)
 	})
 }
 
