@@ -1,4 +1,4 @@
-package work
+package work_test
 
 import (
 	"sync/atomic"
@@ -6,6 +6,8 @@ import (
 	"testing/synctest"
 
 	"github.com/stretchr/testify/assert"
+
+	. "github.com/ahamlinman/magic-mirror/internal/work"
 )
 
 func TestKeyMutexBasic(t *testing.T) {

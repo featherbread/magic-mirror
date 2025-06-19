@@ -1,4 +1,4 @@
-package work
+package work_test
 
 import (
 	"fmt"
@@ -8,6 +8,8 @@ import (
 	"testing/synctest"
 
 	"github.com/stretchr/testify/assert"
+
+	. "github.com/ahamlinman/magic-mirror/internal/work"
 )
 
 func TestQueueBasic(t *testing.T) {
