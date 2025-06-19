@@ -19,7 +19,7 @@ import (
 
 // blobCopier handles requests to copy blob content between repositories.
 type blobCopier struct {
-	*work.SetQueue[blobCopyRequest]
+	work.SetQueue[blobCopyRequest]
 
 	sourceMap   map[digest.Digest]mapset.Set[image.Repository]
 	sourceMapMu sync.Mutex

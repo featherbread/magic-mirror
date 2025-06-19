@@ -28,7 +28,7 @@ func CopyAll(concurrency int, specs ...Spec) error {
 }
 
 type copier struct {
-	queue *work.SetQueue[Spec]
+	queue work.SetQueue[Spec]
 
 	blobs        *blobCopier
 	srcManifests *manifestCache

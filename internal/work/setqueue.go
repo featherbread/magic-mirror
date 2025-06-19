@@ -7,13 +7,17 @@ type Empty = struct{}
 type SetHandler[K comparable] = func(*QueueHandle, K) error
 
 // SetQueue represents a [Queue] whose handlers return no meaningful value.
-type SetQueue[K comparable] = Queue[K, Empty]
+type SetQueue[K comparable] struct {
+	*Queue[K, Empty]
+}
 
 // NewSetQueue creates a [SetQueue] in a manner equivalent to how [NewQueue]
 // creates a [Queue].
-func NewSetQueue[K comparable](concurrency int, handle SetHandler[K]) *SetQueue[K] {
-	return NewQueue(concurrency, func(qh *QueueHandle, key K) (_ Empty, err error) {
-		err = handle(qh, key)
-		return
-	})
+func NewSetQueue[K comparable](concurrency int, handle SetHandler[K]) SetQueue[K] {
+	return SetQueue[K]{
+		Queue: NewQueue(concurrency, func(qh *QueueHandle, key K) (_ Empty, err error) {
+			err = handle(qh, key)
+			return
+		}),
+	}
 }
