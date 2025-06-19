@@ -26,7 +26,7 @@ func TestQueueBasic(t *testing.T) {
 	})
 }
 
-func TestQueueCollectError(t *testing.T) {
+func TestSetQueueError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		keys := makeIntKeys(10)
 		q := work.NewSetQueue(0, func(_ *work.QueueHandle, x int) error {
@@ -35,8 +35,8 @@ func TestQueueCollectError(t *testing.T) {
 			}
 			return nil
 		})
-		err := q.Collect(keys...)
-		assert.EqualError(t, err, "5")
+		assert.EqualError(t, q.Collect(keys...), "5")
+		assert.EqualError(t, q.Get(5), "5")
 	})
 }
 
