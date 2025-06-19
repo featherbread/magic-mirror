@@ -82,26 +82,27 @@ func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue
 	}
 }
 
-// Submit enqueues any unhandled keys among those provided at the back of the
-// queue, in the order given, without interleaving keys from any other enqueue
-// operation. It does not affect the queueing order of any keys previously
-// enqueued, and does not wait for any of the keys to be handled.
+// Submit enqueues any new keys among those provided at the back of the queue,
+// without affecting the queued order of keys already pending or waiting for any
+// handlers to finish. It enqueues the new keys in the order given without
+// interleaving keys from any other enqueue operation. However, future
+// [Queue.SubmitUrgent] calls may interpose new keys between those enqueued by a
+// single Submit call.
 func (q *Queue[K, V]) Submit(keys ...K) {
 	q.getTasks(pushAllBack, keys...)
 }
 
-// SubmitUrgent behaves like [Queue.Submit], but enqueues unhandled keys at the
-// front of the queue rather than the back. As with Submit, it enqueues the
-// unhandled keys in the order given, and does not affect the queueing order of
-// keys previously enqueued.
+// SubmitUrgent behaves like [Queue.Submit], but enqueues the new keys in the
+// order given at the front of the queue rather than the back. Like Submit, it
+// does not affect the queued order of keys already pending; it is not possible
+// to "promote" a key from non-urgent to urgent.
 func (q *Queue[K, V]) SubmitUrgent(keys ...K) {
 	q.getTasks(pushAllFront, keys...)
 }
 
 // Get blocks until the queue has handled this key, then propagates its result:
-// returning its value and error, or forwarding a panic or [runtime.Goexit] call
-// captured from its handler. If necessary, Get enqueues the key as if by a call
-// to [Queue.Submit].
+// returning its value and error, or forwarding a panic or [runtime.Goexit].
+// If necessary, Get enqueues the key as if by a call to [Queue.Submit].
 func (q *Queue[K, V]) Get(key K) (V, error) {
 	return q.getTasks(pushAllBack, key)[0].Wait()
 }
@@ -311,9 +312,6 @@ type QueueHandle struct {
 // [Queue] that invoked it, allowing the queue to immediately handle other keys.
 // It returns true if this call detached the handler, or false if the handler
 // already detached.
-//
-// [QueueHandle.Reattach] permits a detached handler to reestablish itself
-// within the queue's concurrency limit ahead of other queued keys.
 func (qh *QueueHandle) Detach() bool {
 	if qh.detached {
 		return false
@@ -324,8 +322,8 @@ func (qh *QueueHandle) Detach() bool {
 }
 
 // Reattach blocks the calling [Handler] until it can execute within the
-// concurrency limit of the [Queue] that invoked it. It has no effect if the
-// handler is already attached.
+// concurrency limit of the [Queue] that invoked it, taking priority over
+// unhandled queued keys. It has no effect if the handler is already attached.
 func (qh *QueueHandle) Reattach() {
 	if qh.detached {
 		qh.reattach()
