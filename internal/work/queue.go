@@ -10,7 +10,7 @@ import (
 	"github.com/gammazero/deque"
 )
 
-// Handler is the type for a [Queue]'s handler function.
+// Handler is a type for a [Queue]'s handler function.
 type Handler[K comparable, V any] = func(*QueueHandle, K) (V, error)
 
 // Queue runs a [Handler] once per key in a distinct goroutine and caches the
