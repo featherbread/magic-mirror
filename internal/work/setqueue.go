@@ -21,3 +21,16 @@ func NewSetQueue[K comparable](concurrency int, handle SetHandler[K]) SetQueue[K
 		}),
 	}
 }
+
+// Get is analogous to [Queue.Get], but does not return a meaningful value.
+func (q SetQueue[K]) Get(key K) error {
+	_, err := q.Queue.Get(key)
+	return err
+}
+
+// Collect is analogous to [Queue.Collect], but does not return meaningful
+// values.
+func (q SetQueue[K]) Collect(keys ...K) error {
+	_, err := q.Queue.Collect(keys...)
+	return err
+}

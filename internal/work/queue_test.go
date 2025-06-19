@@ -61,7 +61,7 @@ func TestQueueCollectError(t *testing.T) {
 			return nil
 		})
 
-		_, err := q.Collect(keys...)
+		err := q.Collect(keys...)
 		assert.EqualError(t, err, "5")
 	})
 }
