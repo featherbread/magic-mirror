@@ -23,26 +23,26 @@ func TestQueueBasic(t *testing.T) {
 func TestQueuePanicPropagation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const want = "the expected panic value"
-		q := NewSetQueue(1, func(_ *QueueHandle, _ Empty) error { panic(want) })
+		q := NewSetQueue(1, func(_ *QueueHandle, _ int) error { panic(want) })
 		defer func() {
 			got := recover()
 			assert.Equal(t, want, got)
 		}()
-		q.Get(Empty{})
+		q.Get(0)
 		t.Fatal("panic did not propagate")
 	})
 }
 
 func TestQueueGoexitPropagation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := NewSetQueue(1, func(_ *QueueHandle, _ Empty) error {
+		q := NewSetQueue(1, func(_ *QueueHandle, _ int) error {
 			runtime.Goexit()
 			return nil
 		})
 		done := make(chan bool)
 		go func() {
 			defer close(done)
-			q.Get(Empty{})
+			q.Get(0)
 			done <- true
 		}()
 		if <-done {
