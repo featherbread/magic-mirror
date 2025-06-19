@@ -59,7 +59,7 @@ func Return[T any](value T, err error) Result[T] {
 	}
 }
 
-// Result captures the exit behavior of an isolated function. The zero value
+// Result captures the exit behavior of an isolated function. The zero Result
 // behaves as if capturing the return of a zero T and nil error.
 type Result[T any] struct {
 	started   bool
@@ -84,7 +84,7 @@ func (r Result[T]) Unwrap() (T, error) {
 	}
 }
 
-// Goexited is true if this result captures a [runtime.Goexit] call.
+// Goexited is true if this result captures [runtime.Goexit].
 func (r Result[T]) Goexited() bool {
 	return r.started && !r.returned && !r.recovered
 }

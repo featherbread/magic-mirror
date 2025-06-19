@@ -13,9 +13,7 @@ import (
 	"github.com/ahamlinman/magic-mirror/internal/work/catch"
 )
 
-// someNilValue is intentionally never set to anything other than nil.
-// Using it to test nil panics silences analyzers like gopls.
-var someNilValue any
+var someNilValue any // Never assigned; quiets lints for literal panic(nil).
 
 func TestZero(t *testing.T) {
 	var r catch.Result[int]

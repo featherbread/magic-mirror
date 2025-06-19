@@ -94,8 +94,9 @@ func TestQueueUnwind(t *testing.T) {
 				// Force some more handlers to queue up...
 				keys := []int{1, 2}
 				q.Submit(keys...)
+				synctest.Wait()
 
-				// ...then let them through.
+				// ...then let everything through.
 				close(step)
 
 				// Ensure that the unwind didn't break the handling of those new keys.
@@ -103,11 +104,13 @@ func TestQueueUnwind(t *testing.T) {
 				assert.Equal(t, keys, got)
 
 				// Ensure that we correctly pass the unwind through.
-				result := catch.Do(func() (int, error) { return q.Get(0) })
-				tc.Assert(t, result)
-
-				result = catch.Do(func() (n int, err error) { _, err = q.Collect(0); return })
-				tc.Assert(t, result)
+				tc.Assert(t, catch.Do(func() (int, error) {
+					return q.Get(0)
+				}))
+				tc.Assert(t, catch.Do(func() (_ int, err error) {
+					_, err = q.Collect(1, 0, 2)
+					return
+				}))
 			})
 		})
 	}
