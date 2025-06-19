@@ -9,23 +9,25 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	. "github.com/ahamlinman/magic-mirror/internal/work"
+	"github.com/ahamlinman/magic-mirror/internal/work"
 )
 
 func TestQueueBasic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) { return x, nil })
+		q := work.NewQueue(1, func(_ *work.QueueHandle, x int) (int, error) {
+			return x, nil
+		})
 		got, err := q.Get(42)
 		assert.NoError(t, err)
 		assert.Equal(t, 42, got)
-		assert.Equal(t, Stats{Done: 1, Submitted: 1}, q.Stats())
+		assert.Equal(t, work.Stats{Done: 1, Submitted: 1}, q.Stats())
 	})
 }
 
 func TestQueueCollectError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		keys := makeIntKeys(10)
-		q := NewSetQueue(0, func(_ *QueueHandle, x int) error {
+		q := work.NewSetQueue(0, func(_ *work.QueueHandle, x int) error {
 			if x >= 5 {
 				return fmt.Errorf("%d", x)
 			}
@@ -39,7 +41,9 @@ func TestQueueCollectError(t *testing.T) {
 func TestQueuePanicPropagation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const want = "the expected panic value"
-		q := NewSetQueue(1, func(_ *QueueHandle, _ int) error { panic(want) })
+		q := work.NewSetQueue(1, func(_ *work.QueueHandle, _ int) error {
+			panic(want)
+		})
 		defer func() {
 			got := recover()
 			assert.Equal(t, want, got)
@@ -51,7 +55,7 @@ func TestQueuePanicPropagation(t *testing.T) {
 
 func TestQueueGoexitPropagation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := NewSetQueue(1, func(_ *QueueHandle, _ int) error {
+		q := work.NewSetQueue(1, func(_ *work.QueueHandle, _ int) error {
 			runtime.Goexit()
 			return nil
 		})
@@ -70,7 +74,7 @@ func TestQueueGoexitPropagation(t *testing.T) {
 func TestQueueGoexitHandling(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		stepGoexit := make(chan struct{})
-		q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) {
+		q := work.NewQueue(1, func(_ *work.QueueHandle, x int) (int, error) {
 			if x == 0 {
 				for range stepGoexit {
 				}
@@ -99,7 +103,7 @@ func TestQueueGoexitHandling(t *testing.T) {
 func TestQueueDeduplication(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		unblock := make(chan struct{})
-		q := NewQueue(0, func(_ *QueueHandle, x int) (int, error) {
+		q := work.NewQueue(0, func(_ *work.QueueHandle, x int) (int, error) {
 			<-unblock
 			return x, nil
 		})
@@ -112,7 +116,7 @@ func TestQueueDeduplication(t *testing.T) {
 		close(unblock)
 		got, _ := q.Collect(keys[:half]...)
 		assert.Equal(t, keys[:half], got)
-		assert.Equal(t, Stats{Done: half, Submitted: half}, q.Stats())
+		assert.Equal(t, work.Stats{Done: half, Submitted: half}, q.Stats())
 
 		// Re-block the handler.
 		unblock = make(chan struct{})
@@ -130,7 +134,7 @@ func TestQueueDeduplication(t *testing.T) {
 		case <-done:
 			t.Error("computation of key was not blocked")
 		default:
-			assert.Equal(t, Stats{Done: half, Submitted: half + 1}, q.Stats())
+			assert.Equal(t, work.Stats{Done: half, Submitted: half + 1}, q.Stats())
 		}
 
 		// Ensure that the previous results are cached and available without delay.
@@ -141,7 +145,7 @@ func TestQueueDeduplication(t *testing.T) {
 		close(unblock)
 		got, _ = q.Collect(keys...)
 		assert.Equal(t, keys, got)
-		assert.Equal(t, Stats{Done: count, Submitted: count}, q.Stats())
+		assert.Equal(t, work.Stats{Done: count, Submitted: count}, q.Stats())
 	})
 }
 
@@ -155,7 +159,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 			breached atomic.Bool
 			unblock  = make(chan struct{})
 		)
-		q := NewQueue(workerCount, func(_ *QueueHandle, x int) (int, error) {
+		q := work.NewQueue(workerCount, func(_ *work.QueueHandle, x int) (int, error) {
 			count := inflight.Add(1)
 			defer inflight.Add(-1)
 			if count > workerCount {
@@ -175,7 +179,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 		close(unblock)
 		got, _ := q.Collect(keys...)
 		assert.Equal(t, keys, got)
-		assert.Equal(t, Stats{Done: submitCount, Submitted: submitCount}, q.Stats())
+		assert.Equal(t, work.Stats{Done: submitCount, Submitted: submitCount}, q.Stats())
 
 		// ...and ensure they all saw the limit respected.
 		if breached.Load() {
@@ -188,7 +192,7 @@ func TestQueueOrdering(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var handledOrder []int
 		unblock := make(chan struct{})
-		q := NewQueue(1, func(_ *QueueHandle, x int) (int, error) {
+		q := work.NewQueue(1, func(_ *work.QueueHandle, x int) (int, error) {
 			<-unblock
 			handledOrder = append(handledOrder, x)
 			return x, nil
@@ -228,11 +232,11 @@ func TestQueueOrdering(t *testing.T) {
 
 func TestQueueReattachPriority(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		var workers [2]func(*QueueHandle)
+		var workers [2]func(*work.QueueHandle)
 
 		// Create a special handler that will detach as soon as it starts...
 		unblock0 := make(chan struct{})
-		workers[0] = func(qh *QueueHandle) {
+		workers[0] = func(qh *work.QueueHandle) {
 			qh.Detach()
 			<-unblock0
 			qh.Reattach()
@@ -240,10 +244,10 @@ func TestQueueReattachPriority(t *testing.T) {
 
 		// ...and a handler that will simply block.
 		unblock1 := make(chan struct{})
-		workers[1] = func(qh *QueueHandle) { <-unblock1 }
+		workers[1] = func(qh *work.QueueHandle) { <-unblock1 }
 
 		var handleOrder []int
-		q := NewQueue(1, func(qh *QueueHandle, x int) (int, error) {
+		q := work.NewQueue(1, func(qh *work.QueueHandle, x int) (int, error) {
 			if x >= 0 && x < len(workers) {
 				workers[x](qh)
 			}
@@ -292,7 +296,7 @@ func TestQueueReattachConcurrency(t *testing.T) {
 			unblockReattach = make(chan struct{})
 			unblockReturn   = make(chan struct{})
 		)
-		q := NewQueue(workerCount, func(qh *QueueHandle, x int) (int, error) {
+		q := work.NewQueue(workerCount, func(qh *work.QueueHandle, x int) (int, error) {
 			if !qh.Detach() {
 				panic("did not actually detach from queue")
 			}
@@ -339,7 +343,7 @@ func TestQueueDetachReturn(t *testing.T) {
 			unblockDetached = make(chan struct{})
 			unblockAttached = make(chan struct{})
 		)
-		q := NewQueue(1, func(qh *QueueHandle, x int) (int, error) {
+		q := work.NewQueue(1, func(qh *work.QueueHandle, x int) (int, error) {
 			if x < 0 {
 				qh.Detach()
 				<-unblockDetached

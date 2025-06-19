@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	. "github.com/ahamlinman/magic-mirror/internal/work"
+	"github.com/ahamlinman/magic-mirror/internal/work"
 )
 
 func TestKeyMutexBasic(t *testing.T) {
@@ -16,7 +16,7 @@ func TestKeyMutexBasic(t *testing.T) {
 		const workerCount = 2 * keyCount
 
 		var (
-			km      KeyMutex[int]
+			km      work.KeyMutex[int]
 			locked  [keyCount]atomic.Int32
 			unblock = make(chan struct{})
 		)
@@ -50,10 +50,10 @@ func TestKeyMutexBasic(t *testing.T) {
 func TestKeyMutexDetachReattach(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var (
-			km       KeyMutex[struct{}]
+			km       work.KeyMutex[struct{}]
 			unblock0 = make(chan struct{})
 		)
-		q := NewQueue(1, func(qh *QueueHandle, x int) (int, error) {
+		q := work.NewQueue(1, func(qh *work.QueueHandle, x int) (int, error) {
 			if x == 0 {
 				km.LockDetached(qh, struct{}{})
 				<-unblock0
