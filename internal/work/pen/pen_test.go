@@ -4,6 +4,7 @@ package pen_test
 import (
 	"errors"
 	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,42 +16,66 @@ import (
 // Using it to test nil panics silences analyzers like gopls.
 var someNilValue any
 
-func TestPenResults(t *testing.T) {
-	testCases := []struct {
-		Description string
-		Do          func() (int, error)
-		Want        pen.Result[int]
-	}{
-		{
-			Description: "normal non-error return",
-			Do:          func() (int, error) { return 42, nil },
-			Want:        pen.Return[int]{Value: 42},
-		},
-		{
-			Description: "normal error return",
-			Do:          func() (int, error) { return 0, errors.New("pen error") },
-			Want:        pen.Return[int]{Err: errors.New("pen error")},
-		},
-		{
-			Description: "non-nil panic",
-			Do:          func() (int, error) { panic("not nil") },
-			Want:        pen.Panic[int]{Value: "not nil"},
-		},
-		{
-			Description: "nil panic",
-			Do:          func() (int, error) { panic(someNilValue) },
-			Want:        pen.Panic[int]{Value: nil},
-		},
-		{
-			Description: "runtime.Goexit",
-			Do:          func() (int, error) { runtime.Goexit(); return 0, nil },
-			Want:        pen.Goexit[int]{},
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.Description, func(t *testing.T) {
-			got := pen.Do(tc.Do)
-			assert.Equal(t, tc.Want, got)
-		})
-	}
+func TestZero(t *testing.T) {
+	var r pen.Result[int]
+
+	assert.True(t, r.Goexited())
+	assert.False(t, r.Panicked())
+	// Get has more specific tests below.
+}
+
+func TestNormalReturn(t *testing.T) {
+	r := pen.Do(func() (int, error) { return 42, errors.New("silly goose") })
+
+	assert.False(t, r.Goexited())
+	assert.False(t, r.Panicked())
+
+	v, err := r.Unwrap()
+	assert.Equal(t, 42, v)
+	assert.ErrorContains(t, err, "silly goose")
+}
+
+func TestPanic(t *testing.T) {
+	r := pen.Do(func() (int, error) { panic("silly panda") })
+
+	assert.False(t, r.Goexited())
+	assert.True(t, r.Panicked())
+	assert.Equal(t, "silly panda", r.Recovered())
+
+	defer func() {
+		rv := recover()
+		assert.Equal(t, "silly panda", rv)
+	}()
+	r.Unwrap()
+	t.Error("continued after Result.Get should have panicked")
+}
+
+func TestPanicNil(t *testing.T) {
+	r := pen.Do(func() (int, error) { panic(someNilValue) })
+
+	assert.False(t, r.Goexited())
+	assert.True(t, r.Panicked())
+	assert.Nil(t, r.Recovered())
+
+	defer func() {
+		rv := recover()
+		assert.Nil(t, rv)
+	}()
+	r.Unwrap()
+	t.Error("continued after Result.Get should have panicked")
+}
+
+func TestGoexit(t *testing.T) {
+	r := pen.Do(func() (int, error) { runtime.Goexit(); return 0, nil })
+
+	assert.True(t, r.Goexited())
+	assert.False(t, r.Panicked())
+
+	// Go's test framework doesn't allow tests to Goexit without failing.
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		r.Unwrap()
+		t.Error("continued after Result.Get should have Goexited")
+	})
+	wg.Wait()
 }

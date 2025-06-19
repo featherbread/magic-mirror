@@ -223,7 +223,7 @@ func (q *Queue[K, V]) work(initialKey *K) {
 		}
 		func() {
 			defer func() {
-				if _, ok := task.result.(pen.Goexit[V]); ok {
+				if task.result.Goexited() {
 					go q.work(nil) // We can't stop Goexit, so we must transfer our work grant.
 				}
 			}()
@@ -339,13 +339,12 @@ type task[V any] struct {
 
 func (t *task[V]) Handle(fn func() (V, error)) {
 	defer t.wg.Done()
-	t.result = pen.Goexit[V]{}
 	t.result = pen.DoOrExit(fn)
 }
 
 func (t *task[V]) Wait() (V, error) {
 	t.wg.Wait()
-	return t.result.Get()
+	return t.result.Unwrap()
 }
 
 type taskList[V any] []*task[V]
