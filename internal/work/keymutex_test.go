@@ -8,12 +8,12 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ahamlinman/magic-mirror/internal/work"
-	"github.com/ahamlinman/magic-mirror/internal/work/pen"
+	"github.com/ahamlinman/magic-mirror/internal/work/catch"
 )
 
 func TestKeyMutexZeroUnlock(t *testing.T) {
 	var km work.KeyMutex[int]
-	result := pen.Do(func() (int, error) { km.Unlock(0); return 0, nil })
+	result := catch.Do(func() (int, error) { km.Unlock(0); return 0, nil })
 	assert.True(t, result.Panicked())
 }
 
@@ -23,7 +23,7 @@ func TestKeyMutextDoubleUnlock(t *testing.T) {
 		km.Lock(0)
 		km.Lock(1)
 		km.Unlock(1)
-		result := pen.Do(func() (int, error) { km.Unlock(1); return 0, nil })
+		result := catch.Do(func() (int, error) { km.Unlock(1); return 0, nil })
 		assert.True(t, result.Panicked())
 	})
 }

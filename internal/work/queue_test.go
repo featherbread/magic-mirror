@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ahamlinman/magic-mirror/internal/work"
-	"github.com/ahamlinman/magic-mirror/internal/work/pen"
+	"github.com/ahamlinman/magic-mirror/internal/work/catch"
 )
 
 func TestQueueBasic(t *testing.T) {
@@ -46,12 +46,12 @@ func TestQueueUnwind(t *testing.T) {
 	testCases := []struct {
 		Description string
 		Exit        func()
-		Assert      func(*testing.T, pen.Result[int])
+		Assert      func(*testing.T, catch.Result[int])
 	}{
 		{
 			Description: "panic with value",
 			Exit:        func() { panic("test panic") },
-			Assert: func(t *testing.T, result pen.Result[int]) {
+			Assert: func(t *testing.T, result catch.Result[int]) {
 				assert.True(t, result.Panicked())
 				assert.Equal(t, "test panic", result.Recovered())
 			},
@@ -59,7 +59,7 @@ func TestQueueUnwind(t *testing.T) {
 		{
 			Description: "panic(nil)",
 			Exit:        func() { panic(someNilValue) },
-			Assert: func(t *testing.T, result pen.Result[int]) {
+			Assert: func(t *testing.T, result catch.Result[int]) {
 				assert.True(t, result.Panicked())
 				assert.Nil(t, result.Recovered())
 			},
@@ -67,7 +67,7 @@ func TestQueueUnwind(t *testing.T) {
 		{
 			Description: "runtime.Goexit",
 			Exit:        func() { runtime.Goexit(); panic("continued after Goexit") },
-			Assert: func(t *testing.T, result pen.Result[int]) {
+			Assert: func(t *testing.T, result catch.Result[int]) {
 				assert.True(t, result.Goexited())
 			},
 		},
@@ -103,10 +103,10 @@ func TestQueueUnwind(t *testing.T) {
 				assert.Equal(t, keys, got)
 
 				// Ensure that we correctly pass the unwind through.
-				result := pen.Do(func() (int, error) { return q.Get(0) })
+				result := catch.Do(func() (int, error) { return q.Get(0) })
 				tc.Assert(t, result)
 
-				result = pen.Do(func() (n int, err error) { _, err = q.Collect(0); return })
+				result = catch.Do(func() (n int, err error) { _, err = q.Collect(0); return })
 				tc.Assert(t, result)
 			})
 		})

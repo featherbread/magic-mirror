@@ -1,5 +1,5 @@
 //go:debug panicnil=1
-package pen_test
+package catch_test
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/ahamlinman/magic-mirror/internal/work/pen"
+	"github.com/ahamlinman/magic-mirror/internal/work/catch"
 )
 
 // someNilValue is intentionally never set to anything other than nil.
@@ -18,7 +18,7 @@ import (
 var someNilValue any
 
 func TestZero(t *testing.T) {
-	var r pen.Result[int]
+	var r catch.Result[int]
 
 	assert.False(t, r.Goexited())
 	assert.False(t, r.Panicked())
@@ -30,9 +30,9 @@ func TestZero(t *testing.T) {
 }
 
 func TestNormalReturn(t *testing.T) {
-	testCases := []pen.Result[int]{
-		pen.Return(42, errors.New("silly goose")),
-		pen.Do(func() (int, error) { return 42, errors.New("silly goose") }),
+	testCases := []catch.Result[int]{
+		catch.Return(42, errors.New("silly goose")),
+		catch.Do(func() (int, error) { return 42, errors.New("silly goose") }),
 	}
 	for i, r := range testCases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -48,9 +48,9 @@ func TestNormalReturn(t *testing.T) {
 }
 
 func TestPanic(t *testing.T) {
-	testCases := []pen.Result[int]{
-		pen.Panic[int]("silly panda"),
-		pen.Do(func() (int, error) { panic("silly panda") }),
+	testCases := []catch.Result[int]{
+		catch.Panic[int]("silly panda"),
+		catch.Do(func() (int, error) { panic("silly panda") }),
 	}
 	for i, r := range testCases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -70,9 +70,9 @@ func TestPanic(t *testing.T) {
 }
 
 func TestPanicNil(t *testing.T) {
-	testCases := []pen.Result[int]{
-		pen.Panic[int](nil),
-		pen.Do(func() (int, error) { panic(someNilValue) }),
+	testCases := []catch.Result[int]{
+		catch.Panic[int](nil),
+		catch.Do(func() (int, error) { panic(someNilValue) }),
 	}
 	for i, r := range testCases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -92,9 +92,9 @@ func TestPanicNil(t *testing.T) {
 }
 
 func TestGoexit(t *testing.T) {
-	testCases := []pen.Result[int]{
-		pen.Goexit[int](),
-		pen.Do(func() (int, error) { runtime.Goexit(); return 0, nil }),
+	testCases := []catch.Result[int]{
+		catch.Goexit[int](),
+		catch.Do(func() (int, error) { runtime.Goexit(); return 0, nil }),
 	}
 	for i, r := range testCases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {

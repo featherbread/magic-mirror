@@ -8,7 +8,7 @@ import (
 
 	"github.com/gammazero/deque"
 
-	"github.com/ahamlinman/magic-mirror/internal/work/pen"
+	"github.com/ahamlinman/magic-mirror/internal/work/catch"
 )
 
 // Handler is a type for a [Queue]'s handler function.
@@ -334,13 +334,13 @@ func (qh *QueueHandle) Reattach() {
 
 type task[V any] struct {
 	wg     sync.WaitGroup
-	result pen.Result[V]
+	result catch.Result[V]
 }
 
 func (t *task[V]) Handle(fn func() (V, error)) {
 	defer t.wg.Done()
-	t.result = pen.Goexit[V]()
-	t.result = pen.DoOrExit(fn)
+	t.result = catch.Goexit[V]()
+	t.result = catch.DoOrExit(fn)
 }
 
 func (t *task[V]) Wait() (V, error) {

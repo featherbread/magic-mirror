@@ -1,5 +1,5 @@
-// Package pen confines the effects of panics and [runtime.Goexit] calls.
-package pen
+// Package catch confines the effects of panics and [runtime.Goexit] calls.
+package catch
 
 import (
 	"runtime"
