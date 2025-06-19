@@ -55,8 +55,17 @@ func SetOf(elems ...string) (s Set) {
 // the combined set. Typical implementations of Go can Add a single element in
 // O(n) time.
 func (s *Set) Add(elems ...string) {
+	if len(elems) == 0 {
+		return
+	}
+
 	all := make([]string, 0, s.Cardinality()+len(elems))
 	all = slices.AppendSeq(all, s.All())
+	if len(elems) == 1 {
+		s.addOne(all, elems[0])
+		return
+	}
+
 	all = append(all, elems...)
 	slices.Sort(all)
 	all = slices.Compact(all)
@@ -68,6 +77,33 @@ func (s *Set) Add(elems ...string) {
 		all[i] = encode(elem)
 	}
 	s.joined = strings.Join(all, unitSeparator)
+}
+
+// addOne is a marginally optimized routine to add one element to s. It's still
+// O(n) algorithmically, but plays clever tricks to limit how many full passes
+// we make over the set compared to Add.
+func (s *Set) addOne(all []string, elem string) {
+	if len(all) == 0 && elem == "" {
+		s.joined = unitSeparator
+		return
+	}
+
+	pos, ok := slices.BinarySearch(all, elem)
+	if ok {
+		return
+	}
+
+	var b strings.Builder
+	for _, old := range all[:pos] {
+		b.WriteString(encode(old))
+		b.WriteString(unitSeparator)
+	}
+	b.WriteString(encode(elem))
+	for _, old := range all[pos:] {
+		b.WriteString(unitSeparator)
+		b.WriteString(encode(old))
+	}
+	s.joined = b.String()
 }
 
 // Cardinality returns the number of elements in s in O(n) time. It is more

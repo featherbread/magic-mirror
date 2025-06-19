@@ -70,9 +70,12 @@ func TestSet(t *testing.T) {
 			got := s.ToSlice()
 			assert.Equal(t, tc.Elements, got)
 
-			x := SetOf(elements...)
+			var x Set
 			rand.Shuffle(len(elements), swapper(elements))
-			x.Add(elements...)
+			for _, elem := range elements {
+				x.Add(elem)
+				x.Add(elem)
+			}
 			if s != x {
 				t.Errorf("sets with the same content compared unequal: %q vs. %q", s.joined, x.joined)
 			}
@@ -88,6 +91,11 @@ func TestTestSwapper(t *testing.T) { // That's right: testing the tests.
 	s := []string{"a", "b", "c"}
 	swapper(s)(0, 1)
 	assert.Equal(t, []string{"b", "a", "c"}, s)
+}
+
+func TestSetMultipleEmptyString(t *testing.T) {
+	s := SetOf("", "", "")
+	assert.Equal(t, []string{""}, s.ToSlice())
 }
 
 func TestSetIterateEmpty(t *testing.T) {
