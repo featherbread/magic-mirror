@@ -19,7 +19,7 @@ import (
 
 // blobCopier handles requests to copy blob content between repositories.
 type blobCopier struct {
-	*work.SetQueue[blobCopyRequest]
+	work.SetQueue[blobCopyRequest]
 
 	sourceMap   map[digest.Digest]mapset.Set[image.Repository]
 	sourceMapMu sync.Mutex
@@ -65,8 +65,7 @@ func (c *blobCopier) CopyAll(src, dst image.Repository, dgsts ...digest.Digest) 
 		c.RegisterSource(dgst, src)
 		requests[i] = blobCopyRequest{Digest: dgst, Dst: dst}
 	}
-	_, err := c.SetQueue.Collect(requests...)
-	return err
+	return c.SetQueue.Collect(requests...)
 }
 
 func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {

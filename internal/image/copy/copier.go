@@ -28,7 +28,7 @@ func CopyAll(concurrency int, specs ...Spec) error {
 }
 
 type copier struct {
-	queue *work.SetQueue[Spec]
+	queue work.SetQueue[Spec]
 
 	blobs        *blobCopier
 	srcManifests *manifestCache
@@ -65,7 +65,7 @@ func (c *copier) CopyAll(specs ...Spec) error {
 	// Then, wait for each spec and aggregate the errors (unlike Queue.Collect).
 	errs := make([]error, len(specs))
 	for i, spec := range specs {
-		_, errs[i] = c.queue.Get(spec)
+		errs[i] = c.queue.Get(spec)
 	}
 
 	c.printStats()
