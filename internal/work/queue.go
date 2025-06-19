@@ -2,12 +2,13 @@ package work
 
 import (
 	"math"
-	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
 
 	"github.com/gammazero/deque"
+
+	"github.com/ahamlinman/magic-mirror/internal/work/catch"
 )
 
 // Handler is a type for a [Queue]'s handler function.
@@ -222,11 +223,11 @@ func (q *Queue[K, V]) work(initialKey *K) {
 		}
 		func() {
 			defer func() {
-				if task.goexit {
+				if task.result.Goexited() {
 					go q.work(nil) // We can't stop Goexit, so we must transfer our work grant.
 				}
 			}()
-			task.Do(func() (V, error) {
+			task.Handle(func() (V, error) {
 				defer q.tasksDone.Add(1)
 				return q.handle(qh, key)
 			})
@@ -332,36 +333,19 @@ func (qh *QueueHandle) Reattach() {
 }
 
 type task[V any] struct {
-	wg       sync.WaitGroup
-	complete bool
-	goexit   bool
-	value    V
-	err      error
-	panicval any
+	wg     sync.WaitGroup
+	result catch.Result[V]
 }
 
-func (t *task[V]) Do(fn func() (V, error)) {
+func (t *task[V]) Handle(fn func() (V, error)) {
 	defer t.wg.Done()
-	t.goexit = true
-	func() {
-		defer func() { t.panicval = recover() }()
-		t.value, t.err = fn()
-		t.complete = true
-	}()
-	t.goexit = false
+	t.result = catch.Goexit[V]()
+	t.result = catch.DoOrExit(fn)
 }
 
 func (t *task[V]) Wait() (V, error) {
 	t.wg.Wait()
-	switch {
-	case t.complete:
-		return t.value, t.err
-	case t.goexit:
-		runtime.Goexit()
-		panic("continued after runtime.Goexit")
-	default:
-		panic(t.panicval)
-	}
+	return t.result.Unwrap()
 }
 
 type taskList[V any] []*task[V]
