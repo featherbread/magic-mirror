@@ -20,6 +20,20 @@ func TestQueueBasic(t *testing.T) {
 	})
 }
 
+func TestQueueCollectError(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		keys := makeIntKeys(10)
+		q := NewSetQueue(0, func(_ *QueueHandle, x int) error {
+			if x >= 5 {
+				return fmt.Errorf("%d", x)
+			}
+			return nil
+		})
+		err := q.Collect(keys...)
+		assert.EqualError(t, err, "5")
+	})
+}
+
 func TestQueuePanicPropagation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const want = "the expected panic value"
@@ -48,21 +62,6 @@ func TestQueueGoexitPropagation(t *testing.T) {
 		if <-done {
 			t.Error("runtime.Goexit did not propagate")
 		}
-	})
-}
-
-func TestQueueCollectError(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		keys := makeIntKeys(10)
-		q := NewSetQueue(0, func(_ *QueueHandle, x int) error {
-			if x >= 5 {
-				return fmt.Errorf("%d", x)
-			}
-			return nil
-		})
-
-		err := q.Collect(keys...)
-		assert.EqualError(t, err, "5")
 	})
 }
 
