@@ -31,7 +31,32 @@ func DoOrExit[T any](fn func() (T, error)) (r Result[T]) {
 
 // Goexit constructs a synthetic result that captures [runtime.Goexit].
 func Goexit[T any]() Result[T] {
-	return Result[T]{started: true}
+	return Result[T]{
+		started:   true,
+		returned:  false,
+		recovered: false,
+	}
+}
+
+// Panic constructs a synthetic result that captures "panic(panicval)".
+func Panic[T any](panicval any) Result[T] {
+	return Result[T]{
+		started:   true,
+		returned:  false,
+		recovered: true,
+		panicval:  panicval,
+	}
+}
+
+// Return constructs a synthetic result that captures "return value, err".
+func Return[T any](value T, err error) Result[T] {
+	return Result[T]{
+		started:   true,
+		returned:  true,
+		recovered: true,
+		value:     value,
+		err:       err,
+	}
 }
 
 // Result captures the exit behavior of an isolated function. The zero value

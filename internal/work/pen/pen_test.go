@@ -4,6 +4,7 @@ package pen_test
 import (
 	"errors"
 	"runtime"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -28,57 +29,81 @@ func TestZero(t *testing.T) {
 }
 
 func TestNormalReturn(t *testing.T) {
-	r := pen.Do(func() (int, error) { return 42, errors.New("silly goose") })
+	testCases := []pen.Result[int]{
+		pen.Return(42, errors.New("silly goose")),
+		pen.Do(func() (int, error) { return 42, errors.New("silly goose") }),
+	}
+	for i, r := range testCases {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			assert.False(t, r.Goexited())
+			assert.False(t, r.Panicked())
 
-	assert.False(t, r.Goexited())
-	assert.False(t, r.Panicked())
-
-	v, err := r.Unwrap()
-	assert.Equal(t, 42, v)
-	assert.ErrorContains(t, err, "silly goose")
+			v, err := r.Unwrap()
+			assert.Equal(t, 42, v)
+			assert.ErrorContains(t, err, "silly goose")
+		})
+	}
 }
 
 func TestPanic(t *testing.T) {
-	r := pen.Do(func() (int, error) { panic("silly panda") })
+	testCases := []pen.Result[int]{
+		pen.Panic[int]("silly panda"),
+		pen.Do(func() (int, error) { panic("silly panda") }),
+	}
+	for i, r := range testCases {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			assert.False(t, r.Goexited())
+			assert.True(t, r.Panicked())
+			assert.Equal(t, "silly panda", r.Recovered())
 
-	assert.False(t, r.Goexited())
-	assert.True(t, r.Panicked())
-	assert.Equal(t, "silly panda", r.Recovered())
-
-	defer func() {
-		rv := recover()
-		assert.Equal(t, "silly panda", rv)
-	}()
-	r.Unwrap()
-	t.Error("continued after Result.Get should have panicked")
+			defer func() {
+				rv := recover()
+				assert.Equal(t, "silly panda", rv)
+			}()
+			r.Unwrap()
+			t.Error("continued after Result.Get should have panicked")
+		})
+	}
 }
 
 func TestPanicNil(t *testing.T) {
-	r := pen.Do(func() (int, error) { panic(someNilValue) })
+	testCases := []pen.Result[int]{
+		pen.Panic[int](nil),
+		pen.Do(func() (int, error) { panic(someNilValue) }),
+	}
+	for i, r := range testCases {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			assert.False(t, r.Goexited())
+			assert.True(t, r.Panicked())
+			assert.Nil(t, r.Recovered())
 
-	assert.False(t, r.Goexited())
-	assert.True(t, r.Panicked())
-	assert.Nil(t, r.Recovered())
-
-	defer func() {
-		rv := recover()
-		assert.Nil(t, rv)
-	}()
-	r.Unwrap()
-	t.Error("continued after Result.Get should have panicked")
+			defer func() {
+				rv := recover()
+				assert.Nil(t, rv)
+			}()
+			r.Unwrap()
+			t.Error("continued after Result.Get should have panicked")
+		})
+	}
 }
 
 func TestGoexit(t *testing.T) {
-	r := pen.Do(func() (int, error) { runtime.Goexit(); return 0, nil })
+	testCases := []pen.Result[int]{
+		pen.Goexit[int](),
+		pen.Do(func() (int, error) { runtime.Goexit(); return 0, nil }),
+	}
+	for i, r := range testCases {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			assert.True(t, r.Goexited())
+			assert.False(t, r.Panicked())
 
-	assert.True(t, r.Goexited())
-	assert.False(t, r.Panicked())
-
-	// Go's test framework doesn't allow tests to Goexit without failing.
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		r.Unwrap()
-		t.Error("continued after Result.Get should have Goexited")
-	})
-	wg.Wait()
+			// Go's test framework doesn't allow tests to Goexit without failing.
+			var wg sync.WaitGroup
+			wg.Go(func() {
+				r.Unwrap()
+				t.Error("continued after Result.Get should have Goexited")
+			})
+			wg.Wait()
+		})
+	}
 }
