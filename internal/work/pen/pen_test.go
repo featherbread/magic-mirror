@@ -22,6 +22,7 @@ func TestZero(t *testing.T) {
 
 	assert.False(t, r.Goexited())
 	assert.False(t, r.Panicked())
+	assert.True(t, r.Returned())
 
 	v, err := r.Unwrap()
 	assert.NoError(t, err)
@@ -37,6 +38,7 @@ func TestNormalReturn(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			assert.False(t, r.Goexited())
 			assert.False(t, r.Panicked())
+			assert.True(t, r.Returned())
 
 			v, err := r.Unwrap()
 			assert.Equal(t, 42, v)
@@ -53,6 +55,7 @@ func TestPanic(t *testing.T) {
 	for i, r := range testCases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			assert.False(t, r.Goexited())
+			assert.False(t, r.Returned())
 			assert.True(t, r.Panicked())
 			assert.Equal(t, "silly panda", r.Recovered())
 
@@ -74,6 +77,7 @@ func TestPanicNil(t *testing.T) {
 	for i, r := range testCases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			assert.False(t, r.Goexited())
+			assert.False(t, r.Returned())
 			assert.True(t, r.Panicked())
 			assert.Nil(t, r.Recovered())
 
@@ -94,8 +98,9 @@ func TestGoexit(t *testing.T) {
 	}
 	for i, r := range testCases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			assert.True(t, r.Goexited())
 			assert.False(t, r.Panicked())
+			assert.False(t, r.Returned())
+			assert.True(t, r.Goexited())
 
 			// Go's test framework doesn't allow tests to Goexit without failing.
 			var wg sync.WaitGroup

@@ -94,6 +94,11 @@ func (r Result[T]) Panicked() bool {
 	return r.started && !r.returned && r.recovered
 }
 
+// Returned is true if this result captures a normal return.
+func (r Result[T]) Returned() bool {
+	return !r.started || r.returned
+}
+
 // Recovered returns any panic value captured by this result. This value may be
 // nil if the result does not capture a panic, or if the panicnil=1 GODEBUG is
 // enabled. [Panicked] can distinguish whether a nil panic actually occurred.
