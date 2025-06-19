@@ -13,15 +13,6 @@ import (
 // Handler is the type for a [Queue]'s handler function.
 type Handler[K comparable, V any] = func(*QueueHandle, K) (V, error)
 
-// Empty is the canonical empty value type for a [Queue].
-type Empty = struct{}
-
-// SetQueue represents a [Queue] whose handlers return no meaningful value.
-type SetQueue[K comparable] = Queue[K, Empty]
-
-// SetHandler is a type for a [SetQueue]'s handler function.
-type SetHandler[K comparable] = func(*QueueHandle, K) error
-
 // Queue runs a [Handler] once per key in a distinct goroutine and caches the
 // result, while imposing dynamic concurrency limits on handler executions.
 //
@@ -89,15 +80,6 @@ func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue
 		tasks:    make(map[K]*task[V]),
 		reattach: make(chan struct{}),
 	}
-}
-
-// NewSetQueue creates a [SetQueue] in a manner equivalent to how [NewQueue]
-// creates a [Queue].
-func NewSetQueue[K comparable](concurrency int, handle SetHandler[K]) *SetQueue[K] {
-	return NewQueue(concurrency, func(qh *QueueHandle, key K) (_ Empty, err error) {
-		err = handle(qh, key)
-		return
-	})
 }
 
 // Submit enqueues any unhandled keys among those provided at the back of the
