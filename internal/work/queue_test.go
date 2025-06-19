@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ahamlinman/magic-mirror/internal/work"
+	"github.com/ahamlinman/magic-mirror/internal/work/pen"
 )
 
 func TestQueueBasic(t *testing.T) {
@@ -39,62 +40,43 @@ func TestQueueCollectError(t *testing.T) {
 	})
 }
 
-func TestQueuePanicPropagation(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		const want = "the expected panic value"
-		q := work.NewSetQueue(1, func(_ *work.QueueHandle, _ int) error {
-			panic(want)
+func TestQueuePanic(t *testing.T) {
+	testValues := []any{"test panic", nil}
+	for _, panicval := range testValues {
+		t.Run(fmt.Sprintf("%v", panicval), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				stepPanic := make(chan struct{})
+				q := work.NewQueue(1, func(_ *work.QueueHandle, x int) (int, error) {
+					if x == 0 {
+						for range stepPanic {
+						}
+						panic(panicval)
+					}
+					return x, nil
+				})
+
+				// Start the handler that will panic, and ensure that it's blocked.
+				q.Submit(0)
+				stepPanic <- struct{}{}
+
+				// Force some more handlers to queue up...
+				keys := []int{1, 2}
+				q.Submit(keys...)
+
+				// ...then let them through.
+				close(stepPanic)
+
+				// Ensure that the panic didn't break the handling of those new keys.
+				got, _ := q.Collect(keys...)
+				assert.Equal(t, keys, got)
+
+				// Ensure that we correctly pass the panic through.
+				result := pen.Do(func() (int, error) { return q.Get(0) })
+				assert.True(t, result.Panicked())
+				assert.Equal(t, panicval, result.Recovered())
+			})
 		})
-		defer func() {
-			got := recover()
-			assert.Equal(t, want, got)
-		}()
-		q.Get(0)
-		t.Fatal("panic did not propagate")
-	})
-}
-
-func TestQueuePanicNil(t *testing.T) {
-	var someNilValue any // Will never be assigned; quiets lints for literal panic(nil).
-	synctest.Test(t, func(t *testing.T) {
-		stepPanic := make(chan struct{})
-		q := work.NewQueue(1, func(_ *work.QueueHandle, x int) (int, error) {
-			if x == 0 {
-				for range stepPanic {
-				}
-				panic(someNilValue)
-			}
-			return x, nil
-		})
-
-		// Start the handler that will panic(nil), and ensure that it's blocked.
-		q.Submit(0)
-		stepPanic <- struct{}{}
-
-		// Force some more handlers to queue up...
-		keys := []int{1, 2}
-		q.Submit(keys...)
-
-		// ...then let them through.
-		close(stepPanic)
-
-		// Ensure that the panic(nil) didn't break the handling of those new keys.
-		got, _ := q.Collect(keys...)
-		assert.Equal(t, keys, got)
-
-		// Ensure that we correctly pass the panic(nil) through.
-		var recovered bool
-		defer func() { assert.True(t, recovered) }()
-
-		var panicval any
-		func() {
-			defer func() { panicval = recover() }()
-			q.Get(0)
-			t.Error("panic(nil) did not propagate")
-		}()
-		recovered = true
-		assert.Nil(t, panicval)
-	})
+	}
 }
 
 func TestQueueGoexitPropagation(t *testing.T) {
