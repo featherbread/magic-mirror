@@ -339,6 +339,7 @@ type task[V any] struct {
 
 func (t *task[V]) Handle(fn func() (V, error)) {
 	defer t.wg.Done()
+	t.result = pen.Goexit[V]()
 	t.result = pen.DoOrExit(fn)
 }
 

@@ -9,6 +9,7 @@ import (
 // Do runs fn in an independent goroutine and captures its exit behavior,
 // isolating the caller from any panic or [runtime.Goexit].
 func Do[T any](fn func() (T, error)) (r Result[T]) {
+	r = Goexit[T]()
 	var wg sync.WaitGroup
 	wg.Go(func() { r = DoOrExit(fn) })
 	wg.Wait()
@@ -18,6 +19,7 @@ func Do[T any](fn func() (T, error)) (r Result[T]) {
 // DoOrExit runs fn in the current goroutine and captures a return or panic.
 // Unlike [Do], it propagates [runtime.Goexit] from fn rather than returning.
 func DoOrExit[T any](fn func() (T, error)) (r Result[T]) {
+	r.started = true
 	func() {
 		defer func() { r.panicval = recover() }()
 		r.value, r.err = fn()
@@ -27,13 +29,15 @@ func DoOrExit[T any](fn func() (T, error)) (r Result[T]) {
 	return
 }
 
-// Result captures the exit behavior of an isolated function.
-//
-// The zero Result behaves as if capturing [runtime.Goexit].
-// This dangerous default is necessary to correctly use a result initialized
-// with [DoOrExit] rather than [Do], since DoOrExit by definition cannot return
-// a value representing a Goexit.
+// Goexit constructs a synthetic result that captures [runtime.Goexit].
+func Goexit[T any]() Result[T] {
+	return Result[T]{started: true}
+}
+
+// Result captures the exit behavior of an isolated function. The zero value
+// behaves as if capturing the return of a zero value and nil error.
 type Result[T any] struct {
+	started   bool
 	returned  bool
 	recovered bool
 	value     T
@@ -45,7 +49,7 @@ type Result[T any] struct {
 // returning its values, panicking, or calling [runtime.Goexit].
 func (r Result[T]) Unwrap() (T, error) {
 	switch {
-	case r.returned:
+	case !r.started || r.returned:
 		return r.value, r.err
 	case r.recovered:
 		panic(r.panicval)
@@ -57,12 +61,12 @@ func (r Result[T]) Unwrap() (T, error) {
 
 // Goexited returns true if this result captures a [runtime.Goexit] call.
 func (r Result[T]) Goexited() bool {
-	return !r.returned && !r.recovered
+	return r.started && !r.returned && !r.recovered
 }
 
 // Panicked returns true if this result captures a panic.
 func (r Result[T]) Panicked() bool {
-	return !r.returned && r.recovered
+	return r.started && !r.returned && r.recovered
 }
 
 // Recovered returns any panic value captured by this result. This value may be

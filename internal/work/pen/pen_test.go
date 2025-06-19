@@ -19,9 +19,12 @@ var someNilValue any
 func TestZero(t *testing.T) {
 	var r pen.Result[int]
 
-	assert.True(t, r.Goexited())
+	assert.False(t, r.Goexited())
 	assert.False(t, r.Panicked())
-	// Get has more specific tests below.
+
+	v, err := r.Unwrap()
+	assert.NoError(t, err)
+	assert.Zero(t, v)
 }
 
 func TestNormalReturn(t *testing.T) {
