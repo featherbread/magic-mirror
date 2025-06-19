@@ -40,90 +40,77 @@ func TestQueueCollectError(t *testing.T) {
 	})
 }
 
-func TestQueuePanic(t *testing.T) {
-	testValues := []any{"test panic", nil}
-	for _, panicval := range testValues {
-		t.Run(fmt.Sprintf("%v", panicval), func(t *testing.T) {
+func TestQueueUnwind(t *testing.T) {
+	var someNilValue any // Never assigned; quiets lints for literal panic(nil).
+
+	testCases := []struct {
+		Description string
+		Exit        func()
+		Assert      func(*testing.T, pen.Result[int])
+	}{
+		{
+			Description: "panic with value",
+			Exit:        func() { panic("test panic") },
+			Assert: func(t *testing.T, result pen.Result[int]) {
+				assert.True(t, result.Panicked())
+				assert.Equal(t, "test panic", result.Recovered())
+			},
+		},
+		{
+			Description: "panic(nil)",
+			Exit:        func() { panic(someNilValue) },
+			Assert: func(t *testing.T, result pen.Result[int]) {
+				assert.True(t, result.Panicked())
+				assert.Nil(t, result.Recovered())
+			},
+		},
+		{
+			Description: "runtime.Goexit",
+			Exit:        func() { runtime.Goexit(); panic("continued after Goexit") },
+			Assert: func(t *testing.T, result pen.Result[int]) {
+				assert.True(t, result.Goexited())
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Description, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				stepPanic := make(chan struct{})
+				step := make(chan struct{})
 				q := work.NewQueue(1, func(_ *work.QueueHandle, x int) (int, error) {
 					if x == 0 {
-						for range stepPanic {
+						for range step {
 						}
-						panic(panicval)
+						tc.Exit()
+						t.Error("test case failed to unwind from handler")
 					}
 					return x, nil
 				})
 
-				// Start the handler that will panic, and ensure that it's blocked.
+				// Start the handler that will unwind, and ensure that it's blocked.
 				q.Submit(0)
-				stepPanic <- struct{}{}
+				step <- struct{}{}
 
 				// Force some more handlers to queue up...
 				keys := []int{1, 2}
 				q.Submit(keys...)
 
 				// ...then let them through.
-				close(stepPanic)
+				close(step)
 
-				// Ensure that the panic didn't break the handling of those new keys.
+				// Ensure that the unwind didn't break the handling of those new keys.
 				got, _ := q.Collect(keys...)
 				assert.Equal(t, keys, got)
 
-				// Ensure that we correctly pass the panic through.
+				// Ensure that we correctly pass the unwind through.
 				result := pen.Do(func() (int, error) { return q.Get(0) })
-				assert.True(t, result.Panicked())
-				assert.Equal(t, panicval, result.Recovered())
+				tc.Assert(t, result)
+
+				result = pen.Do(func() (n int, err error) { _, err = q.Collect(0); return })
+				tc.Assert(t, result)
 			})
 		})
 	}
-}
-
-func TestQueueGoexitPropagation(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		q := work.NewSetQueue(1, func(_ *work.QueueHandle, _ int) error {
-			runtime.Goexit()
-			return nil
-		})
-		done := make(chan bool)
-		go func() {
-			defer close(done)
-			q.Get(0)
-			done <- true
-		}()
-		if <-done {
-			t.Error("runtime.Goexit did not propagate")
-		}
-	})
-}
-
-func TestQueueGoexitHandling(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		stepGoexit := make(chan struct{})
-		q := work.NewQueue(1, func(_ *work.QueueHandle, x int) (int, error) {
-			if x == 0 {
-				for range stepGoexit {
-				}
-				runtime.Goexit()
-			}
-			return x, nil
-		})
-
-		// Start the handler that will Goexit, and ensure that it's blocked.
-		q.Submit(0)
-		stepGoexit <- struct{}{}
-
-		// Force some more handlers to queue up...
-		keys := []int{1, 2}
-		q.Submit(keys...)
-
-		// ...then let them through.
-		close(stepGoexit)
-
-		// Ensure that the Goexit didn't break the handling of those new keys.
-		got, _ := q.Collect(keys...)
-		assert.Equal(t, keys, got)
-	})
 }
 
 func TestQueueDeduplication(t *testing.T) {
