@@ -83,27 +83,27 @@ func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue
 	}
 }
 
-// Submit enqueues any new keys among those provided at the back of the queue,
+// AddNew enqueues any new keys among those provided at the back of the queue,
 // without affecting the queued order of keys already pending or waiting for any
 // handlers to finish. It enqueues the new keys in the order given without
 // interleaving keys from any other enqueue operation. However, future
-// [Queue.SubmitUrgent] calls may interpose new keys between those enqueued by a
-// single Submit call.
-func (q *Queue[K, V]) Submit(keys ...K) {
+// [Queue.AddNewFront] calls may interpose new keys between those enqueued by a
+// single AddNew call.
+func (q *Queue[K, V]) AddNew(keys ...K) {
 	q.getTasks(pushAllBack, keys...)
 }
 
-// SubmitUrgent behaves like [Queue.Submit], but enqueues the new keys in the
-// order given at the front of the queue rather than the back. Like Submit, it
+// AddNewFront behaves like [Queue.AddNew], but enqueues the new keys in the
+// order given at the front of the queue rather than the back. Like AddNew, it
 // does not affect the queued order of keys already pending; it is not possible
-// to "promote" a key from non-urgent to urgent.
-func (q *Queue[K, V]) SubmitUrgent(keys ...K) {
+// to move keys to the front of the queue.
+func (q *Queue[K, V]) AddNewFront(keys ...K) {
 	q.getTasks(pushAllFront, keys...)
 }
 
 // Get blocks until the queue has handled this key, then propagates its result:
 // returning its value and error, or forwarding a panic or [runtime.Goexit].
-// If necessary, Get enqueues the key as if by a call to [Queue.Submit].
+// If necessary, Get enqueues the key as if by a call to [Queue.AddNew].
 func (q *Queue[K, V]) Get(key K) (V, error) {
 	return q.getTasks(pushAllBack, key)[0].Wait()
 }
@@ -113,7 +113,7 @@ func (q *Queue[K, V]) Get(key K) (V, error) {
 // those results with respect to the order of the keys, without waiting for the
 // queue to handle the remaining keys. Otherwise, it returns a slice of values
 // corresponding to the keys. If necessary, Collect enqueues the keys as if by a
-// call to [Queue.Submit].
+// call to [Queue.AddNew].
 func (q *Queue[K, V]) Collect(keys ...K) ([]V, error) {
 	return q.getTasks(pushAllBack, keys...).Wait()
 }

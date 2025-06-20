@@ -88,12 +88,12 @@ func TestQueueUnwind(t *testing.T) {
 				})
 
 				// Start the handler that will unwind, and ensure that it's blocked.
-				q.Submit(0)
+				q.AddNew(0)
 				step <- struct{}{}
 
 				// Force some more handlers to queue up...
 				keys := []int{1, 2}
-				q.Submit(keys...)
+				q.AddNew(keys...)
 				synctest.Wait()
 
 				// ...then let everything through.
@@ -168,7 +168,7 @@ func TestQueueDeduplication(t *testing.T) {
 func TestQueueConcurrencyLimit(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const workerCount = 5
-		const submitCount = workerCount * 10
+		const keyCount = workerCount * 10
 
 		var (
 			inflight atomic.Int32
@@ -187,15 +187,15 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 
 		// Start up as many handlers as possible, and let them check for breaches
 		// before they're blocked from returning.
-		keys := makeIntKeys(submitCount)
-		q.Submit(keys...)
+		keys := makeIntKeys(keyCount)
+		q.AddNew(keys...)
 		synctest.Wait()
 
 		// Let them all finish...
 		close(unblock)
 		got, _ := q.Collect(keys...)
 		assert.Equal(t, keys, got)
-		assert.Equal(t, work.Stats{Done: submitCount, Submitted: submitCount}, q.Stats())
+		assert.Equal(t, work.Stats{Done: keyCount, Submitted: keyCount}, q.Stats())
 
 		// ...and ensure they all saw the limit respected.
 		if breached.Load() {
@@ -215,14 +215,14 @@ func TestQueueOrdering(t *testing.T) {
 		})
 
 		// Start a new blocked handler to force the queueing of subsequent keys.
-		q.Submit(0)
+		q.AddNew(0)
 		synctest.Wait()
 
-		// Queue up some keys with various priorities.
-		q.Submit(1, 2)
-		q.SubmitUrgent(-1, -2)
-		q.Submit(3)
-		q.SubmitUrgent(-3)
+		// Add some keys at both the front and back of the queue.
+		q.AddNew(1, 2)
+		q.AddNewFront(-1, -2)
+		q.AddNew(3)
+		q.AddNewFront(-3)
 
 		// Unblock all the handlers...
 		close(unblock)
@@ -234,11 +234,11 @@ func TestQueueOrdering(t *testing.T) {
 		wantOrder := []int{
 			// The initial blocked handler.
 			0,
-			// The urgent handlers, reversed from their queueing order but with keys
-			// in a single SubmitUrgent call queued in the order provided.
+			// AddNewFront keys, reversed from their queueing order but with keys in a
+			// single call queued in the order provided.
 			-3,
 			-1, -2,
-			// The normal handlers, in the order queued.
+			// AddNew keys, in the order queued.
 			1, 2,
 			3,
 		}
@@ -280,7 +280,7 @@ func TestQueueReattachPriority(t *testing.T) {
 
 		// Start the handler for 1 that will simply block, and queue up some extra
 		// keys behind it.
-		q.Submit(1, 2, 3)
+		q.AddNew(1, 2, 3)
 		synctest.Wait()
 
 		// Allow the detached handler for 0 to reattach, and wait until it's durably
@@ -304,7 +304,7 @@ func TestQueueReattachPriority(t *testing.T) {
 func TestQueueReattachConcurrency(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const workerCount = 5
-		const submitCount = workerCount * 10
+		const keyCount = workerCount * 10
 
 		var (
 			countAttached   atomic.Int32
@@ -330,8 +330,8 @@ func TestQueueReattachConcurrency(t *testing.T) {
 		})
 
 		// Start up a bunch of handlers, and wait for all of them to detach.
-		keys := makeIntKeys(submitCount)
-		q.Submit(keys...)
+		keys := makeIntKeys(keyCount)
+		q.AddNew(keys...)
 		synctest.Wait()
 
 		// Allow them all to start reattaching, and wait until all possible
@@ -375,7 +375,7 @@ func TestQueueDetachReturn(t *testing.T) {
 
 		// Start up multiple detached handlers that will never reattach.
 		detachedKeys := []int{-2, -1}
-		q.Submit(detachedKeys...)
+		q.AddNew(detachedKeys...)
 		synctest.Wait()
 
 		// Start up some normal handlers...

@@ -59,8 +59,8 @@ func newCopier(concurrency int) *copier {
 }
 
 func (c *copier) CopyAll(specs ...Spec) error {
-	// Pre-submit everything to the queue to get it going.
-	c.queue.Submit(specs...)
+	// Add everything to the queue to get it going.
+	c.queue.AddNew(specs...)
 
 	// Then, wait for each spec and aggregate the errors (unlike Queue.Collect).
 	errs := make([]error, len(specs))
