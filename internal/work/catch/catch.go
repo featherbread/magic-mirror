@@ -72,6 +72,13 @@ type Result[T any] struct {
 
 // Unwrap propagates the captured result to the current goroutine:
 // returning its values, panicking, or calling [runtime.Goexit].
+// It is guaranteed to return, rather than panic or Goexit,
+// if and only if [Result.Returned] is true.
+//
+// Unwrap is the only way to obtain the value and error of a captured return;
+// there is no "safe" accessor guaranteed to return in all cases.
+// This intentional design choice discourages the use of results to ignore
+// abnormal exit behaviors rather than inspect and handle them.
 func (r Result[T]) Unwrap() (T, error) {
 	switch {
 	case !r.started || r.returned:
