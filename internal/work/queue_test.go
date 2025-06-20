@@ -22,7 +22,7 @@ func TestQueueBasic(t *testing.T) {
 		got, err := q.Get(42)
 		assert.NoError(t, err)
 		assert.Equal(t, 42, got)
-		assert.Equal(t, work.Stats{Done: 1, Submitted: 1}, q.Stats())
+		assert.Equal(t, work.Stats{Handled: 1, Added: 1}, q.Stats())
 	})
 }
 
@@ -132,7 +132,7 @@ func TestQueueDeduplication(t *testing.T) {
 		close(unblock)
 		got, _ := q.Collect(keys[:half]...)
 		assert.Equal(t, keys[:half], got)
-		assert.Equal(t, work.Stats{Done: half, Submitted: half}, q.Stats())
+		assert.Equal(t, work.Stats{Handled: half, Added: half}, q.Stats())
 
 		// Re-block the handler.
 		unblock = make(chan struct{})
@@ -150,7 +150,7 @@ func TestQueueDeduplication(t *testing.T) {
 		case <-done:
 			t.Error("computation of key was not blocked")
 		default:
-			assert.Equal(t, work.Stats{Done: half, Submitted: half + 1}, q.Stats())
+			assert.Equal(t, work.Stats{Handled: half, Added: half + 1}, q.Stats())
 		}
 
 		// Ensure that the previous results are cached and available without delay.
@@ -161,7 +161,7 @@ func TestQueueDeduplication(t *testing.T) {
 		close(unblock)
 		got, _ = q.Collect(keys...)
 		assert.Equal(t, keys, got)
-		assert.Equal(t, work.Stats{Done: count, Submitted: count}, q.Stats())
+		assert.Equal(t, work.Stats{Handled: count, Added: count}, q.Stats())
 	})
 }
 
@@ -195,7 +195,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 		close(unblock)
 		got, _ := q.Collect(keys...)
 		assert.Equal(t, keys, got)
-		assert.Equal(t, work.Stats{Done: keyCount, Submitted: keyCount}, q.Stats())
+		assert.Equal(t, work.Stats{Handled: keyCount, Added: keyCount}, q.Stats())
 
 		// ...and ensure they all saw the limit respected.
 		if breached.Load() {

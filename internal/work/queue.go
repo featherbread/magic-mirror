@@ -35,9 +35,9 @@ type Queue[K comparable, V any] struct {
 	stateMu  sync.Mutex
 	reattach chan struct{}
 
-	tasks     map[K]*task[V]
-	tasksMu   sync.Mutex
-	tasksDone atomic.Uint64
+	tasks        map[K]*task[V]
+	tasksMu      sync.Mutex
+	tasksHandled atomic.Uint64
 }
 
 // workState tracks the pending work in a queue, along with the "work grants"
@@ -120,19 +120,18 @@ func (q *Queue[K, V]) Collect(keys ...K) ([]V, error) {
 
 // Stats conveys information about the keys and results in a [Queue].
 type Stats struct {
-	// Done is the number of handled keys, whose results are computed and cached.
-	Done uint64
-	// Submitted is the number of keys whose results have been requested,
-	// including unhandled keys.
-	Submitted uint64
+	// Handled is the count of keys whose results are computed and cached.
+	Handled uint64
+	// Added is the count of all pending and handled keys known to the queue.
+	Added uint64
 }
 
 // Stats returns the [Stats] for a [Queue] as of the time of the call.
 func (q *Queue[K, V]) Stats() Stats {
 	var stats Stats
-	stats.Done = q.tasksDone.Load()
+	stats.Handled = q.tasksHandled.Load()
 	q.tasksMu.Lock()
-	stats.Submitted = uint64(len(q.tasks))
+	stats.Added = uint64(len(q.tasks))
 	q.tasksMu.Unlock()
 	return stats
 }
@@ -228,7 +227,7 @@ func (q *Queue[K, V]) work(initialKey *K) {
 				}
 			}()
 			task.Handle(func() (V, error) {
-				defer q.tasksDone.Add(1)
+				defer q.tasksHandled.Add(1)
 				return q.handle(qh, key)
 			})
 		}()

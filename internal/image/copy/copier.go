@@ -82,9 +82,9 @@ func (c *copier) printStats() {
 	)
 	log.Printf(
 		"[stats] blobs: %d of %d copied; platforms: %d of %d copied; images: %d of %d done",
-		blobStats.Done, blobStats.Submitted,
-		platformStats.Done, platformStats.Submitted,
-		imageStats.Done, imageStats.Submitted,
+		blobStats.Handled, blobStats.Added,
+		platformStats.Handled, platformStats.Added,
+		imageStats.Handled, imageStats.Added,
 	)
 	c.statsTimer.Reset(statsInterval)
 }
