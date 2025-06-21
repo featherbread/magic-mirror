@@ -59,8 +59,8 @@ func newCopier(concurrency int) *copier {
 }
 
 func (c *copier) CopyAll(specs ...Spec) error {
-	// Add everything to the queue to get it going.
-	c.queue.AddNew(specs...)
+	// Inform the queue of all specs up front.
+	c.queue.Inform(specs...)
 
 	// Then, wait for each spec and aggregate the errors (unlike Queue.Collect).
 	errs := make([]error, len(specs))
@@ -82,9 +82,9 @@ func (c *copier) printStats() {
 	)
 	log.Printf(
 		"[stats] blobs: %d of %d copied; platforms: %d of %d copied; images: %d of %d done",
-		blobStats.Handled, blobStats.Added,
-		platformStats.Handled, platformStats.Added,
-		imageStats.Handled, imageStats.Added,
+		blobStats.Handled, blobStats.Total,
+		platformStats.Handled, platformStats.Total,
+		imageStats.Handled, imageStats.Total,
 	)
 	c.statsTimer.Reset(statsInterval)
 }

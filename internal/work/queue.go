@@ -92,27 +92,27 @@ func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue
 	}
 }
 
-// AddNew enqueues any new keys among those provided at the back of the queue,
+// Inform enqueues any new keys among those provided at the back of the queue,
 // without affecting the queued order of keys already pending or waiting for any
 // handlers to finish. It enqueues the new keys in the order given without
 // interleaving keys from any other enqueue operation. However, future
-// [Queue.AddNewFront] calls may interpose new keys between those enqueued by a
-// single AddNew call.
-func (q *Queue[K, V]) AddNew(keys ...K) {
+// [Queue.InformFront] calls may interpose new keys between those enqueued by a
+// single Inform call.
+func (q *Queue[K, V]) Inform(keys ...K) {
 	q.getTasks(pushAllBack, keys...)
 }
 
-// AddNewFront behaves like [Queue.AddNew], but enqueues the new keys in the
-// order given at the front of the queue rather than the back. Like AddNew, it
+// InformFront behaves like [Queue.Inform], but enqueues the new keys in the
+// order given at the front of the queue rather than the back. Like Inform, it
 // does not affect the queued order of keys already pending; it is not possible
 // to move keys to the front of the queue.
-func (q *Queue[K, V]) AddNewFront(keys ...K) {
+func (q *Queue[K, V]) InformFront(keys ...K) {
 	q.getTasks(pushAllFront, keys...)
 }
 
 // Get blocks until the queue has handled this key, then propagates its result:
 // returning its value and error, or forwarding a panic or [runtime.Goexit].
-// If necessary, Get enqueues the key as if by a call to [Queue.AddNew].
+// If necessary, Get enqueues the key as if by a call to [Queue.Inform].
 func (q *Queue[K, V]) Get(key K) (V, error) {
 	return q.getTasks(pushAllBack, key)[0].Wait()
 }
@@ -122,7 +122,7 @@ func (q *Queue[K, V]) Get(key K) (V, error) {
 // those results with respect to the order of the keys, without waiting for the
 // queue to handle the remaining keys. Otherwise, it returns a slice of values
 // corresponding to the keys. If necessary, Collect enqueues the keys as if by a
-// call to [Queue.AddNew].
+// call to [Queue.Inform].
 func (q *Queue[K, V]) Collect(keys ...K) ([]V, error) {
 	return q.getTasks(pushAllBack, keys...).Wait()
 }
@@ -131,8 +131,8 @@ func (q *Queue[K, V]) Collect(keys ...K) ([]V, error) {
 type Stats struct {
 	// Handled is the count of keys whose results are computed and cached.
 	Handled uint64
-	// Added is the count of all pending and handled keys known to the queue.
-	Added uint64
+	// Total is the count of all pending and handled keys known to the queue.
+	Total uint64
 }
 
 // Stats returns the [Stats] for a [Queue] as of the time of the call.
@@ -140,7 +140,7 @@ func (q *Queue[K, V]) Stats() Stats {
 	var stats Stats
 	stats.Handled = q.tasksHandled.Load()
 	q.tasksMu.Lock()
-	stats.Added = uint64(len(q.tasks))
+	stats.Total = uint64(len(q.tasks))
 	q.tasksMu.Unlock()
 	return stats
 }

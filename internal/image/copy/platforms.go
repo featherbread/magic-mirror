@@ -53,9 +53,9 @@ func (c *platformCopier) copyPlatform(_ *work.QueueHandle, req platformCopyReque
 	// We share this manifest cache with the top-level copier. The top level
 	// requests both indexes and platform manifests, without knowing in advance
 	// what it'll get. This level always gets platform manifests, which are
-	// required to discover source blobs, so we add our requests at the front to
-	// fill up the blob queue faster.
-	c.manifests.AddNewFront(req.Src)
+	// required to discover source blobs, so we put our requests up front to
+	// fill the blob queue faster.
+	c.manifests.InformFront(req.Src)
 	srcManifest, err := c.manifests.Get(req.Src)
 	if err != nil {
 		return

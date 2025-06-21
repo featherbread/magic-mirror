@@ -22,7 +22,7 @@ func TestQueueBasic(t *testing.T) {
 		got, err := q.Get(42)
 		assert.NoError(t, err)
 		assert.Equal(t, 42, got)
-		assert.Equal(t, work.Stats{Handled: 1, Added: 1}, q.Stats())
+		assert.Equal(t, work.Stats{Handled: 1, Total: 1}, q.Stats())
 	})
 }
 
@@ -88,12 +88,12 @@ func TestQueueUnwind(t *testing.T) {
 				})
 
 				// Start the handler that will unwind, and ensure that it's blocked.
-				q.AddNew(0)
+				q.Inform(0)
 				step <- struct{}{}
 
 				// Force some more handlers to queue up...
 				keys := []int{1, 2}
-				q.AddNew(keys...)
+				q.Inform(keys...)
 				synctest.Wait()
 
 				// ...then let everything through.
@@ -132,7 +132,7 @@ func TestQueueDeduplication(t *testing.T) {
 		close(unblock)
 		got, _ := q.Collect(keys[:half]...)
 		assert.Equal(t, keys[:half], got)
-		assert.Equal(t, work.Stats{Handled: half, Added: half}, q.Stats())
+		assert.Equal(t, work.Stats{Handled: half, Total: half}, q.Stats())
 
 		// Re-block the handler.
 		unblock = make(chan struct{})
@@ -150,7 +150,7 @@ func TestQueueDeduplication(t *testing.T) {
 		case <-done:
 			t.Error("computation of key was not blocked")
 		default:
-			assert.Equal(t, work.Stats{Handled: half, Added: half + 1}, q.Stats())
+			assert.Equal(t, work.Stats{Handled: half, Total: half + 1}, q.Stats())
 		}
 
 		// Ensure that the previous results are cached and available without delay.
@@ -161,7 +161,7 @@ func TestQueueDeduplication(t *testing.T) {
 		close(unblock)
 		got, _ = q.Collect(keys...)
 		assert.Equal(t, keys, got)
-		assert.Equal(t, work.Stats{Handled: count, Added: count}, q.Stats())
+		assert.Equal(t, work.Stats{Handled: count, Total: count}, q.Stats())
 	})
 }
 
@@ -188,14 +188,14 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 		// Start up as many handlers as possible, and let them check for breaches
 		// before they're blocked from returning.
 		keys := makeIntKeys(keyCount)
-		q.AddNew(keys...)
+		q.Inform(keys...)
 		synctest.Wait()
 
 		// Let them all finish...
 		close(unblock)
 		got, _ := q.Collect(keys...)
 		assert.Equal(t, keys, got)
-		assert.Equal(t, work.Stats{Handled: keyCount, Added: keyCount}, q.Stats())
+		assert.Equal(t, work.Stats{Handled: keyCount, Total: keyCount}, q.Stats())
 
 		// ...and ensure they all saw the limit respected.
 		if breached.Load() {
@@ -215,14 +215,14 @@ func TestQueueOrdering(t *testing.T) {
 		})
 
 		// Start a new blocked handler to force the queueing of subsequent keys.
-		q.AddNew(0)
+		q.Inform(0)
 		synctest.Wait()
 
 		// Add some keys at both the front and back of the queue.
-		q.AddNew(1, 2)
-		q.AddNewFront(-1, -2)
-		q.AddNew(3)
-		q.AddNewFront(-3)
+		q.Inform(1, 2)
+		q.InformFront(-1, -2)
+		q.Inform(3)
+		q.InformFront(-3)
 
 		// Unblock all the handlers...
 		close(unblock)
@@ -234,11 +234,11 @@ func TestQueueOrdering(t *testing.T) {
 		wantOrder := []int{
 			// The initial blocked handler.
 			0,
-			// AddNewFront keys, reversed from their queueing order but with keys in a
+			// Front-queued keys, with the call order reversed but with keys in a
 			// single call queued in the order provided.
 			-3,
 			-1, -2,
-			// AddNew keys, in the order queued.
+			// Standard keys, in the order queued.
 			1, 2,
 			3,
 		}
@@ -280,7 +280,7 @@ func TestQueueReattachPriority(t *testing.T) {
 
 		// Start the handler for 1 that will simply block, and queue up some extra
 		// keys behind it.
-		q.AddNew(1, 2, 3)
+		q.Inform(1, 2, 3)
 		synctest.Wait()
 
 		// Allow the detached handler for 0 to reattach, and wait until it's durably
@@ -331,7 +331,7 @@ func TestQueueReattachConcurrency(t *testing.T) {
 
 		// Start up a bunch of handlers, and wait for all of them to detach.
 		keys := makeIntKeys(keyCount)
-		q.AddNew(keys...)
+		q.Inform(keys...)
 		synctest.Wait()
 
 		// Allow them all to start reattaching, and wait until all possible
@@ -375,7 +375,7 @@ func TestQueueDetachReturn(t *testing.T) {
 
 		// Start up multiple detached handlers that will never reattach.
 		detachedKeys := []int{-2, -1}
-		q.AddNew(detachedKeys...)
+		q.Inform(detachedKeys...)
 		synctest.Wait()
 
 		// Start up some normal handlers...
