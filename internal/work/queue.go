@@ -33,7 +33,7 @@ type Queue[K comparable, V any] struct {
 
 	state    workState[K]
 	stateMu  sync.Mutex
-	reattach chan struct{}
+	reattach reattachQueue
 
 	tasks        map[K]*task[V]
 	tasksMu      sync.Mutex
@@ -66,6 +66,15 @@ type workState[K comparable] struct {
 	keys        deque.Deque[K]
 }
 
+// reattachQueue defines the protocol by which a goroutine transfers its work
+// grant to a reattaching handler. Counterintuitively, recipients must _send_
+// into the unbuffered channel to guarantee FIFO ordering, while senders
+// _receive_ from the channel to synchronize with and unblock them.
+type reattachQueue chan struct{}
+
+func (rq reattachQueue) BequeathGrant() { <-rq }
+func (rq reattachQueue) ObtainGrant()   { rq <- struct{}{} }
+
 // NewQueue creates a [Queue] with the provided concurrency limit and handler.
 //
 // If concurrency <= 0, the queue is created with an effectively unlimited
@@ -79,7 +88,7 @@ func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue
 		handle:   handle,
 		state:    state,
 		tasks:    make(map[K]*task[V]),
-		reattach: make(chan struct{}),
+		reattach: make(reattachQueue),
 	}
 }
 
@@ -248,7 +257,7 @@ func (q *Queue[K, V]) tryGetQueuedKey() (key K, ok bool) {
 		// details.
 		q.state.reattachers -= 1
 		q.stateMu.Unlock()
-		<-q.reattach
+		q.reattach.BequeathGrant()
 		return
 	}
 
@@ -296,7 +305,7 @@ func (q *Queue[K, V]) handleReattach() {
 	// worker that a reattacher is ready to take theirs.
 	q.state.reattachers += 1
 	q.stateMu.Unlock()
-	q.reattach <- struct{}{}
+	q.reattach.ObtainGrant()
 }
 
 // QueueHandle allows a [Handler] to interact with its parent queue.
