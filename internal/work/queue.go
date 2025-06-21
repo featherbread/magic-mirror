@@ -155,14 +155,14 @@ func (q *Queue[K, V]) Stats() Stats {
 	return stats
 }
 
-func (q *Queue[K, V]) getTasks(enqueue enqueueFunc[K], keys ...K) taskList[V] {
+func (q *Queue[K, V]) getTasks(enqueue enqueueFunc[K], keys ...K) []*task[V] {
 	tasks, newKeys := q.getOrCreateTasks(keys)
 	q.scheduleNewKeys(enqueue, newKeys)
 	return tasks
 }
 
-func (q *Queue[K, V]) getOrCreateTasks(keys []K) (tasks taskList[V], newKeys []K) {
-	tasks = make(taskList[V], len(keys))
+func (q *Queue[K, V]) getOrCreateTasks(keys []K) (tasks []*task[V], newKeys []K) {
+	tasks = make([]*task[V], len(keys))
 
 	q.tasksMu.Lock()
 	defer q.tasksMu.Unlock()
@@ -365,5 +365,3 @@ func (t *task[V]) Wait() (V, error) {
 	t.wg.Wait()
 	return t.result.Unwrap()
 }
-
-type taskList[V any] []*task[V]
