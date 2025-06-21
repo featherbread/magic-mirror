@@ -125,7 +125,16 @@ func (q *Queue[K, V]) Get(key K) (V, error) {
 // to the order of the keys, without waiting for the queue to handle the
 // remaining keys. Otherwise, it returns the values corresponding to the keys.
 func (q *Queue[K, V]) Collect(keys ...K) ([]V, error) {
-	return q.getTasks(pushAllBack, keys...).Wait()
+	var err error
+	tasks := q.getTasks(pushAllBack, keys...)
+	values := make([]V, len(tasks))
+	for i, task := range tasks {
+		values[i], err = task.Wait()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return values, nil
 }
 
 // Stats conveys information about the keys and results in a [Queue].
@@ -358,14 +367,3 @@ func (t *task[V]) Wait() (V, error) {
 }
 
 type taskList[V any] []*task[V]
-
-func (ts taskList[V]) Wait() (values []V, err error) {
-	values = make([]V, len(ts))
-	for i, task := range ts {
-		values[i], err = task.Wait()
-		if err != nil {
-			return nil, err
-		}
-	}
-	return values, nil
-}
