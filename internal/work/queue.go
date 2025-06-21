@@ -93,11 +93,13 @@ func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue
 }
 
 // Inform advises the queue of keys that it should ensure are handled and cached
-// as soon as possible. It enqueues the new keys among those provided at the
-// back of the queue, in the order given, without affecting the order of keys
-// already pending in the queue, and without interleaving the keys of any other
-// enqueue operation. Note that a future [Queue.InformFront] call may interpose
-// new keys between those enqueued in a single Inform call.
+// as soon as possible.
+//
+// Inform has no effect on keys already handled or pending in the queue. The new
+// keys among those provided are enqueued at the back of the queue, in the order
+// given, without interleaving the keys of any other enqueue operation. A future
+// [Queue.InformFront] call may interpose new keys between those enqueued in a
+// single Inform call.
 func (q *Queue[K, V]) Inform(keys ...K) {
 	q.getTasks(pushAllBack, keys...)
 }
