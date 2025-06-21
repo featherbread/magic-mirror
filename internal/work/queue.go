@@ -75,6 +75,23 @@ type reattachQueue chan struct{}
 func (rq reattachQueue) BequeathGrant() { <-rq }
 func (rq reattachQueue) ObtainGrant()   { rq <- struct{}{} }
 
+// task represents a unit of pending or handled work for a single key.
+type task[V any] struct {
+	wg     sync.WaitGroup
+	result catch.Result[V]
+}
+
+func (t *task[V]) Handle(fn func() (V, error)) {
+	defer t.wg.Done()
+	t.result = catch.Goexit[V]()
+	t.result = catch.DoOrExit(fn)
+}
+
+func (t *task[V]) Wait() (V, error) {
+	t.wg.Wait()
+	return t.result.Unwrap()
+}
+
 // NewQueue creates a [Queue] with the provided concurrency limit and handler.
 //
 // If concurrency <= 0, the queue is created with an effectively unlimited
@@ -348,20 +365,4 @@ func (qh *QueueHandle) Reattach() {
 		qh.reattach()
 		qh.detached = false
 	}
-}
-
-type task[V any] struct {
-	wg     sync.WaitGroup
-	result catch.Result[V]
-}
-
-func (t *task[V]) Handle(fn func() (V, error)) {
-	defer t.wg.Done()
-	t.result = catch.Goexit[V]()
-	t.result = catch.DoOrExit(fn)
-}
-
-func (t *task[V]) Wait() (V, error) {
-	t.wg.Wait()
-	return t.result.Unwrap()
 }
