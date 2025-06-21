@@ -157,6 +157,54 @@ func (q *Queue[K, V]) Collect(keys ...K) ([]V, error) {
 	return values, nil
 }
 
+// Limit updates the queue's concurrency limit for handling pending keys,
+// guaranteeing a limit of at least 1 regardless of the limit provided.
+//
+// Limit may be called at any time, even while handlers are running.
+// The queue immediately spawns handlers for as many pending keys as an
+// increased limit allows, or permits in-flight handlers in violation
+// of a decreased limit to finish in the background.
+func (q *Queue[K, V]) Limit(limit int) {
+	var (
+		keys      []K
+		transfers int
+	)
+	func() {
+		q.stateMu.Lock()
+		defer q.stateMu.Unlock()
+
+		// Update the limit, and determine how many new work grants we can issue.
+		q.state.grantLimit = max(1, limit)
+		issuable := max(0, q.state.grantLimit-q.state.grants)
+
+		// Issue as many work grants as possible to reattachers.
+		transfers = min(issuable, q.state.reattachers)
+		q.state.grants += transfers
+		q.state.reattachers -= transfers
+		issuable -= transfers
+
+		// Issue as many work grants as possible for handling keys.
+		workable := min(issuable, q.state.keys.Len())
+		q.state.grants += workable
+		keys = make([]K, workable)
+		for i := range keys {
+			keys[i] = q.state.keys.PopFront()
+		}
+	}()
+
+	// Start by transferring the work grants issued for new keys, since this won't
+	// require any blocking.
+	for _, key := range keys {
+		go q.work(&key)
+	}
+
+	// Transfer the work grants issued for reattachers, which may block but only
+	// for a short time.
+	for range transfers {
+		q.reattach.SendGrant()
+	}
+}
+
 // Stats conveys information about the keys and results in a [Queue].
 type Stats struct {
 	// Handled is the count of keys whose results are computed and cached.
