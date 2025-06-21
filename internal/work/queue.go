@@ -67,9 +67,9 @@ type workState[K comparable] struct {
 }
 
 // reattachQueue defines the protocol by which a goroutine transfers its work
-// grant to a reattaching handler. Counterintuitively, recipients must _send_
-// into the unbuffered channel to guarantee FIFO ordering, while senders
-// _receive_ from the channel to synchronize with and unblock them.
+// grant to a reattaching handler. Counterintuitively, the grant recipient must
+// _send_ into the unbuffered channel to guarantee FIFO ordering, while the
+// grant sender _receives_ from the channel to unblock them.
 type reattachQueue chan struct{}
 
 func (rq reattachQueue) BequeathGrant() { <-rq }
