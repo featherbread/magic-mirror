@@ -92,37 +92,36 @@ func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue
 	}
 }
 
-// Inform enqueues any new keys among those provided at the back of the queue,
-// without affecting the queued order of keys already pending or waiting for any
-// handlers to finish. It enqueues the new keys in the order given without
-// interleaving keys from any other enqueue operation. However, future
-// [Queue.InformFront] calls may interpose new keys between those enqueued by a
-// single Inform call.
+// Inform advises the queue of keys that it should ensure are handled and cached
+// as soon as possible. It enqueues the new keys among those provided at the
+// back of the queue, in the order given, without affecting the order of keys
+// already pending in the queue, and without interleaving the keys of any other
+// enqueue operation. Note that a future [Queue.InformFront] call may interpose
+// new keys between those enqueued in a single Inform call.
 func (q *Queue[K, V]) Inform(keys ...K) {
 	q.getTasks(pushAllBack, keys...)
 }
 
-// InformFront behaves like [Queue.Inform], but enqueues the new keys in the
-// order given at the front of the queue rather than the back. Like Inform, it
-// does not affect the queued order of keys already pending; it is not possible
-// to move keys to the front of the queue.
+// InformFront behaves like [Queue.Inform], but enqueues new keys at the front
+// of the queue rather than the back. Like Inform, it does not affect the order
+// of keys already pending; it is not possible to move pending keys to the front
+// of the queue.
 func (q *Queue[K, V]) InformFront(keys ...K) {
 	q.getTasks(pushAllFront, keys...)
 }
 
-// Get blocks until the queue has handled this key, then propagates its result:
-// returning its value and error, or forwarding a panic or [runtime.Goexit].
-// If necessary, Get enqueues the key as if by a call to [Queue.Inform].
+// Get informs the queue of the key as if by [Queue.Inform], blocks until the
+// queue has handled the key, then propagates its result: returning its value
+// and error, or forwarding a panic or [runtime.Goexit].
 func (q *Queue[K, V]) Get(key K) (V, error) {
 	return q.getTasks(pushAllBack, key)[0].Wait()
 }
 
-// Collect coalesces the results for multiple keys. If any key's handler returns
-// an error, panics, or calls [runtime.Goexit], Collect propagates the first of
-// those results with respect to the order of the keys, without waiting for the
-// queue to handle the remaining keys. Otherwise, it returns a slice of values
-// corresponding to the keys. If necessary, Collect enqueues the keys as if by a
-// call to [Queue.Inform].
+// Collect informs the queue of the keys as if by [Queue.Inform], then coalesces
+// their results. If any key's handler returns an error, panics, or calls
+// [runtime.Goexit], Collect propagates the first of those results with respect
+// to the order of the keys, without waiting for the queue to handle the
+// remaining keys. Otherwise, it returns the values corresponding to the keys.
 func (q *Queue[K, V]) Collect(keys ...K) ([]V, error) {
 	return q.getTasks(pushAllBack, keys...).Wait()
 }
