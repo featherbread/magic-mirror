@@ -559,3 +559,75 @@ func TestQueueLimitIncreaseMax(t *testing.T) {
 		q.Collect(keys...)
 	})
 }
+
+func TestQueueLimitDecrease(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			initialKeyCount = 5
+			extraKeyCount   = 10
+		)
+		var (
+			inflight        atomic.Int32
+			detached        atomic.Int32
+			extraInflights  = make(chan int, extraKeyCount)
+			unblockReattach = make(chan struct{})
+			unblockReturn   = make(chan struct{})
+		)
+		q := work.NewSetQueue(func(qh *work.QueueHandle, x int) error {
+			if x < initialKeyCount && x%2 == 0 {
+				qh.Detach()
+				detached.Add(1)
+				<-unblockReattach
+				qh.Reattach()
+				detached.Add(-1)
+			}
+
+			current := int(inflight.Add(1))
+			defer inflight.Add(-1)
+			if x >= initialKeyCount {
+				extraInflights <- current
+			}
+
+			<-unblockReturn
+			return nil
+		})
+
+		allKeys := makeIntKeys(initialKeyCount + extraKeyCount)
+		initialKeys, extraKeys := allKeys[:initialKeyCount], allKeys[initialKeyCount:]
+
+		// Start the handlers for our initial keys (some detached, some attached).
+		q.Inform(initialKeys...)
+		synctest.Wait()
+		assert.Greater(t, int(detached.Load()), 0, "some handlers did not detach")
+		assert.Equal(t, initialKeyCount, int(detached.Load())+int(inflight.Load()),
+			"wrong number of running handlers")
+
+		// Decrease the limit to 1, and ensure no existing handlers are affected.
+		q.Limit(1)
+		synctest.Wait()
+		assert.Equal(t, initialKeyCount, int(detached.Load())+int(inflight.Load()),
+			"some handlers exited after limit decrease")
+
+		// Force all currently detached handlers to finish before any new keys can
+		// be handled.
+		close(unblockReattach)
+		synctest.Wait()
+
+		// Then, add some new keys that can only be handled under the new limit.
+		q.Inform(extraKeys...)
+		synctest.Wait()
+
+		// Let all of the handlers through.
+		close(unblockReturn)
+		q.Collect(initialKeys...)
+		q.Collect(extraKeys...)
+
+		// Ensure every handler started under the new limit saw itself as the only
+		// active handler.
+		close(extraInflights)
+		assert.Equal(t, extraKeyCount, len(extraInflights))
+		for x := range extraInflights {
+			assert.Equal(t, 1, x, "handler started under decreased limit saw another active")
+		}
+	})
+}
