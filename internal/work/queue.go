@@ -285,29 +285,40 @@ func (q *Queue[K, V]) work(initialKey *K) {
 // work grant (returning ok == false) or returns a key (ok == true) whose work
 // the caller must execute.
 func (q *Queue[K, V]) tryGetQueuedKey() (key K, ok bool) {
-	q.stateMu.Lock()
+	var mustBequeath bool
 
-	if q.state.reattachers > 0 {
-		// We can transfer our work grant to a reattacher; see handleReattach for
-		// details.
-		q.state.reattachers -= 1
-		q.stateMu.Unlock()
+	func() {
+		q.stateMu.Lock()
+		defer q.stateMu.Unlock()
+
+		switch {
+		case q.state.grants > q.state.maxGrants:
+			// We are in violation of a decreased concurrency limit, and must retire
+			// the work grant even if work is pending.
+			q.state.grants -= 1
+
+		case q.state.reattachers > 0:
+			// We can transfer our work grant to a reattacher; see handleReattach for
+			// details.
+			q.state.reattachers -= 1
+			mustBequeath = true
+
+		case q.state.keys.Len() == 0:
+			// With no reattachers and no keys, we have no pending work and must
+			// retire the work grant.
+			q.state.grants -= 1
+
+		default:
+			// We have pending work and must use the work grant to execute it.
+			key = q.state.keys.PopFront()
+			ok = true
+		}
+	}()
+
+	if mustBequeath {
 		q.reattach.BequeathGrant()
-		return
 	}
 
-	if q.state.keys.Len() == 0 {
-		// With no reattachers and no keys, we have no pending work and must
-		// retire the work grant.
-		q.state.grants -= 1
-		q.stateMu.Unlock()
-		return
-	}
-
-	// We have pending work and must use the work grant to execute it.
-	key = q.state.keys.PopFront()
-	q.stateMu.Unlock()
-	ok = true
 	return
 }
 
