@@ -73,7 +73,7 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 			km       parka.KeyMutex[struct{}]
 			unblock0 = make(chan struct{})
 		)
-		q := parka.NewSet(func(qh *parka.Handle, x int) error {
+		s := parka.NewSet(func(qh *parka.Handle, x int) error {
 			if x == 0 {
 				km.LockDetached(qh, struct{}{})
 				<-unblock0
@@ -81,24 +81,24 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 			}
 			return nil
 		})
-		q.Limit(1)
+		s.Limit(1)
 
 		// Take the lock.
 		km.Lock(struct{}{})
 
 		// Start the handler for 0, which must detach since we're holding the lock.
-		q.Inform(0)
+		s.Inform(0)
 		synctest.Wait()
 
 		// Ensure that unrelated handlers can, in fact, proceed.
-		q.Get(1)
+		s.Get(1)
 
 		// Release the lock so handler 0 can obtain it.
 		km.Unlock(struct{}{})
 		synctest.Wait()
 
 		// Start another handler, and ensure it really is blocked.
-		done := promise(func() { q.Get(2) })
+		done := promise(func() { s.Get(2) })
 		synctest.Wait()
 		select {
 		case <-done:
@@ -108,6 +108,6 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 
 		// Allow all of the handlers to finish.
 		close(unblock0)
-		q.Collect(0, 1, 2)
+		s.Collect(0, 1, 2)
 	})
 }

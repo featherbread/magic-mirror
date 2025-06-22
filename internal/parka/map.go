@@ -11,21 +11,21 @@ import (
 	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
 )
 
-// Queue runs a handler function once per key in a distinct goroutine and caches
+// Map runs a handler function once per key in a distinct goroutine and caches
 // the result, while supporting dynamic concurrency limits on handlers.
 //
 // The result for each key nominally consists of a value and error, but may
-// instead capture a panic or a call to [runtime.Goexit], which the queue
-// propagates to any caller retrieving that key's result.
+// instead capture a panic or a call to [runtime.Goexit], which propagates to
+// any caller retrieving that key's result.
 //
-// New queues permit an effectively unlimited number of goroutines ([math.MaxInt])
-// to concurrently handle new keys. [Queue.Limit] can change this limit at any
-// time. [Handle.Detach] permits an individual handler to exclude itself
-// from the concurrency limit for the remainder of its own lifetime, or until it
-// calls [Handle.Reattach]. In particular, [KeyMutex] helps handlers detach
-// from their queue while awaiting exclusive use of a shared resource, typically
-// one identified by a subset of the handler's current key.
-type Queue[K comparable, V any] struct {
+// New maps permit an effectively unlimited number of goroutines ([math.MaxInt])
+// to concurrently handle new keys. [Map.Limit] can change this limit at any
+// time. [Handle.Detach] permits an individual handler to exclude itself from
+// the concurrency limit for the remainder of its own lifetime, or until it
+// calls [Handle.Reattach]. In particular, [KeyMutex] helps handlers detach from
+// the limit while awaiting exclusive use of a shared resource, typically one
+// identified by a subset of the handler's current key.
+type Map[K comparable, V any] struct {
 	handle func(*Handle, K) (V, error)
 
 	state    workState[K]
@@ -37,25 +37,25 @@ type Queue[K comparable, V any] struct {
 	tasksHandled atomic.Uint64
 }
 
-// workState tracks the pending work in a queue, along with the "work grants"
-// that control the concurrency of goroutines handling that work.
+// workState tracks a map's pending work, along with the "work grants" that
+// control the concurrency of goroutines handling it.
 //
 // A work grant is an abstract resource that both permits and obligates the
-// goroutine holding it to execute the queue's handler for any pending keys.
+// goroutine holding it to execute the map's handler for any pending keys.
 // Work grants are issued (by incrementing grants), retired (by decrementing
 // grants), and transferred between goroutines to maintain the following
 // invariants:
 //
 //   - Exactly one work grant is outstanding for every unhandled key known to
-//     the queue, up to grantLimit.
+//     the map, up to grantLimit.
 //   - No goroutine holds more than one work grant.
 //   - Any goroutine holding a work grant is either executing the handler for an
 //     unhandled key or maintaining these invariants.
 //
-// Handlers that detach from the queue relinquish their goroutine's work grant
-// to continue execution outside of the concurrency limit. Reattaching handlers
-// that wish to re-obtain their work grant should receive priority over the
-// handling of new keys.
+// Detaching handlers relinquish their goroutine's work grant to continue
+// execution outside of the concurrency limit. Reattaching handlers that wish to
+// re-obtain their work grant should receive priority over the handling of new
+// keys.
 type workState[K comparable] struct {
 	grants      int
 	grantLimit  int
@@ -92,9 +92,9 @@ func (t *task[V]) Wait() (V, error) {
 	return t.result.Unwrap()
 }
 
-// NewQueue creates a [Queue] with the provided handler.
-func NewQueue[K comparable, V any](handle func(*Handle, K) (V, error)) *Queue[K, V] {
-	return &Queue[K, V]{
+// NewMap creates a [Map] with the provided handler.
+func NewMap[K comparable, V any](handle func(*Handle, K) (V, error)) *Map[K, V] {
+	return &Map[K, V]{
 		handle:   handle,
 		state:    workState[K]{grantLimit: math.MaxInt},
 		tasks:    make(map[K]*task[V]),
@@ -102,41 +102,42 @@ func NewQueue[K comparable, V any](handle func(*Handle, K) (V, error)) *Queue[K,
 	}
 }
 
-// Inform advises the queue of keys that it should ensure are handled and cached
+// Inform advises the map of keys that it should ensure are handled and cached
 // as soon as possible.
 //
-// Inform has no effect on keys already handled or pending in the queue. The new
-// keys among those provided are enqueued at the back of the queue, in the order
-// given, without interleaving the keys of any other enqueue operation. A future
-// [Queue.InformFront] call may interpose new keys between those enqueued in a
+// Inform has no effect on keys already handled or pending. When concurrency
+// limits prohibit immediate handling of all keys, the new keys among those
+// provided are enqueued at the back of a work queue, in the order given,
+// without interleaving the keys of any other enqueue operation. A future
+// [Map.InformFront] call may interpose new keys between those enqueued in a
 // single Inform call.
-func (q *Queue[K, V]) Inform(keys ...K) {
-	q.getTasks(pushAllBack, keys...)
+func (m *Map[K, V]) Inform(keys ...K) {
+	m.getTasks(pushAllBack, keys...)
 }
 
-// InformFront behaves like [Queue.Inform], but enqueues new keys at the front
-// of the queue rather than the back. Like Inform, it does not affect the order
-// of keys already pending; it is not possible to move pending keys to the front
-// of the queue.
-func (q *Queue[K, V]) InformFront(keys ...K) {
-	q.getTasks(pushAllFront, keys...)
+// InformFront behaves like [Map.Inform], but enqueues new keys at the front of
+// the map's work queue rather than the back. Like Inform, it does not affect
+// the order of keys already pending; it is not possible to move pending keys to
+// the front of the queue.
+func (m *Map[K, V]) InformFront(keys ...K) {
+	m.getTasks(pushAllFront, keys...)
 }
 
-// Get informs the queue of the key as if by [Queue.Inform], blocks until the
-// queue has handled the key, then propagates its result: returning its value
-// and error, or forwarding a panic or [runtime.Goexit].
-func (q *Queue[K, V]) Get(key K) (V, error) {
-	return q.getTasks(pushAllBack, key)[0].Wait()
+// Get informs the map of the key as if by [Map.Inform], blocks until it has
+// handled the key, then propagates the key's result: returning its value and
+// error, or forwarding a panic or [runtime.Goexit].
+func (m *Map[K, V]) Get(key K) (V, error) {
+	return m.getTasks(pushAllBack, key)[0].Wait()
 }
 
-// Collect informs the queue of the keys as if by [Queue.Inform], then coalesces
+// Collect informs the map of the keys as if by [Map.Inform], then coalesces
 // their results. If any key's handler returns an error, panics, or calls
 // [runtime.Goexit], Collect propagates the first of those results with respect
-// to the order of the keys, without waiting for the queue to handle the
-// remaining keys. Otherwise, it returns the values corresponding to the keys.
-func (q *Queue[K, V]) Collect(keys ...K) ([]V, error) {
+// to the order of the keys, without waiting for the map to handle the remaining
+// keys. Otherwise, it returns the values corresponding to the keys.
+func (m *Map[K, V]) Collect(keys ...K) ([]V, error) {
 	var err error
-	tasks := q.getTasks(pushAllBack, keys...)
+	tasks := m.getTasks(pushAllBack, keys...)
 	values := make([]V, len(tasks))
 	for i, task := range tasks {
 		values[i], err = task.Wait()
@@ -147,99 +148,99 @@ func (q *Queue[K, V]) Collect(keys ...K) ([]V, error) {
 	return values, nil
 }
 
-// Limit updates the queue's concurrency limit for handling pending keys,
+// Limit updates the map's concurrency limit for handling pending keys,
 // guaranteeing a limit of at least 1 regardless of the limit provided.
 //
 // Limit may be called at any time, even while handlers are running.
-// The queue immediately spawns handlers for as many pending keys as an
+// The map immediately spawns handlers for as many pending keys as an
 // increased limit allows, or permits in-flight handlers in violation
 // of a decreased limit to finish in the background.
-func (q *Queue[K, V]) Limit(limit int) {
+func (m *Map[K, V]) Limit(limit int) {
 	var (
 		keys      []K
 		transfers int
 	)
 	func() {
-		q.stateMu.Lock()
-		defer q.stateMu.Unlock()
+		m.stateMu.Lock()
+		defer m.stateMu.Unlock()
 
 		// Update the limit, and determine how many new work grants we can issue.
-		q.state.grantLimit = max(1, limit)
-		issuable := max(0, q.state.grantLimit-q.state.grants)
+		m.state.grantLimit = max(1, limit)
+		issuable := max(0, m.state.grantLimit-m.state.grants)
 
 		// Issue as many work grants as possible to reattachers.
-		transfers = min(issuable, q.state.reattachers)
-		q.state.grants += transfers
-		q.state.reattachers -= transfers
+		transfers = min(issuable, m.state.reattachers)
+		m.state.grants += transfers
+		m.state.reattachers -= transfers
 		issuable -= transfers
 
 		// Issue as many work grants as possible for handling keys.
-		workable := min(issuable, q.state.keys.Len())
-		q.state.grants += workable
+		workable := min(issuable, m.state.keys.Len())
+		m.state.grants += workable
 		keys = make([]K, workable)
 		for i := range keys {
-			keys[i] = q.state.keys.PopFront()
+			keys[i] = m.state.keys.PopFront()
 		}
 	}()
 
 	// Start by transferring the work grants issued for new keys, since this won't
 	// require any blocking.
 	for _, key := range keys {
-		go q.work(&key)
+		go m.work(&key)
 	}
 
 	// Transfer the work grants issued for reattachers, which may block but only
 	// for a short time.
 	for range transfers {
-		q.reattach.SendGrant()
+		m.reattach.SendGrant()
 	}
 }
 
-// Stats conveys information about the keys and results in a [Queue].
+// Stats conveys information about the keys and results in a [Map].
 type Stats struct {
 	// Handled is the count of keys whose results are computed and cached.
 	Handled uint64
-	// Total is the count of all pending and handled keys known to the queue.
+	// Total is the count of all pending and handled keys in the map.
 	Total uint64
 }
 
-// Stats returns the [Stats] for a [Queue] as of the time of the call.
-func (q *Queue[K, V]) Stats() Stats {
+// Stats returns the [Stats] for a [Map] as of the time of the call.
+func (m *Map[K, V]) Stats() Stats {
 	var stats Stats
-	stats.Handled = q.tasksHandled.Load()
-	q.tasksMu.Lock()
-	stats.Total = uint64(len(q.tasks))
-	q.tasksMu.Unlock()
+	stats.Handled = m.tasksHandled.Load()
+	m.tasksMu.Lock()
+	stats.Total = uint64(len(m.tasks))
+	m.tasksMu.Unlock()
 	return stats
 }
 
-func (q *Queue[K, V]) getTasks(enqueue enqueueFunc[K], keys ...K) []*task[V] {
-	tasks, newKeys := q.getOrCreateTasks(keys)
-	q.scheduleNewKeys(enqueue, newKeys)
+func (m *Map[K, V]) getTasks(enqueue enqueueFunc[K], keys ...K) []*task[V] {
+	tasks, newKeys := m.getOrCreateTasks(keys)
+	m.scheduleNewKeys(enqueue, newKeys)
 	return tasks
 }
 
-func (q *Queue[K, V]) getOrCreateTasks(keys []K) (tasks []*task[V], newKeys []K) {
+func (m *Map[K, V]) getOrCreateTasks(keys []K) (tasks []*task[V], newKeys []K) {
 	tasks = make([]*task[V], len(keys))
 
-	q.tasksMu.Lock()
-	defer q.tasksMu.Unlock()
+	m.tasksMu.Lock()
+	defer m.tasksMu.Unlock()
 
 	for i, key := range keys {
-		if task, ok := q.tasks[key]; ok {
+		if task, ok := m.tasks[key]; ok {
 			tasks[i] = task
 			continue
 		}
 		task := &task[V]{}
 		task.wg.Add(1)
-		q.tasks[key] = task
+		m.tasks[key] = task
 		tasks[i] = task
 		newKeys = append(newKeys, key)
 	}
 	return
 }
 
-func (q *Queue[K, V]) scheduleNewKeys(enqueue enqueueFunc[K], keys []K) {
+func (m *Map[K, V]) scheduleNewKeys(enqueue enqueueFunc[K], keys []K) {
 	if len(keys) == 0 {
 		return // No need to lock up the state.
 	}
@@ -247,22 +248,22 @@ func (q *Queue[K, V]) scheduleNewKeys(enqueue enqueueFunc[K], keys []K) {
 	var immediateKeys []K
 
 	func() {
-		q.stateMu.Lock()
-		defer q.stateMu.Unlock()
+		m.stateMu.Lock()
+		defer m.stateMu.Unlock()
 
 		// Issue as many new work grants as we can.
-		newGrants := max(0, min(q.state.grantLimit-q.state.grants, len(keys)))
-		q.state.grants += newGrants
+		newGrants := max(0, min(m.state.grantLimit-m.state.grants, len(keys)))
+		m.state.grants += newGrants
 
 		var queuedKeys []K
 		immediateKeys, queuedKeys = keys[:newGrants], keys[newGrants:]
-		enqueue(&q.state.keys, queuedKeys)
+		enqueue(&m.state.keys, queuedKeys)
 	}()
 
 	// Transfer our issued work grants, to discharge our own responsibility and
 	// restore the invariant that no goroutine holds more than one.
 	for _, key := range immediateKeys {
-		go q.work(&key)
+		go m.work(&key)
 	}
 }
 
@@ -283,7 +284,7 @@ func pushAllFront[T any](d *deque.Deque[T], all []T) {
 // work, when invoked in a new goroutine, accepts ownership of a work grant and
 // fulfills all duties associated with it. If provided with an initial key, it
 // executes the task for that key before handling queued work.
-func (q *Queue[K, V]) work(initialKey *K) {
+func (m *Map[K, V]) work(initialKey *K) {
 	for {
 		var (
 			key K
@@ -291,27 +292,27 @@ func (q *Queue[K, V]) work(initialKey *K) {
 		)
 		if initialKey != nil {
 			key, initialKey = *initialKey, nil
-		} else if key, ok = q.tryGetQueuedKey(); !ok {
+		} else if key, ok = m.tryGetQueuedKey(); !ok {
 			return // We no longer have a work grant; see tryGetQueuedKey.
 		}
 
-		q.tasksMu.Lock()
-		task := q.tasks[key]
-		q.tasksMu.Unlock()
+		m.tasksMu.Lock()
+		task := m.tasks[key]
+		m.tasksMu.Unlock()
 
 		qh := &Handle{
-			detach:   q.handleDetach,
-			reattach: q.handleReattach,
+			detach:   m.handleDetach,
+			reattach: m.handleReattach,
 		}
 		func() {
 			defer func() {
 				if task.result.Goexited() {
-					go q.work(nil) // We can't stop Goexit, so we must transfer our work grant.
+					go m.work(nil) // We can't stop Goexit, so we must transfer our work grant.
 				}
 			}()
 			task.Handle(func() (V, error) {
-				defer q.tasksHandled.Add(1)
-				return q.handle(qh, key)
+				defer m.tasksHandled.Add(1)
+				return m.handle(qh, key)
 			})
 		}()
 		if qh.detached {
@@ -323,83 +324,83 @@ func (q *Queue[K, V]) work(initialKey *K) {
 // tryGetQueuedKey, when called with a work grant held, either relinquishes the
 // work grant (returning ok == false) or returns a key (ok == true) whose work
 // the caller must execute.
-func (q *Queue[K, V]) tryGetQueuedKey() (key K, ok bool) {
+func (m *Map[K, V]) tryGetQueuedKey() (key K, ok bool) {
 	var mustSendGrant bool
 
 	func() {
-		q.stateMu.Lock()
-		defer q.stateMu.Unlock()
+		m.stateMu.Lock()
+		defer m.stateMu.Unlock()
 
 		switch {
-		case q.state.grants > q.state.grantLimit:
+		case m.state.grants > m.state.grantLimit:
 			// We are in violation of a decreased concurrency limit, and must retire
 			// the work grant even if work is pending.
-			q.state.grants -= 1
+			m.state.grants -= 1
 
-		case q.state.reattachers > 0:
+		case m.state.reattachers > 0:
 			// We can transfer our work grant to a reattacher; see handleReattach for
 			// details.
-			q.state.reattachers -= 1
+			m.state.reattachers -= 1
 			mustSendGrant = true
 
-		case q.state.keys.Len() == 0:
+		case m.state.keys.Len() == 0:
 			// With no reattachers and no keys, we have no pending work and must
 			// retire the work grant.
-			q.state.grants -= 1
+			m.state.grants -= 1
 
 		default:
 			// We have pending work and must use the work grant to execute it.
-			key = q.state.keys.PopFront()
+			key = m.state.keys.PopFront()
 			ok = true
 		}
 	}()
 
 	if mustSendGrant {
-		q.reattach.SendGrant()
+		m.reattach.SendGrant()
 	}
 	return
 }
 
 // handleDetach relinquishes the current goroutine's work grant. Its behavior is
 // undefined if its caller does not hold a work grant.
-func (q *Queue[K, V]) handleDetach() {
+func (m *Map[K, V]) handleDetach() {
 	// `go q.work(nil)` would be a correct implementation of this function that
 	// biases toward unblocking the detacher as quickly as possible. But since the
 	// typical use for detaching is to block on another resource, we can afford to
 	// spend some quality time with the state lock, and perhaps relinquish our
 	// work grant directly instead of spawning a new goroutine to transfer it.
-	if key, ok := q.tryGetQueuedKey(); ok {
-		go q.work(&key)
+	if key, ok := m.tryGetQueuedKey(); ok {
+		go m.work(&key)
 	}
 }
 
 // handleReattach obtains a work grant for the current goroutine, which must be
 // prepared to fulfill the work grant invariants.
-func (q *Queue[K, V]) handleReattach() {
+func (m *Map[K, V]) handleReattach() {
 	var mustReceiveGrant bool
 
 	func() {
-		q.stateMu.Lock()
-		defer q.stateMu.Unlock()
+		m.stateMu.Lock()
+		defer m.stateMu.Unlock()
 
-		if q.state.grants < q.state.grantLimit {
+		if m.state.grants < m.state.grantLimit {
 			// There is capacity for a new work grant, so we must issue one.
-			q.state.grants += 1
+			m.state.grants += 1
 			return
 		}
 
 		// There is no capacity for a new work grant, so we must inform an existing
 		// worker that a reattacher is ready to take theirs.
-		q.state.reattachers += 1
+		m.state.reattachers += 1
 		mustReceiveGrant = true
 	}()
 
 	if mustReceiveGrant {
-		q.reattach.ReceiveGrant()
+		m.reattach.ReceiveGrant()
 	}
 }
 
-// Handle allows a handler to interact with its parent [Queue].
+// Handle allows a handler to interact with its parent [Map].
 type Handle struct {
 	// detached indicates that the goroutine running the handler has relinquished
 	// its work grant.
@@ -408,8 +409,8 @@ type Handle struct {
 	reattach func()
 }
 
-// Detach unbounds the calling handler from the concurrency limit of the [Queue]
-// that invoked it, allowing the queue to immediately handle other keys.
+// Detach unbounds the calling handler from the concurrency limit of the [Map]
+// that invoked it, allowing the map to immediately handle other keys.
 // It returns true if this call detached the handler, or false if the handler
 // already detached.
 func (h *Handle) Detach() bool {
@@ -422,7 +423,7 @@ func (h *Handle) Detach() bool {
 }
 
 // Reattach blocks the calling handler until it can execute within the
-// concurrency limit of the [Queue] that invoked it, taking priority over
+// concurrency limit of the [Map] that invoked it, taking priority over
 // unhandled queued keys. It has no effect if the handler is already attached.
 func (h *Handle) Reattach() {
 	if h.detached {

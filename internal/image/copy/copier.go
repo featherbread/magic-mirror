@@ -28,7 +28,7 @@ func CopyAll(concurrency int, specs ...Spec) error {
 }
 
 type copier struct {
-	queue parka.Set[Spec]
+	copies parka.Set[Spec]
 
 	blobs        *blobCopier
 	srcManifests *manifestCache
@@ -53,19 +53,19 @@ func newCopier(concurrency int) *copier {
 		dstManifests: dstManifests,
 		dstIndexer:   dstIndexer,
 	}
-	c.queue = parka.NewSet(c.copySpec)
+	c.copies = parka.NewSet(c.copySpec)
 	c.statsTimer = time.AfterFunc(statsInterval, c.printStats)
 	return c
 }
 
 func (c *copier) CopyAll(specs ...Spec) error {
-	// Inform the queue of all specs up front.
-	c.queue.Inform(specs...)
+	// Start up the copies for all known specs.
+	c.copies.Inform(specs...)
 
-	// Then, wait for each spec and aggregate the errors (unlike Queue.Collect).
+	// Then, wait for each spec and aggregate the errors (unlike Collect).
 	errs := make([]error, len(specs))
 	for i, spec := range specs {
-		errs[i] = c.queue.Get(spec)
+		errs[i] = c.copies.Get(spec)
 	}
 
 	c.printStats()
@@ -78,7 +78,7 @@ func (c *copier) printStats() {
 	var (
 		blobStats     = c.blobs.Stats()
 		platformStats = c.platforms.Stats()
-		imageStats    = c.queue.Stats()
+		imageStats    = c.copies.Stats()
 	)
 	log.Printf(
 		"[stats] blobs: %d of %d copied; platforms: %d of %d copied; images: %d of %d done",

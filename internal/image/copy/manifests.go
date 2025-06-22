@@ -41,13 +41,13 @@ func uploadManifest(img image.Image, manifest image.ManifestKind) error {
 }
 
 type manifestCache struct {
-	*parka.Queue[image.Image, image.ManifestKind]
+	*parka.Map[image.Image, image.ManifestKind]
 }
 
 func newManifestCache(concurrency int) *manifestCache {
 	d := &manifestCache{}
-	d.Queue = parka.NewQueue(d.getManifest)
-	d.Queue.Limit(concurrency)
+	d.Map = parka.NewMap(d.getManifest)
+	d.Map.Limit(concurrency)
 	return d
 }
 

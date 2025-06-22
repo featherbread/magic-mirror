@@ -11,7 +11,7 @@ import (
 )
 
 type platformCopier struct {
-	*parka.Queue[platformCopyRequest, image.Manifest]
+	*parka.Map[platformCopyRequest, image.Manifest]
 
 	manifests *manifestCache
 	blobs     *blobCopier
@@ -27,12 +27,12 @@ func newPlatformCopier(manifests *manifestCache, blobs *blobCopier) *platformCop
 		manifests: manifests,
 		blobs:     blobs,
 	}
-	c.Queue = parka.NewQueue(c.copyPlatform)
+	c.Map = parka.NewMap(c.copyPlatform)
 	return c
 }
 
 func (c *platformCopier) Copy(src image.Image, dst image.Image) (image.Manifest, error) {
-	return c.Queue.Get(platformCopyRequest{Src: src, Dst: dst})
+	return c.Map.Get(platformCopyRequest{Src: src, Dst: dst})
 }
 
 func (c *platformCopier) CopyAll(dst image.Repository, srcs ...image.Image) ([]image.Manifest, error) {
@@ -46,7 +46,7 @@ func (c *platformCopier) CopyAll(dst image.Repository, srcs ...image.Image) ([]i
 			},
 		}
 	}
-	return c.Queue.Collect(reqs...)
+	return c.Map.Collect(reqs...)
 }
 
 func (c *platformCopier) copyPlatform(_ *parka.Handle, req platformCopyRequest) (m image.Manifest, err error) {
