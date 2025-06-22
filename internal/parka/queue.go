@@ -1,4 +1,4 @@
-package work
+package parka
 
 import (
 	"math"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/gammazero/deque"
 
-	"github.com/ahamlinman/magic-mirror/internal/work/catch"
+	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
 )
 
 // Queue runs a handler function once per key in a distinct goroutine and caches

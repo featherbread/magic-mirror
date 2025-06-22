@@ -12,7 +12,7 @@ import (
 
 	"github.com/ahamlinman/magic-mirror/internal/image"
 	"github.com/ahamlinman/magic-mirror/internal/log"
-	"github.com/ahamlinman/magic-mirror/internal/work"
+	"github.com/ahamlinman/magic-mirror/internal/parka"
 )
 
 // CopyAll performs a bulk copy between OCI image registries based on the
@@ -28,7 +28,7 @@ func CopyAll(concurrency int, specs ...Spec) error {
 }
 
 type copier struct {
-	queue work.SetQueue[Spec]
+	queue parka.SetQueue[Spec]
 
 	blobs        *blobCopier
 	srcManifests *manifestCache
@@ -53,7 +53,7 @@ func newCopier(concurrency int) *copier {
 		dstManifests: dstManifests,
 		dstIndexer:   dstIndexer,
 	}
-	c.queue = work.NewSetQueue(c.copySpec)
+	c.queue = parka.NewSetQueue(c.copySpec)
 	c.statsTimer = time.AfterFunc(statsInterval, c.printStats)
 	return c
 }
@@ -89,7 +89,7 @@ func (c *copier) printStats() {
 	c.statsTimer.Reset(statsInterval)
 }
 
-func (c *copier) copySpec(_ *work.QueueHandle, spec Spec) error {
+func (c *copier) copySpec(_ *parka.QueueHandle, spec Spec) error {
 	log.Verbosef("[image]\tstarting copy from %s to %s", spec.Src, spec.Dst)
 
 	var (

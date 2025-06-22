@@ -1,4 +1,4 @@
-package work_test
+package parka_test
 
 import (
 	"sync/atomic"
@@ -7,12 +7,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/ahamlinman/magic-mirror/internal/work"
-	"github.com/ahamlinman/magic-mirror/internal/work/catch"
+	"github.com/ahamlinman/magic-mirror/internal/parka"
+	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
 )
 
 func TestKeyMutexZeroUnlock(t *testing.T) {
-	var km work.KeyMutex[int]
+	var km parka.KeyMutex[int]
 	result := catch.Do(func() (int, error) { km.Unlock(0); return 0, nil })
 	assert.True(t, result.Panicked())
 	assert.Contains(t, result.Recovered(), "key is already unlocked")
@@ -20,7 +20,7 @@ func TestKeyMutexZeroUnlock(t *testing.T) {
 
 func TestKeyMutextDoubleUnlock(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		var km work.KeyMutex[int]
+		var km parka.KeyMutex[int]
 		km.Lock(0)
 		km.Lock(1)
 		km.Unlock(1)
@@ -37,7 +37,7 @@ func TestKeyMutexBasic(t *testing.T) {
 			workerCount = 2 * keyCount
 		)
 		var (
-			km      work.KeyMutex[int]
+			km      parka.KeyMutex[int]
 			locked  [keyCount]atomic.Int32
 			unblock = make(chan struct{})
 		)
@@ -70,10 +70,10 @@ func TestKeyMutexBasic(t *testing.T) {
 func TestKeyMutexDetachReattach(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var (
-			km       work.KeyMutex[struct{}]
+			km       parka.KeyMutex[struct{}]
 			unblock0 = make(chan struct{})
 		)
-		q := work.NewSetQueue(func(qh *work.QueueHandle, x int) error {
+		q := parka.NewSetQueue(func(qh *parka.QueueHandle, x int) error {
 			if x == 0 {
 				km.LockDetached(qh, struct{}{})
 				<-unblock0

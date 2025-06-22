@@ -1,4 +1,4 @@
-package work
+package parka
 
 // SetQueue wraps a [Queue] whose handlers return no meaningful value with
 // simplified error-only result APIs.

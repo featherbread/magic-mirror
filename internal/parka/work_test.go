@@ -1,4 +1,4 @@
-package work_test
+package parka_test
 
 func makeIntKeys(n int) []int {
 	keys := make([]int, n)
