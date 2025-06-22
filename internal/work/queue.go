@@ -75,8 +75,8 @@ type workState[K comparable] struct {
 // reasons, the order probably doesn't matter much.
 type reattachQueue chan struct{}
 
-func (rq reattachQueue) BequeathGrant() { <-rq }
-func (rq reattachQueue) ObtainGrant()   { rq <- struct{}{} }
+func (rq reattachQueue) SendGrant()    { <-rq }
+func (rq reattachQueue) ReceiveGrant() { rq <- struct{}{} }
 
 // task represents a unit of pending or handled work for a single key.
 type task[V any] struct {
@@ -287,7 +287,7 @@ func (q *Queue[K, V]) work(initialKey *K) {
 // work grant (returning ok == false) or returns a key (ok == true) whose work
 // the caller must execute.
 func (q *Queue[K, V]) tryGetQueuedKey() (key K, ok bool) {
-	var mustBequeathGrant bool
+	var mustSendGrant bool
 
 	func() {
 		q.stateMu.Lock()
@@ -303,7 +303,7 @@ func (q *Queue[K, V]) tryGetQueuedKey() (key K, ok bool) {
 			// We can transfer our work grant to a reattacher; see handleReattach for
 			// details.
 			q.state.reattachers -= 1
-			mustBequeathGrant = true
+			mustSendGrant = true
 
 		case q.state.keys.Len() == 0:
 			// With no reattachers and no keys, we have no pending work and must
@@ -317,10 +317,9 @@ func (q *Queue[K, V]) tryGetQueuedKey() (key K, ok bool) {
 		}
 	}()
 
-	if mustBequeathGrant {
-		q.reattach.BequeathGrant()
+	if mustSendGrant {
+		q.reattach.SendGrant()
 	}
-
 	return
 }
 
@@ -340,7 +339,7 @@ func (q *Queue[K, V]) handleDetach() {
 // handleReattach obtains a work grant for the current goroutine, which must be
 // prepared to fulfill the work grant invariants.
 func (q *Queue[K, V]) handleReattach() {
-	var mustObtainGrant bool
+	var mustReceiveGrant bool
 
 	func() {
 		q.stateMu.Lock()
@@ -355,11 +354,11 @@ func (q *Queue[K, V]) handleReattach() {
 		// There is no capacity for a new work grant, so we must inform an existing
 		// worker that a reattacher is ready to take theirs.
 		q.state.reattachers += 1
-		mustObtainGrant = true
+		mustReceiveGrant = true
 	}()
 
-	if mustObtainGrant {
-		q.reattach.ObtainGrant()
+	if mustReceiveGrant {
+		q.reattach.ReceiveGrant()
 	}
 }
 
