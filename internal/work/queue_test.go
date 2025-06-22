@@ -45,8 +45,8 @@ func TestQueueUnwind(t *testing.T) {
 
 	testCases := []struct {
 		Description string
-		Exit        func()
-		Assert      func(*testing.T, catch.Result[int])
+		Exit        func()                              // TODO: Code smell; approach with caution.
+		Assert      func(*testing.T, catch.Result[int]) // TODO: EXTREME code smell; approach with caution.
 	}{
 		{
 			Description: "panic with value",
@@ -76,11 +76,10 @@ func TestQueueUnwind(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Description, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				step := make(chan struct{})
+				unblock := make(chan struct{})
 				q := work.NewQueue(1, func(_ *work.QueueHandle, x int) (int, error) {
 					if x == 0 {
-						for range step {
-						}
+						<-unblock
 						tc.Exit()
 						t.Error("test case failed to unwind from handler")
 					}
@@ -89,7 +88,7 @@ func TestQueueUnwind(t *testing.T) {
 
 				// Start the handler that will unwind, and ensure that it's blocked.
 				q.Inform(0)
-				step <- struct{}{}
+				synctest.Wait()
 
 				// Force some more handlers to queue up...
 				keys := []int{1, 2}
@@ -97,7 +96,7 @@ func TestQueueUnwind(t *testing.T) {
 				synctest.Wait()
 
 				// ...then let everything through.
-				close(step)
+				close(unblock)
 
 				// Ensure that the unwind didn't break the handling of those new keys.
 				got, _ := q.Collect(keys...)
@@ -138,11 +137,7 @@ func TestQueueDeduplication(t *testing.T) {
 		unblock = make(chan struct{})
 
 		// Start handling a fresh key...
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			q.Get(keys[half])
-		}()
+		done := promise(func() { q.Get(keys[half]) })
 
 		// ...and ensure it really is blocked.
 		synctest.Wait()
@@ -272,7 +267,7 @@ func TestQueueReattachPriority(t *testing.T) {
 		})
 
 		// Start the handler for 0 that will detach itself from the queue...
-		go func() { q.Get(0) }()
+		q.Inform(0)
 		synctest.Wait()
 
 		// ...and ensure that unrelated handlers are, in fact, unblocked.
@@ -379,12 +374,8 @@ func TestQueueDetachReturn(t *testing.T) {
 		synctest.Wait()
 
 		// Start up some normal handlers...
-		attachedDone := make(chan struct{})
 		attachedKeys := makeIntKeys(3 * len(detachedKeys))
-		go func() {
-			defer close(attachedDone)
-			q.Collect(attachedKeys...)
-		}()
+		attachedDone := promise(func() { q.Collect(attachedKeys...) })
 
 		// ...and ensure they really are blocked.
 		synctest.Wait()
@@ -409,12 +400,4 @@ func TestQueueDetachReturn(t *testing.T) {
 			t.Error("queue breached limit of 1 worker in flight")
 		}
 	})
-}
-
-func makeIntKeys(n int) (keys []int) {
-	keys = make([]int, n)
-	for i := range keys {
-		keys[i] = i
-	}
-	return
 }

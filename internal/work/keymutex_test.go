@@ -85,7 +85,7 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 
 		// Start the handler for 0, which will have to detach since we're holding
 		// the lock.
-		go func() { q.Get(0) }()
+		q.Inform(0)
 		synctest.Wait()
 
 		// Ensure that unrelated handlers can, in fact, proceed.
@@ -96,11 +96,7 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 		synctest.Wait()
 
 		// Start another handler...
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			q.Get(2)
-		}()
+		done := promise(func() { q.Get(2) })
 
 		// ...and ensure it really is blocked behind handler 0.
 		synctest.Wait()
