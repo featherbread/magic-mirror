@@ -488,7 +488,7 @@ func TestQueueLimitIncrease(t *testing.T) {
 		synctest.Wait()
 		select {
 		case <-done:
-			t.Error("computation of keys was not blocked")
+			assert.Fail(t, "computation of keys was not blocked")
 		default:
 		}
 
@@ -498,14 +498,20 @@ func TestQueueLimitIncrease(t *testing.T) {
 		q.Limit(2)
 		synctest.Wait()
 		assert.Equal(t, detachedCount-1, int(detached.Load()), "reattacher did not take priority")
-		assert.Equal(t, 2, int(inflight.Load()), "not enough handlers in flight")
+		assert.Equal(t, 2, int(inflight.Load()), "wrong number of handlers in flight")
 
 		// Let all of the detached handlers in, along with some regular keys.
-		finalLimit := blockerCount + detachedCount + 2
-		q.Limit(finalLimit)
+		limit := blockerCount + detachedCount + 2
+		q.Limit(limit)
 		synctest.Wait()
 		assert.Equal(t, 0, int(detached.Load()), "not all detachers reattached")
-		assert.Equal(t, finalLimit, int(inflight.Load()), "not enough handlers in flight")
+		assert.Equal(t, limit, int(inflight.Load()), "wrong number of handlers in flight")
+
+		// Let in some additional keys while we have no pending reattachers.
+		limit += 2
+		q.Limit(limit)
+		synctest.Wait()
+		assert.Equal(t, limit, int(inflight.Load()), "wrong number of handlers in flight")
 
 		// Let all handlers through, and ensure the limit was respected.
 		close(unblockReturn)
@@ -514,6 +520,6 @@ func TestQueueLimitIncrease(t *testing.T) {
 		q.Collect(attachedKeys...)
 		close(inflights)
 		maxInFlight := maxOfChannel(inflights)
-		assert.LessOrEqual(t, maxInFlight, finalLimit, "too many concurrent handlers")
+		assert.LessOrEqual(t, maxInFlight, limit, "too many concurrent handlers")
 	})
 }
