@@ -206,7 +206,9 @@ func (q *Queue[K, V]) scheduleNewKeys(enqueue enqueueFunc[K], keys []K) {
 		return // No need to lock up the state.
 	}
 
-	immediateKeys := func() []K {
+	var immediateKeys []K
+
+	func() {
 		q.stateMu.Lock()
 		defer q.stateMu.Unlock()
 
@@ -214,9 +216,9 @@ func (q *Queue[K, V]) scheduleNewKeys(enqueue enqueueFunc[K], keys []K) {
 		newGrants := min(q.state.maxGrants-q.state.grants, len(keys))
 		q.state.grants += newGrants
 
-		immediateKeys, queuedKeys := keys[:newGrants], keys[newGrants:]
+		var queuedKeys []K
+		immediateKeys, queuedKeys = keys[:newGrants], keys[newGrants:]
 		enqueue(&q.state.keys, queuedKeys)
-		return immediateKeys
 	}()
 
 	// Transfer our issued work grants, to discharge our own responsibility and
@@ -285,7 +287,7 @@ func (q *Queue[K, V]) work(initialKey *K) {
 // work grant (returning ok == false) or returns a key (ok == true) whose work
 // the caller must execute.
 func (q *Queue[K, V]) tryGetQueuedKey() (key K, ok bool) {
-	var mustBequeath bool
+	var mustBequeathGrant bool
 
 	func() {
 		q.stateMu.Lock()
@@ -301,7 +303,7 @@ func (q *Queue[K, V]) tryGetQueuedKey() (key K, ok bool) {
 			// We can transfer our work grant to a reattacher; see handleReattach for
 			// details.
 			q.state.reattachers -= 1
-			mustBequeath = true
+			mustBequeathGrant = true
 
 		case q.state.keys.Len() == 0:
 			// With no reattachers and no keys, we have no pending work and must
@@ -315,7 +317,7 @@ func (q *Queue[K, V]) tryGetQueuedKey() (key K, ok bool) {
 		}
 	}()
 
-	if mustBequeath {
+	if mustBequeathGrant {
 		q.reattach.BequeathGrant()
 	}
 
@@ -338,23 +340,25 @@ func (q *Queue[K, V]) handleDetach() {
 // handleReattach obtains a work grant for the current goroutine, which must be
 // prepared to fulfill the work grant invariants.
 func (q *Queue[K, V]) handleReattach() {
-	mustObtain := func() bool {
+	var mustObtainGrant bool
+
+	func() {
 		q.stateMu.Lock()
 		defer q.stateMu.Unlock()
 
 		if q.state.grants < q.state.maxGrants {
 			// There is capacity for a new work grant, so we must issue one.
 			q.state.grants += 1
-			return false
+			return
 		}
 
 		// There is no capacity for a new work grant, so we must inform an existing
 		// worker that a reattacher is ready to take theirs.
 		q.state.reattachers += 1
-		return true
+		mustObtainGrant = true
 	}()
 
-	if mustObtain {
+	if mustObtainGrant {
 		q.reattach.ObtainGrant()
 	}
 }
