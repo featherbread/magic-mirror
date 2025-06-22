@@ -45,13 +45,12 @@ type manifestCache struct {
 }
 
 func newManifestCache(concurrency int) *manifestCache {
-	d := &manifestCache{}
-	d.Map = parka.NewMap(d.getManifest)
-	d.Map.Limit(concurrency)
-	return d
+	cache := manifestCache{parka.NewMap(getManifest)}
+	cache.Map.Limit(concurrency)
+	return &cache
 }
 
-func (d *manifestCache) getManifest(_ *parka.Handle, img image.Image) (image.ManifestKind, error) {
+func getManifest(_ *parka.Handle, img image.Image) (image.ManifestKind, error) {
 	reference := img.Digest.String()
 	if reference == "" {
 		reference = img.Tag

@@ -19,20 +19,19 @@ import (
 
 // blobCopier handles requests to copy blob content between repositories.
 type blobCopier struct {
-	parka.Set[blobCopyRequest]
+	parka.Set[blobCopyKey]
+	copyMu parka.KeyMutex[blobMutexKey]
 
 	sourceMap   map[digest.Digest]mapset.Set[image.Repository]
 	sourceMapMu sync.Mutex
-
-	copyMu parka.KeyMutex[blobCopyMutexKey]
 }
 
-type blobCopyRequest struct {
+type blobCopyKey struct {
 	Digest digest.Digest
 	Dst    image.Repository
 }
 
-type blobCopyMutexKey struct {
+type blobMutexKey struct {
 	Digest   digest.Digest
 	Registry image.Registry
 }
@@ -61,12 +60,12 @@ func (c *blobCopier) RegisterSource(dgst digest.Digest, src image.Repository) {
 // repository, and may use the provided repository as a source for future
 // unrelated copies.
 func (c *blobCopier) CopyAll(src, dst image.Repository, dgsts ...digest.Digest) error {
-	requests := make([]blobCopyRequest, len(dgsts))
+	keys := make([]blobCopyKey, len(dgsts))
 	for i, dgst := range dgsts {
 		c.RegisterSource(dgst, src)
-		requests[i] = blobCopyRequest{Digest: dgst, Dst: dst}
+		keys[i] = blobCopyKey{Digest: dgst, Dst: dst}
 	}
-	return c.Set.Collect(requests...)
+	return c.Set.Collect(keys...)
 }
 
 func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {
@@ -80,11 +79,11 @@ func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {
 	return set
 }
 
-func (c *blobCopier) copyBlob(qh *parka.Handle, req blobCopyRequest) (err error) {
+func (c *blobCopier) copyBlob(qh *parka.Handle, req blobCopyKey) (err error) {
 	// If another handler is copying this blob to the same registry, wait for it
 	// to finish so we can do a cross-repository mount instead of pulling from the
 	// source again.
-	key := blobCopyMutexKey{Digest: req.Digest, Registry: req.Dst.Registry}
+	key := blobMutexKey{Digest: req.Digest, Registry: req.Dst.Registry}
 	c.copyMu.LockDetached(qh, key)
 	defer c.copyMu.Unlock(key)
 

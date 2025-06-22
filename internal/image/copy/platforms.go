@@ -11,13 +11,13 @@ import (
 )
 
 type platformCopier struct {
-	*parka.Map[platformCopyRequest, image.Manifest]
+	*parka.Map[platformCopyKey, image.Manifest]
 
 	manifests *manifestCache
 	blobs     *blobCopier
 }
 
-type platformCopyRequest struct {
+type platformCopyKey struct {
 	Src image.Image
 	Dst image.Image
 }
@@ -32,13 +32,13 @@ func newPlatformCopier(manifests *manifestCache, blobs *blobCopier) *platformCop
 }
 
 func (c *platformCopier) Copy(src image.Image, dst image.Image) (image.Manifest, error) {
-	return c.Map.Get(platformCopyRequest{Src: src, Dst: dst})
+	return c.Map.Get(platformCopyKey{Src: src, Dst: dst})
 }
 
 func (c *platformCopier) CopyAll(dst image.Repository, srcs ...image.Image) ([]image.Manifest, error) {
-	reqs := make([]platformCopyRequest, len(srcs))
+	reqs := make([]platformCopyKey, len(srcs))
 	for i, src := range srcs {
-		reqs[i] = platformCopyRequest{
+		reqs[i] = platformCopyKey{
 			Src: src,
 			Dst: image.Image{
 				Repository: dst,
@@ -49,7 +49,7 @@ func (c *platformCopier) CopyAll(dst image.Repository, srcs ...image.Image) ([]i
 	return c.Map.Collect(reqs...)
 }
 
-func (c *platformCopier) copyPlatform(_ *parka.Handle, req platformCopyRequest) (m image.Manifest, err error) {
+func (c *platformCopier) copyPlatform(_ *parka.Handle, req platformCopyKey) (m image.Manifest, err error) {
 	// We share this manifest cache with the top-level copier. The top level
 	// requests both indexes and platform manifests, without knowing in advance
 	// what it'll get. This level always gets platform manifests, which are
