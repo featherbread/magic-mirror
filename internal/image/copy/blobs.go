@@ -19,7 +19,7 @@ import (
 
 // blobCopier handles requests to copy blob content between repositories.
 type blobCopier struct {
-	parka.SetQueue[blobCopyRequest]
+	parka.Set[blobCopyRequest]
 
 	sourceMap   map[digest.Digest]mapset.Set[image.Repository]
 	sourceMapMu sync.Mutex
@@ -39,8 +39,8 @@ type blobCopyMutexKey struct {
 
 func newBlobCopier(concurrency int) *blobCopier {
 	c := &blobCopier{sourceMap: make(map[digest.Digest]mapset.Set[image.Repository])}
-	c.SetQueue = parka.NewSetQueue(c.copyBlob)
-	c.SetQueue.Limit(concurrency)
+	c.Set = parka.NewSet(c.copyBlob)
+	c.Set.Limit(concurrency)
 	return c
 }
 
@@ -66,7 +66,7 @@ func (c *blobCopier) CopyAll(src, dst image.Repository, dgsts ...digest.Digest) 
 		c.RegisterSource(dgst, src)
 		requests[i] = blobCopyRequest{Digest: dgst, Dst: dst}
 	}
-	return c.SetQueue.Collect(requests...)
+	return c.Set.Collect(requests...)
 }
 
 func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {

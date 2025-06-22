@@ -28,7 +28,7 @@ func CopyAll(concurrency int, specs ...Spec) error {
 }
 
 type copier struct {
-	queue parka.SetQueue[Spec]
+	queue parka.Set[Spec]
 
 	blobs        *blobCopier
 	srcManifests *manifestCache
@@ -53,7 +53,7 @@ func newCopier(concurrency int) *copier {
 		dstManifests: dstManifests,
 		dstIndexer:   dstIndexer,
 	}
-	c.queue = parka.NewSetQueue(c.copySpec)
+	c.queue = parka.NewSet(c.copySpec)
 	c.statsTimer = time.AfterFunc(statsInterval, c.printStats)
 	return c
 }
