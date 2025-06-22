@@ -1,12 +1,13 @@
 package work
 
-// SetQueue wraps a [Queue] whose handlers return no meaningful value with a
-// simplified error-only API.
+// SetQueue wraps a [Queue] whose handlers return no meaningful value with
+// simplified error-only result APIs.
 type SetQueue[K comparable] struct {
 	*Queue[K, struct{}]
 }
 
-// NewSetQueue is analogous to [NewQueue].
+// NewSetQueue is analogous to [NewQueue], but accepts a simplified handler
+// returning only an error.
 func NewSetQueue[K comparable](handle func(*QueueHandle, K) error) SetQueue[K] {
 	return SetQueue[K]{
 		Queue: NewQueue(func(qh *QueueHandle, key K) (_ struct{}, err error) {

@@ -92,10 +92,7 @@ func (t *task[V]) Wait() (V, error) {
 	return t.result.Unwrap()
 }
 
-// NewQueue creates a [Queue] with the provided concurrency limit and handler.
-//
-// If concurrency <= 0, the queue is created with an effectively unlimited
-// concurrency of [math.MaxInt].
+// NewQueue creates a [Queue] with the provided handler.
 func NewQueue[K comparable, V any](handle func(*QueueHandle, K) (V, error)) *Queue[K, V] {
 	return &Queue[K, V]{
 		handle:   handle,
