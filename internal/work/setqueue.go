@@ -1,8 +1,5 @@
 package work
 
-// SetHandler is a type for a [SetQueue]'s handler function.
-type SetHandler[K comparable] = func(*QueueHandle, K) error
-
 // SetQueue wraps a [Queue] whose handlers return no meaningful value with a
 // simplified error-only API.
 type SetQueue[K comparable] struct {
@@ -10,7 +7,7 @@ type SetQueue[K comparable] struct {
 }
 
 // NewSetQueue is analogous to [NewQueue].
-func NewSetQueue[K comparable](handle SetHandler[K]) SetQueue[K] {
+func NewSetQueue[K comparable](handle func(*QueueHandle, K) error) SetQueue[K] {
 	return SetQueue[K]{
 		Queue: NewQueue(func(qh *QueueHandle, key K) (_ struct{}, err error) {
 			err = handle(qh, key)
