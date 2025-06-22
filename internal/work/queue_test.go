@@ -115,48 +115,48 @@ func TestQueueUnwind(t *testing.T) {
 	}
 }
 
-func TestQueueDeduplication(t *testing.T) {
+func TestQueueCaching(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
+		const (
+			initialCachedKey = iota
+			keyThatWillBlock
+		)
+
 		unblock := make(chan struct{})
 		q := work.NewQueue(0, func(_ *work.QueueHandle, x int) (int, error) {
 			<-unblock
 			return x, nil
 		})
 
-		const count = 10
-		const half = count / 2
-		keys := makeIntKeys(count)
-
-		// Handle and cache the first half of the keys.
+		// Handle an initial key.
 		close(unblock)
-		got, _ := q.Collect(keys[:half]...)
-		assert.Equal(t, keys[:half], got)
-		assert.Equal(t, work.Stats{Handled: half, Total: half}, q.Stats())
+		got, _ := q.Get(initialCachedKey)
+		assert.Equal(t, initialCachedKey, got)
+		assert.Equal(t, work.Stats{Handled: 1, Total: 1}, q.Stats())
 
 		// Re-block the handler.
 		unblock = make(chan struct{})
 
-		// Start handling a fresh key...
-		done := promise(func() { q.Get(keys[half]) })
-
-		// ...and ensure it really is blocked.
+		// Start handling a fresh key, and ensure it really is blocked.
+		done := promise(func() { q.Get(keyThatWillBlock) })
 		synctest.Wait()
 		select {
 		case <-done:
 			t.Error("computation of key was not blocked")
 		default:
-			assert.Equal(t, work.Stats{Handled: half, Total: half + 1}, q.Stats())
+			assert.Equal(t, work.Stats{Handled: 1, Total: 2}, q.Stats())
 		}
 
-		// Ensure that the previous results are cached and available without delay.
-		got, _ = q.Collect(keys[:half]...)
-		assert.Equal(t, keys[:half], got)
+		// Ensure the previous key is cached and available without delay.
+		got, _ = q.Get(initialCachedKey)
+		assert.Equal(t, initialCachedKey, got)
 
-		// Finish handling the rest of the keys.
+		// Finish handling the blocked key.
 		close(unblock)
-		got, _ = q.Collect(keys...)
-		assert.Equal(t, keys, got)
-		assert.Equal(t, work.Stats{Handled: count, Total: count}, q.Stats())
+		keys := []int{initialCachedKey, keyThatWillBlock}
+		collected, _ := q.Collect(keys...)
+		assert.Equal(t, keys, collected)
+		assert.Equal(t, work.Stats{Handled: 2, Total: 2}, q.Stats())
 	})
 }
 
