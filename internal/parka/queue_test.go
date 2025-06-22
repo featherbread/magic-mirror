@@ -19,7 +19,7 @@ import (
 
 func TestQueueBasic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := parka.NewQueue(func(_ *parka.QueueHandle, x int) (int, error) {
+		q := parka.NewQueue(func(_ *parka.Handle, x int) (int, error) {
 			return x % 3, nil
 		})
 		q.Limit(1)
@@ -41,7 +41,7 @@ func TestQueueBasic(t *testing.T) {
 func TestQueueCollectOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const keyCount = 10
-		q := parka.NewQueue(func(_ *parka.QueueHandle, x int) (int, error) {
+		q := parka.NewQueue(func(_ *parka.Handle, x int) (int, error) {
 			time.Sleep(rand.N(time.Duration(math.MaxInt64)))
 			return x, nil
 		})
@@ -54,7 +54,7 @@ func TestQueueCollectOrder(t *testing.T) {
 
 func TestSetError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := parka.NewSet(func(_ *parka.QueueHandle, x int) error {
+		q := parka.NewSet(func(_ *parka.Handle, x int) error {
 			if x%2 == 0 {
 				return fmt.Errorf("%d", x)
 			}
@@ -105,7 +105,7 @@ func TestQueueUnwind(t *testing.T) {
 		t.Run(tc.Description, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				unblock := make(chan struct{})
-				q := parka.NewSet(func(_ *parka.QueueHandle, x int) error {
+				q := parka.NewSet(func(_ *parka.Handle, x int) error {
 					if x == 0 {
 						<-unblock
 						tc.Exit()
@@ -152,7 +152,7 @@ func TestQueueCaching(t *testing.T) {
 		)
 
 		unblock := make(chan struct{})
-		q := parka.NewSet(func(_ *parka.QueueHandle, x int) error {
+		q := parka.NewSet(func(_ *parka.Handle, x int) error {
 			<-unblock
 			return nil
 		})
@@ -189,7 +189,7 @@ func TestQueueOrdering(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var handledOrder []int
 		unblock := make(chan struct{})
-		q := parka.NewSet(func(_ *parka.QueueHandle, x int) error {
+		q := parka.NewSet(func(_ *parka.Handle, x int) error {
 			<-unblock
 			handledOrder = append(handledOrder, x)
 			return nil
@@ -237,7 +237,7 @@ func TestQueueReattachPriority(t *testing.T) {
 			unblockReattacher = make(chan struct{})
 			unblockBlocker    = make(chan struct{})
 		)
-		q := parka.NewSet(func(qh *parka.QueueHandle, x int) error {
+		q := parka.NewSet(func(qh *parka.Handle, x int) error {
 			switch x {
 			case keyThatWillDetach:
 				qh.Detach()
@@ -282,7 +282,7 @@ func TestQueueReattachPriority(t *testing.T) {
 
 func TestQueueMultiDetachReattach(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := parka.NewSet(func(qh *parka.QueueHandle, x int) error {
+		q := parka.NewSet(func(qh *parka.Handle, x int) error {
 			assert.True(t, qh.Detach(), "First Detach() claimed to do nothing")
 			assert.False(t, qh.Detach(), "Second Detach() claimed to detach")
 			assert.False(t, qh.Detach(), "Third Detach() claimed to detach")
@@ -306,7 +306,7 @@ func TestQueueReattachConcurrency(t *testing.T) {
 			unblockReattach = make(chan struct{})
 			unblockReturn   = make(chan struct{})
 		)
-		q := parka.NewSet(func(qh *parka.QueueHandle, x int) error {
+		q := parka.NewSet(func(qh *parka.Handle, x int) error {
 			qh.Detach()
 			<-unblockReattach
 			qh.Reattach()
@@ -351,7 +351,7 @@ func TestQueueDetachReturn(t *testing.T) {
 			unblockDetached = make(chan struct{})
 			unblockAttached = make(chan struct{})
 		)
-		q := parka.NewSet(func(qh *parka.QueueHandle, x int) error {
+		q := parka.NewSet(func(qh *parka.Handle, x int) error {
 			if x < 0 {
 				qh.Detach()
 				<-unblockDetached
@@ -408,7 +408,7 @@ func TestQueueLimitBasic(t *testing.T) {
 			inflights = make(chan int, keyCount)
 			unblock   = make(chan struct{})
 		)
-		q := parka.NewSet(func(_ *parka.QueueHandle, x int) error {
+		q := parka.NewSet(func(_ *parka.Handle, x int) error {
 			inflights <- int(inflight.Add(1))
 			defer inflight.Add(-1)
 			<-unblock
@@ -452,7 +452,7 @@ func TestQueueLimitIncrease(t *testing.T) {
 			unblockReattach = make(chan struct{})
 			unblockReturn   = make(chan struct{})
 		)
-		q := parka.NewSet(func(qh *parka.QueueHandle, k Key) error {
+		q := parka.NewSet(func(qh *parka.Handle, k Key) error {
 			if k.Detach {
 				qh.Detach()
 				detached.Add(1)
@@ -542,7 +542,7 @@ func TestQueueLimitIncreaseMax(t *testing.T) {
 			active  atomic.Int32
 			unblock = make(chan struct{})
 		)
-		q := parka.NewSet(func(qh *parka.QueueHandle, x int) error {
+		q := parka.NewSet(func(qh *parka.Handle, x int) error {
 			active.Add(1)
 			defer active.Add(-1)
 			if x == 0 {
@@ -585,7 +585,7 @@ func TestQueueLimitDecrease(t *testing.T) {
 			unblockReattach = make(chan struct{})
 			unblockReturn   = make(chan struct{})
 		)
-		q := parka.NewSet(func(qh *parka.QueueHandle, x int) error {
+		q := parka.NewSet(func(qh *parka.Handle, x int) error {
 			if x < initialKeyCount && x%2 == 0 {
 				qh.Detach()
 				detached.Add(1)

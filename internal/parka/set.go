@@ -8,9 +8,9 @@ type Set[K comparable] struct {
 
 // NewSet is analogous to [NewQueue], but accepts a simplified handler returning
 // only an error.
-func NewSet[K comparable](handle func(*QueueHandle, K) error) Set[K] {
+func NewSet[K comparable](handle func(*Handle, K) error) Set[K] {
 	return Set[K]{
-		Queue: NewQueue(func(qh *QueueHandle, key K) (_ struct{}, err error) {
+		Queue: NewQueue(func(qh *Handle, key K) (_ struct{}, err error) {
 			err = handle(qh, key)
 			return
 		}),

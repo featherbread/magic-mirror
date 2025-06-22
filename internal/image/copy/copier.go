@@ -89,7 +89,7 @@ func (c *copier) printStats() {
 	c.statsTimer.Reset(statsInterval)
 }
 
-func (c *copier) copySpec(_ *parka.QueueHandle, spec Spec) error {
+func (c *copier) copySpec(_ *parka.Handle, spec Spec) error {
 	log.Verbosef("[image]\tstarting copy from %s to %s", spec.Src, spec.Dst)
 
 	var (

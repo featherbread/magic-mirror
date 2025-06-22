@@ -51,7 +51,7 @@ func newManifestCache(concurrency int) *manifestCache {
 	return d
 }
 
-func (d *manifestCache) getManifest(_ *parka.QueueHandle, img image.Image) (image.ManifestKind, error) {
+func (d *manifestCache) getManifest(_ *parka.Handle, img image.Image) (image.ManifestKind, error) {
 	reference := img.Digest.String()
 	if reference == "" {
 		reference = img.Tag

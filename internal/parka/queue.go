@@ -20,13 +20,13 @@ import (
 //
 // New queues permit an effectively unlimited number of goroutines ([math.MaxInt])
 // to concurrently handle new keys. [Queue.Limit] can change this limit at any
-// time. [QueueHandle.Detach] permits an individual handler to exclude itself
+// time. [Handle.Detach] permits an individual handler to exclude itself
 // from the concurrency limit for the remainder of its own lifetime, or until it
-// calls [QueueHandle.Reattach]. In particular, [KeyMutex] helps handlers detach
+// calls [Handle.Reattach]. In particular, [KeyMutex] helps handlers detach
 // from their queue while awaiting exclusive use of a shared resource, typically
 // one identified by a subset of the handler's current key.
 type Queue[K comparable, V any] struct {
-	handle func(*QueueHandle, K) (V, error)
+	handle func(*Handle, K) (V, error)
 
 	state    workState[K]
 	stateMu  sync.Mutex
@@ -93,7 +93,7 @@ func (t *task[V]) Wait() (V, error) {
 }
 
 // NewQueue creates a [Queue] with the provided handler.
-func NewQueue[K comparable, V any](handle func(*QueueHandle, K) (V, error)) *Queue[K, V] {
+func NewQueue[K comparable, V any](handle func(*Handle, K) (V, error)) *Queue[K, V] {
 	return &Queue[K, V]{
 		handle:   handle,
 		state:    workState[K]{grantLimit: math.MaxInt},
@@ -299,7 +299,7 @@ func (q *Queue[K, V]) work(initialKey *K) {
 		task := q.tasks[key]
 		q.tasksMu.Unlock()
 
-		qh := &QueueHandle{
+		qh := &Handle{
 			detach:   q.handleDetach,
 			reattach: q.handleReattach,
 		}
@@ -399,8 +399,8 @@ func (q *Queue[K, V]) handleReattach() {
 	}
 }
 
-// QueueHandle allows a handler to interact with its parent [Queue].
-type QueueHandle struct {
+// Handle allows a handler to interact with its parent [Queue].
+type Handle struct {
 	// detached indicates that the goroutine running the handler has relinquished
 	// its work grant.
 	detached bool
@@ -412,21 +412,21 @@ type QueueHandle struct {
 // that invoked it, allowing the queue to immediately handle other keys.
 // It returns true if this call detached the handler, or false if the handler
 // already detached.
-func (qh *QueueHandle) Detach() bool {
-	if qh.detached {
+func (h *Handle) Detach() bool {
+	if h.detached {
 		return false
 	}
-	qh.detach()
-	qh.detached = true
+	h.detach()
+	h.detached = true
 	return true
 }
 
 // Reattach blocks the calling handler until it can execute within the
 // concurrency limit of the [Queue] that invoked it, taking priority over
 // unhandled queued keys. It has no effect if the handler is already attached.
-func (qh *QueueHandle) Reattach() {
-	if qh.detached {
-		qh.reattach()
-		qh.detached = false
+func (h *Handle) Reattach() {
+	if h.detached {
+		h.reattach()
+		h.detached = false
 	}
 }

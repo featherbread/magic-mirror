@@ -25,7 +25,7 @@ func noopReattach() {}
 // provided key is released. If the lock is not immediately available,
 // it detaches the handler from its queue while it waits for the lock,
 // and reattaches before returning.
-func (km *KeyMutex[K]) LockDetached(qh *QueueHandle, key K) {
+func (km *KeyMutex[K]) LockDetached(qh *Handle, key K) {
 	km.lock(key, qh.Detach, qh.Reattach)
 }
 
