@@ -50,7 +50,7 @@ type Queue[K comparable, V any] struct {
 // invariants:
 //
 //   - Exactly one work grant is outstanding for every unhandled key known to
-//     the queue, up to a limit of maxGrants.
+//     the queue, up to grantLimit.
 //   - No goroutine holds more than one work grant.
 //   - Any goroutine holding a work grant is either executing the handler for an
 //     unhandled key or maintaining these invariants.
@@ -61,7 +61,7 @@ type Queue[K comparable, V any] struct {
 // handling of new keys.
 type workState[K comparable] struct {
 	grants      int
-	maxGrants   int
+	grantLimit  int
 	reattachers int
 	keys        deque.Deque[K]
 }
@@ -100,9 +100,9 @@ func (t *task[V]) Wait() (V, error) {
 // If concurrency <= 0, the queue is created with an effectively unlimited
 // concurrency of [math.MaxInt].
 func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue[K, V] {
-	state := workState[K]{maxGrants: concurrency}
-	if state.maxGrants <= 0 {
-		state.maxGrants = math.MaxInt
+	state := workState[K]{grantLimit: concurrency}
+	if state.grantLimit <= 0 {
+		state.grantLimit = math.MaxInt
 	}
 	return &Queue[K, V]{
 		handle:   handle,
@@ -206,17 +206,24 @@ func (q *Queue[K, V]) scheduleNewKeys(enqueue enqueueFunc[K], keys []K) {
 		return // No need to lock up the state.
 	}
 
-	// Issue work grants up to the concurrency limit, then transfer them to new
-	// goroutines to discharge our own responsibility for them and restore the
-	// invariant that no goroutine holds more than one.
-	q.stateMu.Lock()
-	newGrants := min(q.state.maxGrants-q.state.grants, len(keys))
-	initialKeys, queuedKeys := keys[:newGrants], keys[newGrants:]
-	q.state.grants += newGrants
-	enqueue(&q.state.keys, queuedKeys)
-	q.stateMu.Unlock()
+	var immediateKeys []K
 
-	for _, key := range initialKeys {
+	func() {
+		q.stateMu.Lock()
+		defer q.stateMu.Unlock()
+
+		// Issue as many new work grants as we can.
+		newGrants := max(0, min(q.state.grantLimit-q.state.grants, len(keys)))
+		q.state.grants += newGrants
+
+		var queuedKeys []K
+		immediateKeys, queuedKeys = keys[:newGrants], keys[newGrants:]
+		enqueue(&q.state.keys, queuedKeys)
+	}()
+
+	// Transfer our issued work grants, to discharge our own responsibility and
+	// restore the invariant that no goroutine holds more than one.
+	for _, key := range immediateKeys {
 		go q.work(&key)
 	}
 }
@@ -280,29 +287,40 @@ func (q *Queue[K, V]) work(initialKey *K) {
 // work grant (returning ok == false) or returns a key (ok == true) whose work
 // the caller must execute.
 func (q *Queue[K, V]) tryGetQueuedKey() (key K, ok bool) {
-	q.stateMu.Lock()
+	var mustBequeathGrant bool
 
-	if q.state.reattachers > 0 {
-		// We can transfer our work grant to a reattacher; see handleReattach for
-		// details.
-		q.state.reattachers -= 1
-		q.stateMu.Unlock()
+	func() {
+		q.stateMu.Lock()
+		defer q.stateMu.Unlock()
+
+		switch {
+		case q.state.grants > q.state.grantLimit:
+			// We are in violation of a decreased concurrency limit, and must retire
+			// the work grant even if work is pending.
+			q.state.grants -= 1
+
+		case q.state.reattachers > 0:
+			// We can transfer our work grant to a reattacher; see handleReattach for
+			// details.
+			q.state.reattachers -= 1
+			mustBequeathGrant = true
+
+		case q.state.keys.Len() == 0:
+			// With no reattachers and no keys, we have no pending work and must
+			// retire the work grant.
+			q.state.grants -= 1
+
+		default:
+			// We have pending work and must use the work grant to execute it.
+			key = q.state.keys.PopFront()
+			ok = true
+		}
+	}()
+
+	if mustBequeathGrant {
 		q.reattach.BequeathGrant()
-		return
 	}
 
-	if q.state.keys.Len() == 0 {
-		// With no reattachers and no keys, we have no pending work and must
-		// retire the work grant.
-		q.state.grants -= 1
-		q.stateMu.Unlock()
-		return
-	}
-
-	// We have pending work and must use the work grant to execute it.
-	key = q.state.keys.PopFront()
-	q.stateMu.Unlock()
-	ok = true
 	return
 }
 
@@ -322,20 +340,27 @@ func (q *Queue[K, V]) handleDetach() {
 // handleReattach obtains a work grant for the current goroutine, which must be
 // prepared to fulfill the work grant invariants.
 func (q *Queue[K, V]) handleReattach() {
-	q.stateMu.Lock()
+	var mustObtainGrant bool
 
-	if q.state.grants < q.state.maxGrants {
-		// There is capacity for a new work grant, so we must issue one.
-		q.state.grants += 1
-		q.stateMu.Unlock()
-		return
+	func() {
+		q.stateMu.Lock()
+		defer q.stateMu.Unlock()
+
+		if q.state.grants < q.state.grantLimit {
+			// There is capacity for a new work grant, so we must issue one.
+			q.state.grants += 1
+			return
+		}
+
+		// There is no capacity for a new work grant, so we must inform an existing
+		// worker that a reattacher is ready to take theirs.
+		q.state.reattachers += 1
+		mustObtainGrant = true
+	}()
+
+	if mustObtainGrant {
+		q.reattach.ObtainGrant()
 	}
-
-	// There is no capacity for a new work grant, so we must inform an existing
-	// worker that a reattacher is ready to take theirs.
-	q.state.reattachers += 1
-	q.stateMu.Unlock()
-	q.reattach.ObtainGrant()
 }
 
 // QueueHandle allows a [Handler] to interact with its parent queue.
