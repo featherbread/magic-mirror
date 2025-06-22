@@ -523,3 +523,39 @@ func TestQueueLimitIncrease(t *testing.T) {
 		assert.LessOrEqual(t, maxInFlight, limit, "too many concurrent handlers")
 	})
 }
+
+func TestQueueLimitIncreaseMax(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const keyCount = 10
+		var (
+			active  atomic.Int32
+			unblock = make(chan struct{})
+		)
+		q := work.NewSetQueue(func(qh *work.QueueHandle, x int) error {
+			active.Add(1)
+			defer active.Add(-1)
+			if x == 0 {
+				qh.Detach()
+				<-unblock
+				qh.Reattach()
+			}
+			<-unblock
+			return nil
+		})
+
+		// Start up some blocked handlers (one detached + one attached),
+		// and let them settle.
+		keys := makeIntKeys(keyCount)
+		q.Limit(1)
+		q.Inform(keys...)
+		synctest.Wait()
+		assert.Equal(t, 2, int(active.Load()), "not enough active handlers")
+
+		// Increase the concurrency limit well beyond the number of keys,
+		// and make sure we don't panic or crash in some way.
+		q.Limit(math.MaxInt)
+		synctest.Wait()
+		close(unblock)
+		q.Collect(keys...)
+	})
+}
