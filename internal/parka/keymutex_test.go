@@ -1,4 +1,4 @@
-package work_test
+package parka_test
 
 import (
 	"sync/atomic"
@@ -7,12 +7,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/ahamlinman/magic-mirror/internal/work"
-	"github.com/ahamlinman/magic-mirror/internal/work/catch"
+	"github.com/ahamlinman/magic-mirror/internal/parka"
+	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
 )
 
 func TestKeyMutexZeroUnlock(t *testing.T) {
-	var km work.KeyMutex[int]
+	var km parka.KeyMutex[int]
 	result := catch.Do(func() (int, error) { km.Unlock(0); return 0, nil })
 	assert.True(t, result.Panicked())
 	assert.Contains(t, result.Recovered(), "key is already unlocked")
@@ -20,7 +20,7 @@ func TestKeyMutexZeroUnlock(t *testing.T) {
 
 func TestKeyMutextDoubleUnlock(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		var km work.KeyMutex[int]
+		var km parka.KeyMutex[int]
 		km.Lock(0)
 		km.Lock(1)
 		km.Unlock(1)
@@ -37,7 +37,7 @@ func TestKeyMutexBasic(t *testing.T) {
 			workerCount = 2 * keyCount
 		)
 		var (
-			km      work.KeyMutex[int]
+			km      parka.KeyMutex[int]
 			locked  [keyCount]atomic.Int32
 			unblock = make(chan struct{})
 		)
@@ -70,10 +70,10 @@ func TestKeyMutexBasic(t *testing.T) {
 func TestKeyMutexDetachReattach(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var (
-			km       work.KeyMutex[struct{}]
+			km       parka.KeyMutex[struct{}]
 			unblock0 = make(chan struct{})
 		)
-		q := work.NewSetQueue(func(qh *work.QueueHandle, x int) error {
+		s := parka.NewSet(func(qh *parka.Handle, x int) error {
 			if x == 0 {
 				km.LockDetached(qh, struct{}{})
 				<-unblock0
@@ -81,24 +81,24 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 			}
 			return nil
 		})
-		q.Limit(1)
+		s.Limit(1)
 
 		// Take the lock.
 		km.Lock(struct{}{})
 
 		// Start the handler for 0, which must detach since we're holding the lock.
-		q.Inform(0)
+		s.Inform(0)
 		synctest.Wait()
 
 		// Ensure that unrelated handlers can, in fact, proceed.
-		q.Get(1)
+		s.Get(1)
 
 		// Release the lock so handler 0 can obtain it.
 		km.Unlock(struct{}{})
 		synctest.Wait()
 
 		// Start another handler, and ensure it really is blocked.
-		done := promise(func() { q.Get(2) })
+		done := promise(func() { s.Get(2) })
 		synctest.Wait()
 		select {
 		case <-done:
@@ -108,6 +108,6 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 
 		// Allow all of the handlers to finish.
 		close(unblock0)
-		q.Collect(0, 1, 2)
+		s.Collect(0, 1, 2)
 	})
 }

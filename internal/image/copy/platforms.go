@@ -7,11 +7,11 @@ import (
 
 	"github.com/ahamlinman/magic-mirror/internal/image"
 	"github.com/ahamlinman/magic-mirror/internal/log"
-	"github.com/ahamlinman/magic-mirror/internal/work"
+	"github.com/ahamlinman/magic-mirror/internal/parka"
 )
 
 type platformCopier struct {
-	*work.Queue[platformCopyRequest, image.Manifest]
+	*parka.Map[platformCopyRequest, image.Manifest]
 
 	manifests *manifestCache
 	blobs     *blobCopier
@@ -27,12 +27,12 @@ func newPlatformCopier(manifests *manifestCache, blobs *blobCopier) *platformCop
 		manifests: manifests,
 		blobs:     blobs,
 	}
-	c.Queue = work.NewQueue(c.copyPlatform)
+	c.Map = parka.NewMap(c.copyPlatform)
 	return c
 }
 
 func (c *platformCopier) Copy(src image.Image, dst image.Image) (image.Manifest, error) {
-	return c.Queue.Get(platformCopyRequest{Src: src, Dst: dst})
+	return c.Map.Get(platformCopyRequest{Src: src, Dst: dst})
 }
 
 func (c *platformCopier) CopyAll(dst image.Repository, srcs ...image.Image) ([]image.Manifest, error) {
@@ -46,10 +46,10 @@ func (c *platformCopier) CopyAll(dst image.Repository, srcs ...image.Image) ([]i
 			},
 		}
 	}
-	return c.Queue.Collect(reqs...)
+	return c.Map.Collect(reqs...)
 }
 
-func (c *platformCopier) copyPlatform(_ *work.QueueHandle, req platformCopyRequest) (m image.Manifest, err error) {
+func (c *platformCopier) copyPlatform(_ *parka.Handle, req platformCopyRequest) (m image.Manifest, err error) {
 	// We share this manifest cache with the top-level copier. The top level
 	// requests both indexes and platform manifests, without knowing in advance
 	// what it'll get. This level always gets platform manifests, which are

@@ -14,17 +14,17 @@ import (
 	"github.com/ahamlinman/magic-mirror/internal/image"
 	"github.com/ahamlinman/magic-mirror/internal/image/registry"
 	"github.com/ahamlinman/magic-mirror/internal/log"
-	"github.com/ahamlinman/magic-mirror/internal/work"
+	"github.com/ahamlinman/magic-mirror/internal/parka"
 )
 
 // blobCopier handles requests to copy blob content between repositories.
 type blobCopier struct {
-	work.SetQueue[blobCopyRequest]
+	parka.Set[blobCopyRequest]
 
 	sourceMap   map[digest.Digest]mapset.Set[image.Repository]
 	sourceMapMu sync.Mutex
 
-	copyMu work.KeyMutex[blobCopyMutexKey]
+	copyMu parka.KeyMutex[blobCopyMutexKey]
 }
 
 type blobCopyRequest struct {
@@ -39,8 +39,8 @@ type blobCopyMutexKey struct {
 
 func newBlobCopier(concurrency int) *blobCopier {
 	c := &blobCopier{sourceMap: make(map[digest.Digest]mapset.Set[image.Repository])}
-	c.SetQueue = work.NewSetQueue(c.copyBlob)
-	c.SetQueue.Limit(concurrency)
+	c.Set = parka.NewSet(c.copyBlob)
+	c.Set.Limit(concurrency)
 	return c
 }
 
@@ -66,7 +66,7 @@ func (c *blobCopier) CopyAll(src, dst image.Repository, dgsts ...digest.Digest) 
 		c.RegisterSource(dgst, src)
 		requests[i] = blobCopyRequest{Digest: dgst, Dst: dst}
 	}
-	return c.SetQueue.Collect(requests...)
+	return c.Set.Collect(requests...)
 }
 
 func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {
@@ -80,7 +80,7 @@ func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {
 	return set
 }
 
-func (c *blobCopier) copyBlob(qh *work.QueueHandle, req blobCopyRequest) (err error) {
+func (c *blobCopier) copyBlob(qh *parka.Handle, req blobCopyRequest) (err error) {
 	// If another handler is copying this blob to the same registry, wait for it
 	// to finish so we can do a cross-repository mount instead of pulling from the
 	// source again.

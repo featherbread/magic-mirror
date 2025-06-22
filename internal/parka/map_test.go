@@ -1,5 +1,5 @@
 //go:debug panicnil=1
-package work_test
+package parka_test
 
 import (
 	"fmt"
@@ -13,59 +13,59 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/ahamlinman/magic-mirror/internal/work"
-	"github.com/ahamlinman/magic-mirror/internal/work/catch"
+	"github.com/ahamlinman/magic-mirror/internal/parka"
+	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
 )
 
-func TestQueueBasic(t *testing.T) {
+func TestMapBasic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := work.NewQueue(func(_ *work.QueueHandle, x int) (int, error) {
+		m := parka.NewMap(func(_ *parka.Handle, x int) (int, error) {
 			return x % 3, nil
 		})
-		q.Limit(1)
+		m.Limit(1)
 
-		got, err := q.Get(42)
+		got, err := m.Get(42)
 		assert.NoError(t, err)
 		assert.Equal(t, 0, got)
-		assert.Equal(t, work.Stats{Handled: 1, Total: 1}, q.Stats())
+		assert.Equal(t, parka.Stats{Handled: 1, Total: 1}, m.Stats())
 
 		keys := makeIntKeys(6)
-		collected, err := q.Collect(keys...)
+		collected, err := m.Collect(keys...)
 		assert.NoError(t, err)
 		want := []int{0, 1, 2, 0, 1, 2}
 		assert.Equal(t, want, collected)
-		assert.Equal(t, work.Stats{Handled: 7, Total: 7}, q.Stats())
+		assert.Equal(t, parka.Stats{Handled: 7, Total: 7}, m.Stats())
 	})
 }
 
-func TestQueueCollectOrder(t *testing.T) {
+func TestMapCollectOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const keyCount = 10
-		q := work.NewQueue(func(_ *work.QueueHandle, x int) (int, error) {
+		m := parka.NewMap(func(_ *parka.Handle, x int) (int, error) {
 			time.Sleep(rand.N(time.Duration(math.MaxInt64)))
 			return x, nil
 		})
 		keys := makeIntKeys(keyCount)
-		collected, err := q.Collect(keys...)
+		collected, err := m.Collect(keys...)
 		assert.NoError(t, err)
 		assert.Equal(t, keys, collected)
 	})
 }
 
-func TestSetQueueError(t *testing.T) {
+func TestSetError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := work.NewSetQueue(func(_ *work.QueueHandle, x int) error {
+		s := parka.NewSet(func(_ *parka.Handle, x int) error {
 			if x%2 == 0 {
 				return fmt.Errorf("%d", x)
 			}
 			return nil
 		})
-		assert.EqualError(t, q.Collect(1, 2, 3), "2")
-		assert.EqualError(t, q.Get(2), "2")
+		assert.EqualError(t, s.Collect(1, 2, 3), "2")
+		assert.EqualError(t, s.Get(2), "2")
 	})
 }
 
-func TestQueueUnwind(t *testing.T) {
+func TestMapUnwind(t *testing.T) {
 	var someNilValue any // Never assigned; quiets lints for literal panic(nil).
 
 	// TODO: Functions in a table test are a code smell, but it's also important
@@ -105,7 +105,7 @@ func TestQueueUnwind(t *testing.T) {
 		t.Run(tc.Description, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				unblock := make(chan struct{})
-				q := work.NewSetQueue(func(_ *work.QueueHandle, x int) error {
+				s := parka.NewSet(func(_ *parka.Handle, x int) error {
 					if x == 0 {
 						<-unblock
 						tc.Exit()
@@ -113,30 +113,30 @@ func TestQueueUnwind(t *testing.T) {
 					}
 					return nil
 				})
-				q.Limit(1)
+				s.Limit(1)
 
 				// Start the handler that will unwind, and ensure that it's blocked.
-				q.Inform(0)
+				s.Inform(0)
 				synctest.Wait()
 
 				// Force some more handlers to queue up...
 				keys := []int{1, 2}
-				q.Inform(keys...)
+				s.Inform(keys...)
 				synctest.Wait()
 
 				// ...then let everything through.
 				close(unblock)
 
 				// Ensure the unwind didn't block the handling of those new keys.
-				q.Collect(keys...)
+				s.Collect(keys...)
 
 				// Ensure we correctly pass the unwind through.
 				tc.Assert(t, catch.Do(func() (_ struct{}, err error) {
-					err = q.Get(0)
+					err = s.Get(0)
 					return
 				}))
 				tc.Assert(t, catch.Do(func() (_ struct{}, err error) {
-					err = q.Collect(1, 0, 2)
+					err = s.Collect(1, 0, 2)
 					return
 				}))
 			})
@@ -144,7 +144,7 @@ func TestQueueUnwind(t *testing.T) {
 	}
 }
 
-func TestQueueCaching(t *testing.T) {
+func TestMapCaching(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const (
 			initialCachedKey = iota
@@ -152,59 +152,59 @@ func TestQueueCaching(t *testing.T) {
 		)
 
 		unblock := make(chan struct{})
-		q := work.NewSetQueue(func(_ *work.QueueHandle, x int) error {
+		s := parka.NewSet(func(_ *parka.Handle, x int) error {
 			<-unblock
 			return nil
 		})
 
 		// Handle an initial key.
 		close(unblock)
-		q.Get(initialCachedKey)
-		assert.Equal(t, work.Stats{Handled: 1, Total: 1}, q.Stats())
+		s.Get(initialCachedKey)
+		assert.Equal(t, parka.Stats{Handled: 1, Total: 1}, s.Stats())
 
 		// Re-block the handler.
 		unblock = make(chan struct{})
 
 		// Start handling a fresh key, and ensure it really is blocked.
-		done := promise(func() { q.Get(keyThatWillBlock) })
+		done := promise(func() { s.Get(keyThatWillBlock) })
 		synctest.Wait()
 		select {
 		case <-done:
 			assert.Fail(t, "Computation of key was not blocked")
 		default:
-			assert.Equal(t, work.Stats{Handled: 1, Total: 2}, q.Stats())
+			assert.Equal(t, parka.Stats{Handled: 1, Total: 2}, s.Stats())
 		}
 
 		// Ensure the previous key is cached and available without blocking.
-		q.Get(initialCachedKey)
+		s.Get(initialCachedKey)
 
 		// Finish handling the blocked key.
 		close(unblock)
-		q.Get(keyThatWillBlock)
-		assert.Equal(t, work.Stats{Handled: 2, Total: 2}, q.Stats())
+		s.Get(keyThatWillBlock)
+		assert.Equal(t, parka.Stats{Handled: 2, Total: 2}, s.Stats())
 	})
 }
 
-func TestQueueOrdering(t *testing.T) {
+func TestMapOrdering(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var handledOrder []int
 		unblock := make(chan struct{})
-		q := work.NewSetQueue(func(_ *work.QueueHandle, x int) error {
+		s := parka.NewSet(func(_ *parka.Handle, x int) error {
 			<-unblock
 			handledOrder = append(handledOrder, x)
 			return nil
 		})
-		q.Limit(1)
+		s.Limit(1)
 
 		// Start a new blocked handler to force the queueing of subsequent keys.
-		q.Inform(0)
+		s.Inform(0)
 		synctest.Wait()
 
 		// Add some keys at both the front and back of the queue.
-		q.Inform(1, 2)
-		q.InformFront(-1, -2)
-		q.Inform(3)
-		q.InformFront(-3)
+		s.Inform(1, 2)
+		s.InformFront(-1, -2)
+		s.Inform(3)
+		s.InformFront(-3)
 
 		// Unblock all the handlers, and ensure they were queued in the right order.
 		close(unblock)
@@ -219,12 +219,12 @@ func TestQueueOrdering(t *testing.T) {
 			1, 2,
 			3,
 		}
-		q.Collect(wantOrder...)
+		s.Collect(wantOrder...)
 		assert.Equal(t, wantOrder, handledOrder)
 	})
 }
 
-func TestQueueReattachPriority(t *testing.T) {
+func TestMapReattachPriority(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const (
 			unrelatedKeyThatGoesFirst = iota
@@ -237,7 +237,7 @@ func TestQueueReattachPriority(t *testing.T) {
 			unblockReattacher = make(chan struct{})
 			unblockBlocker    = make(chan struct{})
 		)
-		q := work.NewSetQueue(func(qh *work.QueueHandle, x int) error {
+		s := parka.NewSet(func(qh *parka.Handle, x int) error {
 			switch x {
 			case keyThatWillDetach:
 				qh.Detach()
@@ -249,17 +249,17 @@ func TestQueueReattachPriority(t *testing.T) {
 			handleOrder = append(handleOrder, x)
 			return nil
 		})
-		q.Limit(1)
+		s.Limit(1)
 
-		// Start the handler that will detach itself from the queue, and ensure
-		// unrelated handlers are unblocked.
-		q.Inform(keyThatWillDetach)
+		// Start the handler that will detach itself, and ensure unrelated handlers
+		// are unblocked.
+		s.Inform(keyThatWillDetach)
 		synctest.Wait()
-		q.Get(unrelatedKeyThatGoesFirst)
+		s.Get(unrelatedKeyThatGoesFirst)
 		synctest.Wait()
 
 		// Start the blocking handler, along with another that will queue behind it.
-		q.Inform(keyThatWillBlock, unrelatedKeyThatGoesLast)
+		s.Inform(keyThatWillBlock, unrelatedKeyThatGoesLast)
 		synctest.Wait()
 
 		// Let the detached handler reattach. The blocking handler will hold it up.
@@ -275,14 +275,14 @@ func TestQueueReattachPriority(t *testing.T) {
 			keyThatWillDetach,
 			unrelatedKeyThatGoesLast,
 		}
-		q.Collect(wantOrder...)
+		s.Collect(wantOrder...)
 		assert.Equal(t, wantOrder, handleOrder)
 	})
 }
 
-func TestQueueMultiDetachReattach(t *testing.T) {
+func TestMapMultiDetachReattach(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := work.NewSetQueue(func(qh *work.QueueHandle, x int) error {
+		s := parka.NewSet(func(qh *parka.Handle, x int) error {
 			assert.True(t, qh.Detach(), "First Detach() claimed to do nothing")
 			assert.False(t, qh.Detach(), "Second Detach() claimed to detach")
 			assert.False(t, qh.Detach(), "Third Detach() claimed to detach")
@@ -290,11 +290,11 @@ func TestQueueMultiDetachReattach(t *testing.T) {
 			qh.Reattach()
 			return nil
 		})
-		q.Get(0)
+		s.Get(0)
 	})
 }
 
-func TestQueueReattachConcurrency(t *testing.T) {
+func TestMapReattachConcurrency(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const (
 			workerCount = 3
@@ -306,7 +306,7 @@ func TestQueueReattachConcurrency(t *testing.T) {
 			unblockReattach = make(chan struct{})
 			unblockReturn   = make(chan struct{})
 		)
-		q := work.NewSetQueue(func(qh *work.QueueHandle, x int) error {
+		s := parka.NewSet(func(qh *parka.Handle, x int) error {
 			qh.Detach()
 			<-unblockReattach
 			qh.Reattach()
@@ -315,11 +315,11 @@ func TestQueueReattachConcurrency(t *testing.T) {
 			<-unblockReturn
 			return nil
 		})
-		q.Limit(workerCount)
+		s.Limit(workerCount)
 
 		// Start up as many handlers as possible, and wait for them to settle.
 		keys := makeIntKeys(keyCount)
-		q.Inform(keys...)
+		s.Inform(keys...)
 		synctest.Wait()
 
 		// Let them start reattaching, and wait for things to settle.
@@ -328,7 +328,7 @@ func TestQueueReattachConcurrency(t *testing.T) {
 
 		// Let them all return...
 		close(unblockReturn)
-		q.Collect(keys...)
+		s.Collect(keys...)
 
 		// ...and ensure none of the reattachers breached the limit.
 		close(inflights)
@@ -338,7 +338,7 @@ func TestQueueReattachConcurrency(t *testing.T) {
 	})
 }
 
-func TestQueueDetachReturn(t *testing.T) {
+func TestMapDetachReturn(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const (
 			workerCount   = 2
@@ -351,7 +351,7 @@ func TestQueueDetachReturn(t *testing.T) {
 			unblockDetached = make(chan struct{})
 			unblockAttached = make(chan struct{})
 		)
-		q := work.NewSetQueue(func(qh *work.QueueHandle, x int) error {
+		s := parka.NewSet(func(qh *parka.Handle, x int) error {
 			if x < 0 {
 				qh.Detach()
 				<-unblockDetached
@@ -362,19 +362,19 @@ func TestQueueDetachReturn(t *testing.T) {
 			<-unblockAttached
 			return nil
 		})
-		q.Limit(1)
+		s.Limit(1)
 
 		// Start up multiple detached handlers that will never reattach.
 		detachedKeys := makeIntKeys(detachedCount + 1)[1:]
 		for i := range detachedKeys {
 			detachedKeys[i] *= -1
 		}
-		q.Inform(detachedKeys...)
+		s.Inform(detachedKeys...)
 		synctest.Wait()
 
 		// Start up some normal handlers, and ensure they're really blocked.
 		attachedKeys := makeIntKeys(attachedCount)
-		attachedDone := promise(func() { q.Collect(attachedKeys...) })
+		attachedDone := promise(func() { s.Collect(attachedKeys...) })
 		synctest.Wait()
 		select {
 		case <-attachedDone:
@@ -397,7 +397,7 @@ func TestQueueDetachReturn(t *testing.T) {
 	})
 }
 
-func TestQueueLimitBasic(t *testing.T) {
+func TestMapLimitBasic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const (
 			workerCount = 3
@@ -408,25 +408,25 @@ func TestQueueLimitBasic(t *testing.T) {
 			inflights = make(chan int, keyCount)
 			unblock   = make(chan struct{})
 		)
-		q := work.NewSetQueue(func(_ *work.QueueHandle, x int) error {
+		s := parka.NewSet(func(_ *parka.Handle, x int) error {
 			inflights <- int(inflight.Add(1))
 			defer inflight.Add(-1)
 			<-unblock
 			return nil
 		})
-		q.Limit(workerCount)
+		s.Limit(workerCount)
 
 		// Start up as many handlers as possible, and wait for them to settle.
 		keys := makeIntKeys(keyCount)
-		q.Inform(keys...)
+		s.Inform(keys...)
 		synctest.Wait()
 
 		// Let them all finish...
 		close(unblock)
-		q.Collect(keys...)
-		assert.Equal(t, work.Stats{Handled: keyCount, Total: keyCount}, q.Stats())
+		s.Collect(keys...)
+		assert.Equal(t, parka.Stats{Handled: keyCount, Total: keyCount}, s.Stats())
 
-		// ...and ensure the queue respected our limit.
+		// ...and ensure the concurrency limit was respected.
 		close(inflights)
 		maxInFlight := maxOfChannel(inflights)
 		assert.LessOrEqual(t, maxInFlight, workerCount,
@@ -434,7 +434,7 @@ func TestQueueLimitBasic(t *testing.T) {
 	})
 }
 
-func TestQueueLimitIncrease(t *testing.T) {
+func TestMapLimitIncrease(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		type Key struct {
 			Index  int
@@ -452,7 +452,7 @@ func TestQueueLimitIncrease(t *testing.T) {
 			unblockReattach = make(chan struct{})
 			unblockReturn   = make(chan struct{})
 		)
-		q := work.NewSetQueue(func(qh *work.QueueHandle, k Key) error {
+		s := parka.NewSet(func(qh *parka.Handle, k Key) error {
 			if k.Detach {
 				qh.Detach()
 				detached.Add(1)
@@ -471,15 +471,15 @@ func TestQueueLimitIncrease(t *testing.T) {
 		for i := range detachedKeys {
 			detachedKeys[i] = Key{Index: i, Detach: true}
 		}
-		q.Inform(detachedKeys...)
+		s.Inform(detachedKeys...)
 		synctest.Wait()
 		assert.Equal(t, detachedCount, int(detached.Load()),
 			"Missing some detached handlers")
 
 		// Set the limit to 1, and start a blocking handler.
-		q.Limit(1)
+		s.Limit(1)
 		blockingKey := Key{Index: -1, Detach: false}
-		q.Inform(blockingKey)
+		s.Inform(blockingKey)
 		synctest.Wait()
 		assert.Equal(t, 1, int(inflight.Load()),
 			"Missing handler for blocking key")
@@ -489,7 +489,7 @@ func TestQueueLimitIncrease(t *testing.T) {
 		for i := range attachedKeys {
 			attachedKeys[i] = Key{Index: i, Detach: false}
 		}
-		done := promise(func() { q.Collect(attachedKeys...) })
+		done := promise(func() { s.Collect(attachedKeys...) })
 		synctest.Wait()
 		select {
 		case <-done:
@@ -500,7 +500,7 @@ func TestQueueLimitIncrease(t *testing.T) {
 		// Increase the limit to 2, and make sure a reattacher takes priority.
 		close(unblockReattach)
 		synctest.Wait()
-		q.Limit(2)
+		s.Limit(2)
 		synctest.Wait()
 		assert.Equal(t, detachedCount-1, int(detached.Load()),
 			"Reattacher did not have priority on limit increase")
@@ -509,7 +509,7 @@ func TestQueueLimitIncrease(t *testing.T) {
 
 		// Let all of the detached handlers in, along with some regular keys.
 		limit := blockerCount + detachedCount + 2
-		q.Limit(limit)
+		s.Limit(limit)
 		synctest.Wait()
 		assert.Equal(t, 0, int(detached.Load()),
 			"Not all detachers reattached")
@@ -518,16 +518,16 @@ func TestQueueLimitIncrease(t *testing.T) {
 
 		// Let in some additional keys while we have no pending reattachers.
 		limit += 2
-		q.Limit(limit)
+		s.Limit(limit)
 		synctest.Wait()
 		assert.Equal(t, limit, int(inflight.Load()),
 			"Wrong number of handlers in flight")
 
 		// Let all handlers through, and ensure the limit was respected.
 		close(unblockReturn)
-		q.Get(Key{Index: -1, Detach: false})
-		q.Collect(detachedKeys...)
-		q.Collect(attachedKeys...)
+		s.Get(Key{Index: -1, Detach: false})
+		s.Collect(detachedKeys...)
+		s.Collect(attachedKeys...)
 		close(inflights)
 		maxInFlight := maxOfChannel(inflights)
 		assert.LessOrEqual(t, maxInFlight, limit,
@@ -535,14 +535,14 @@ func TestQueueLimitIncrease(t *testing.T) {
 	})
 }
 
-func TestQueueLimitIncreaseMax(t *testing.T) {
+func TestMapLimitIncreaseMax(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const keyCount = 10
 		var (
 			active  atomic.Int32
 			unblock = make(chan struct{})
 		)
-		q := work.NewSetQueue(func(qh *work.QueueHandle, x int) error {
+		s := parka.NewSet(func(qh *parka.Handle, x int) error {
 			active.Add(1)
 			defer active.Add(-1)
 			if x == 0 {
@@ -557,22 +557,22 @@ func TestQueueLimitIncreaseMax(t *testing.T) {
 		// Start up some blocked handlers (one detached + one attached),
 		// and let them settle.
 		keys := makeIntKeys(keyCount)
-		q.Limit(1)
-		q.Inform(keys...)
+		s.Limit(1)
+		s.Inform(keys...)
 		synctest.Wait()
 		assert.Equal(t, 2, int(active.Load()),
 			"Missing some expected handlers")
 
 		// Increase the concurrency limit well beyond the number of keys,
 		// and make sure we don't panic or crash in some way.
-		q.Limit(math.MaxInt)
+		s.Limit(math.MaxInt)
 		synctest.Wait()
 		close(unblock)
-		q.Collect(keys...)
+		s.Collect(keys...)
 	})
 }
 
-func TestQueueLimitDecrease(t *testing.T) {
+func TestMapLimitDecrease(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const (
 			initialKeyCount = 5
@@ -585,7 +585,7 @@ func TestQueueLimitDecrease(t *testing.T) {
 			unblockReattach = make(chan struct{})
 			unblockReturn   = make(chan struct{})
 		)
-		q := work.NewSetQueue(func(qh *work.QueueHandle, x int) error {
+		s := parka.NewSet(func(qh *parka.Handle, x int) error {
 			if x < initialKeyCount && x%2 == 0 {
 				qh.Detach()
 				detached.Add(1)
@@ -608,7 +608,7 @@ func TestQueueLimitDecrease(t *testing.T) {
 		initialKeys, extraKeys := allKeys[:initialKeyCount], allKeys[initialKeyCount:]
 
 		// Start the handlers for our initial keys (some detached, some attached).
-		q.Inform(initialKeys...)
+		s.Inform(initialKeys...)
 		synctest.Wait()
 		assert.Greater(t, int(detached.Load()), 0,
 			"Some handlers did not detach")
@@ -616,7 +616,7 @@ func TestQueueLimitDecrease(t *testing.T) {
 			"Wrong number of handlers in flight")
 
 		// Decrease the limit to 1, and ensure no existing handlers are affected.
-		q.Limit(1)
+		s.Limit(1)
 		synctest.Wait()
 		assert.Equal(t, initialKeyCount, int(detached.Load())+int(inflight.Load()),
 			"Some handlers exited after limit decrease")
@@ -627,13 +627,13 @@ func TestQueueLimitDecrease(t *testing.T) {
 		synctest.Wait()
 
 		// Then, add some new keys that can only be handled under the new limit.
-		q.Inform(extraKeys...)
+		s.Inform(extraKeys...)
 		synctest.Wait()
 
 		// Let all of the handlers through.
 		close(unblockReturn)
-		q.Collect(initialKeys...)
-		q.Collect(extraKeys...)
+		s.Collect(initialKeys...)
+		s.Collect(extraKeys...)
 
 		// Ensure every handler started under the new limit saw itself as the only
 		// active handler.

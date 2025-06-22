@@ -11,7 +11,7 @@ import (
 	"github.com/ahamlinman/magic-mirror/internal/image"
 	"github.com/ahamlinman/magic-mirror/internal/image/registry"
 	"github.com/ahamlinman/magic-mirror/internal/log"
-	"github.com/ahamlinman/magic-mirror/internal/work"
+	"github.com/ahamlinman/magic-mirror/internal/parka"
 )
 
 func uploadManifest(img image.Image, manifest image.ManifestKind) error {
@@ -41,17 +41,17 @@ func uploadManifest(img image.Image, manifest image.ManifestKind) error {
 }
 
 type manifestCache struct {
-	*work.Queue[image.Image, image.ManifestKind]
+	*parka.Map[image.Image, image.ManifestKind]
 }
 
 func newManifestCache(concurrency int) *manifestCache {
 	d := &manifestCache{}
-	d.Queue = work.NewQueue(d.getManifest)
-	d.Queue.Limit(concurrency)
+	d.Map = parka.NewMap(d.getManifest)
+	d.Map.Limit(concurrency)
 	return d
 }
 
-func (d *manifestCache) getManifest(_ *work.QueueHandle, img image.Image) (image.ManifestKind, error) {
+func (d *manifestCache) getManifest(_ *parka.Handle, img image.Image) (image.ManifestKind, error) {
 	reference := img.Digest.String()
 	if reference == "" {
 		reference = img.Tag

@@ -1,4 +1,4 @@
-package work
+package parka
 
 import "sync"
 
@@ -21,11 +21,11 @@ func noopDetach() bool { return false }
 
 func noopReattach() {}
 
-// LockDetached blocks the calling [Queue] handler until any other lock on the
+// LockDetached blocks the calling [Map] handler until any other lock on the
 // provided key is released. If the lock is not immediately available,
-// it detaches the handler from its queue while it waits for the lock,
-// and reattaches before returning.
-func (km *KeyMutex[K]) LockDetached(qh *QueueHandle, key K) {
+// it detaches the handler from the map's concurrency limit while it waits
+// for the lock, and reattaches before returning.
+func (km *KeyMutex[K]) LockDetached(qh *Handle, key K) {
 	km.lock(key, qh.Detach, qh.Reattach)
 }
 
