@@ -39,7 +39,8 @@ type blobCopyMutexKey struct {
 
 func newBlobCopier(concurrency int) *blobCopier {
 	c := &blobCopier{sourceMap: make(map[digest.Digest]mapset.Set[image.Repository])}
-	c.SetQueue = work.NewSetQueue(concurrency, c.copyBlob)
+	c.SetQueue = work.NewSetQueue(c.copyBlob)
+	c.SetQueue.Limit(concurrency)
 	return c
 }
 

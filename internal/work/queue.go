@@ -15,19 +15,19 @@ import (
 type Handler[K comparable, V any] = func(*QueueHandle, K) (V, error)
 
 // Queue runs a [Handler] once per key in a distinct goroutine and caches the
-// result, while imposing dynamic concurrency limits on handler executions.
+// result, while supporting dynamic concurrency limits on handler executions.
 //
 // The result for each key nominally consists of a value and error, but may
 // instead capture a panic or a call to [runtime.Goexit], which the queue
 // propagates to any caller retrieving that key's result.
 //
-// Each queue is initialized with a limit on the number of goroutines that may
-// concurrently handle new keys. However, [QueueHandle.Detach] permits a handler
-// to exclude itself from the concurrency limit for the remainder of its own
-// lifetime, or until it calls [QueueHandle.Reattach]. [KeyMutex] in particular
-// helps handlers temporarily detach from their queue while awaiting exclusive
-// use of a shared resource, typically one identified by a subset of the
-// handler's current key.
+// New queues permit an effectively unlimited number of goroutines ([math.MaxInt])
+// to concurrently handle new keys. [Queue.Limit] can change this limit at any
+// time. [QueueHandle.Detach] permits an individual handler to exclude itself
+// from the concurrency limit for the remainder of its own lifetime, or until it
+// calls [QueueHandle.Reattach]. In particular, [KeyMutex] helps handlers detach
+// from their queue while awaiting exclusive use of a shared resource, typically
+// one identified by a subset of the handler's current key.
 type Queue[K comparable, V any] struct {
 	handle Handler[K, V]
 
@@ -99,14 +99,10 @@ func (t *task[V]) Wait() (V, error) {
 //
 // If concurrency <= 0, the queue is created with an effectively unlimited
 // concurrency of [math.MaxInt].
-func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue[K, V] {
-	state := workState[K]{grantLimit: concurrency}
-	if state.grantLimit <= 0 {
-		state.grantLimit = math.MaxInt
-	}
+func NewQueue[K comparable, V any](handle Handler[K, V]) *Queue[K, V] {
 	return &Queue[K, V]{
 		handle:   handle,
-		state:    state,
+		state:    workState[K]{grantLimit: math.MaxInt},
 		tasks:    make(map[K]*task[V]),
 		reattach: make(reattachQueue),
 	}
@@ -155,6 +151,54 @@ func (q *Queue[K, V]) Collect(keys ...K) ([]V, error) {
 		}
 	}
 	return values, nil
+}
+
+// Limit updates the queue's concurrency limit for handling pending keys,
+// guaranteeing a limit of at least 1 regardless of the limit provided.
+//
+// Limit may be called at any time, even while handlers are running.
+// The queue immediately spawns handlers for as many pending keys as an
+// increased limit allows, or permits in-flight handlers in violation
+// of a decreased limit to finish in the background.
+func (q *Queue[K, V]) Limit(limit int) {
+	var (
+		keys      []K
+		transfers int
+	)
+	func() {
+		q.stateMu.Lock()
+		defer q.stateMu.Unlock()
+
+		// Update the limit, and determine how many new work grants we can issue.
+		q.state.grantLimit = max(1, limit)
+		issuable := max(0, q.state.grantLimit-q.state.grants)
+
+		// Issue as many work grants as possible to reattachers.
+		transfers = min(issuable, q.state.reattachers)
+		q.state.grants += transfers
+		q.state.reattachers -= transfers
+		issuable -= transfers
+
+		// Issue as many work grants as possible for handling keys.
+		workable := min(issuable, q.state.keys.Len())
+		q.state.grants += workable
+		keys = make([]K, workable)
+		for i := range keys {
+			keys[i] = q.state.keys.PopFront()
+		}
+	}()
+
+	// Start by transferring the work grants issued for new keys, since this won't
+	// require any blocking.
+	for _, key := range keys {
+		go q.work(&key)
+	}
+
+	// Transfer the work grants issued for reattachers, which may block but only
+	// for a short time.
+	for range transfers {
+		q.reattach.SendGrant()
+	}
 }
 
 // Stats conveys information about the keys and results in a [Queue].

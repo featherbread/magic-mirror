@@ -46,7 +46,8 @@ type manifestCache struct {
 
 func newManifestCache(concurrency int) *manifestCache {
 	d := &manifestCache{}
-	d.Queue = work.NewQueue(concurrency, d.getManifest)
+	d.Queue = work.NewQueue(d.getManifest)
+	d.Queue.Limit(concurrency)
 	return d
 }
 

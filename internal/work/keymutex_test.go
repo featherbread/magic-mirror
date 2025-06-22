@@ -73,7 +73,7 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 			km       work.KeyMutex[struct{}]
 			unblock0 = make(chan struct{})
 		)
-		q := work.NewQueue(1, func(qh *work.QueueHandle, x int) (int, error) {
+		q := work.NewQueue(func(qh *work.QueueHandle, x int) (int, error) {
 			if x == 0 {
 				km.LockDetached(qh, struct{}{})
 				<-unblock0
@@ -81,6 +81,7 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 			}
 			return x, nil
 		})
+		q.Limit(1)
 
 		// Take the lock.
 		km.Lock(struct{}{})

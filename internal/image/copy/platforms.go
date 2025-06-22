@@ -27,7 +27,7 @@ func newPlatformCopier(manifests *manifestCache, blobs *blobCopier) *platformCop
 		manifests: manifests,
 		blobs:     blobs,
 	}
-	c.Queue = work.NewQueue(0, c.copyPlatform)
+	c.Queue = work.NewQueue(c.copyPlatform)
 	return c
 }
 
