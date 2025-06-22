@@ -247,15 +247,14 @@ func pushAllFront[T any](d *deque.Deque[T], all []T) {
 // executes the task for that key before handling queued work.
 func (q *Queue[K, V]) work(initialKey *K) {
 	for {
-		var key K
+		var (
+			key K
+			ok  bool
+		)
 		if initialKey != nil {
 			key, initialKey = *initialKey, nil
-		} else {
-			var ok bool
-			key, ok = q.tryGetQueuedKey()
-			if !ok {
-				return // We no longer have a work grant; see tryGetQueuedKey.
-			}
+		} else if key, ok = q.tryGetQueuedKey(); !ok {
+			return // We no longer have a work grant; see tryGetQueuedKey.
 		}
 
 		q.tasksMu.Lock()
