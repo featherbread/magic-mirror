@@ -32,9 +32,10 @@ func TestKeyMutextDoubleUnlock(t *testing.T) {
 
 func TestKeyMutexBasic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		const keyCount = 3
-		const workerCount = 2 * keyCount
-
+		const (
+			keyCount    = 3
+			workerCount = 2 * keyCount
+		)
 		var (
 			km      work.KeyMutex[int]
 			locked  [keyCount]atomic.Int32
@@ -57,9 +58,8 @@ func TestKeyMutexBasic(t *testing.T) {
 		// breaches.
 		synctest.Wait()
 		for i := range locked {
-			if count := locked[i].Load(); count > 1 {
-				t.Errorf("mutex for %d held %d times", i, count)
-			}
+			count := int(locked[i].Load())
+			assert.Equal(t, 1, count, "At index %d", i)
 		}
 
 		// Let all of the workers finish.
@@ -73,21 +73,20 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 			km       work.KeyMutex[struct{}]
 			unblock0 = make(chan struct{})
 		)
-		q := work.NewQueue(func(qh *work.QueueHandle, x int) (int, error) {
+		q := work.NewSetQueue(func(qh *work.QueueHandle, x int) error {
 			if x == 0 {
 				km.LockDetached(qh, struct{}{})
 				<-unblock0
 				km.Unlock(struct{}{})
 			}
-			return x, nil
+			return nil
 		})
 		q.Limit(1)
 
 		// Take the lock.
 		km.Lock(struct{}{})
 
-		// Start the handler for 0, which will have to detach since we're holding
-		// the lock.
+		// Start the handler for 0, which must detach since we're holding the lock.
 		q.Inform(0)
 		synctest.Wait()
 
@@ -98,21 +97,17 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 		km.Unlock(struct{}{})
 		synctest.Wait()
 
-		// Start another handler...
+		// Start another handler, and ensure it really is blocked.
 		done := promise(func() { q.Get(2) })
-
-		// ...and ensure it really is blocked behind handler 0.
 		synctest.Wait()
 		select {
 		case <-done:
-			t.Error("computation of key was not blocked")
+			assert.Fail(t, "Computation of key was not blocked")
 		default:
 		}
 
 		// Allow all of the handlers to finish.
 		close(unblock0)
-		keys := []int{0, 1, 2}
-		got, _ := q.Collect(keys...)
-		assert.Equal(t, keys, got)
+		q.Collect(0, 1, 2)
 	})
 }

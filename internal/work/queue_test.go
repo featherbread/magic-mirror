@@ -109,7 +109,7 @@ func TestQueueUnwind(t *testing.T) {
 					if x == 0 {
 						<-unblock
 						tc.Exit()
-						t.Error("test case failed to unwind from handler")
+						assert.Fail(t, "Test case failed to unwind from handler")
 					}
 					return nil
 				})
@@ -170,7 +170,7 @@ func TestQueueCaching(t *testing.T) {
 		synctest.Wait()
 		select {
 		case <-done:
-			t.Error("computation of key was not blocked")
+			assert.Fail(t, "Computation of key was not blocked")
 		default:
 			assert.Equal(t, work.Stats{Handled: 1, Total: 2}, q.Stats())
 		}
@@ -283,10 +283,10 @@ func TestQueueReattachPriority(t *testing.T) {
 func TestQueueMultiDetachReattach(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		q := work.NewSetQueue(func(qh *work.QueueHandle, x int) error {
-			assert.True(t, qh.Detach())  // First detach should work.
-			assert.False(t, qh.Detach()) // Subsequent detaches should return false,
-			assert.False(t, qh.Detach()) // and should not panic.
-			qh.Reattach()                // Multiple reattaches should not panic.
+			assert.True(t, qh.Detach(), "First Detach() claimed to do nothing")
+			assert.False(t, qh.Detach(), "Second Detach() claimed to detach")
+			assert.False(t, qh.Detach(), "Third Detach() claimed to detach")
+			qh.Reattach()
 			qh.Reattach()
 			return nil
 		})
@@ -333,7 +333,8 @@ func TestQueueReattachConcurrency(t *testing.T) {
 		// ...and ensure none of the reattachers breached the limit.
 		close(inflights)
 		maxInFlight := maxOfChannel(inflights)
-		assert.LessOrEqual(t, maxInFlight, workerCount)
+		assert.LessOrEqual(t, maxInFlight, workerCount,
+			"Breached concurrency limit")
 	})
 }
 
@@ -377,7 +378,7 @@ func TestQueueDetachReturn(t *testing.T) {
 		synctest.Wait()
 		select {
 		case <-attachedDone:
-			t.Error("computation of keys was not blocked")
+			assert.Fail(t, "Computation of keys was not blocked")
 		default:
 		}
 
@@ -391,7 +392,8 @@ func TestQueueDetachReturn(t *testing.T) {
 		<-attachedDone
 		close(inflights)
 		maxInFlight := maxOfChannel(inflights)
-		assert.LessOrEqual(t, maxInFlight, workerCount)
+		assert.LessOrEqual(t, maxInFlight, workerCount,
+			"Breached concurrency limit")
 	})
 }
 
@@ -427,7 +429,8 @@ func TestQueueLimitBasic(t *testing.T) {
 		// ...and ensure the queue respected our limit.
 		close(inflights)
 		maxInFlight := maxOfChannel(inflights)
-		assert.LessOrEqual(t, maxInFlight, workerCount)
+		assert.LessOrEqual(t, maxInFlight, workerCount,
+			"Breached concurrency limit")
 	})
 }
 
@@ -470,14 +473,16 @@ func TestQueueLimitIncrease(t *testing.T) {
 		}
 		q.Inform(detachedKeys...)
 		synctest.Wait()
-		assert.Equal(t, detachedCount, int(detached.Load()), "missing detached handlers")
+		assert.Equal(t, detachedCount, int(detached.Load()),
+			"Missing some detached handlers")
 
 		// Set the limit to 1, and start a blocking handler.
 		q.Limit(1)
 		blockingKey := Key{Index: -1, Detach: false}
 		q.Inform(blockingKey)
 		synctest.Wait()
-		assert.Equal(t, 1, int(inflight.Load()), "missing blocking handler")
+		assert.Equal(t, 1, int(inflight.Load()),
+			"Missing handler for blocking key")
 
 		// Queue up a few regular handlers, and make sure they're blocked.
 		attachedKeys := make([]Key, attachedCount)
@@ -488,7 +493,7 @@ func TestQueueLimitIncrease(t *testing.T) {
 		synctest.Wait()
 		select {
 		case <-done:
-			assert.Fail(t, "computation of keys was not blocked")
+			assert.Fail(t, "Computation of keys was not blocked")
 		default:
 		}
 
@@ -497,21 +502,26 @@ func TestQueueLimitIncrease(t *testing.T) {
 		synctest.Wait()
 		q.Limit(2)
 		synctest.Wait()
-		assert.Equal(t, detachedCount-1, int(detached.Load()), "reattacher did not take priority")
-		assert.Equal(t, 2, int(inflight.Load()), "wrong number of handlers in flight")
+		assert.Equal(t, detachedCount-1, int(detached.Load()),
+			"Reattacher did not have priority on limit increase")
+		assert.Equal(t, 2, int(inflight.Load()),
+			"Wrong number of handlers in flight")
 
 		// Let all of the detached handlers in, along with some regular keys.
 		limit := blockerCount + detachedCount + 2
 		q.Limit(limit)
 		synctest.Wait()
-		assert.Equal(t, 0, int(detached.Load()), "not all detachers reattached")
-		assert.Equal(t, limit, int(inflight.Load()), "wrong number of handlers in flight")
+		assert.Equal(t, 0, int(detached.Load()),
+			"Not all detachers reattached")
+		assert.Equal(t, limit, int(inflight.Load()),
+			"Wrong number of handlers in flight")
 
 		// Let in some additional keys while we have no pending reattachers.
 		limit += 2
 		q.Limit(limit)
 		synctest.Wait()
-		assert.Equal(t, limit, int(inflight.Load()), "wrong number of handlers in flight")
+		assert.Equal(t, limit, int(inflight.Load()),
+			"Wrong number of handlers in flight")
 
 		// Let all handlers through, and ensure the limit was respected.
 		close(unblockReturn)
@@ -520,7 +530,8 @@ func TestQueueLimitIncrease(t *testing.T) {
 		q.Collect(attachedKeys...)
 		close(inflights)
 		maxInFlight := maxOfChannel(inflights)
-		assert.LessOrEqual(t, maxInFlight, limit, "too many concurrent handlers")
+		assert.LessOrEqual(t, maxInFlight, limit,
+			"Breached concurrency limit")
 	})
 }
 
@@ -549,7 +560,8 @@ func TestQueueLimitIncreaseMax(t *testing.T) {
 		q.Limit(1)
 		q.Inform(keys...)
 		synctest.Wait()
-		assert.Equal(t, 2, int(active.Load()), "not enough active handlers")
+		assert.Equal(t, 2, int(active.Load()),
+			"Missing some expected handlers")
 
 		// Increase the concurrency limit well beyond the number of keys,
 		// and make sure we don't panic or crash in some way.
@@ -598,15 +610,16 @@ func TestQueueLimitDecrease(t *testing.T) {
 		// Start the handlers for our initial keys (some detached, some attached).
 		q.Inform(initialKeys...)
 		synctest.Wait()
-		assert.Greater(t, int(detached.Load()), 0, "some handlers did not detach")
+		assert.Greater(t, int(detached.Load()), 0,
+			"Some handlers did not detach")
 		assert.Equal(t, initialKeyCount, int(detached.Load())+int(inflight.Load()),
-			"wrong number of running handlers")
+			"Wrong number of handlers in flight")
 
 		// Decrease the limit to 1, and ensure no existing handlers are affected.
 		q.Limit(1)
 		synctest.Wait()
 		assert.Equal(t, initialKeyCount, int(detached.Load())+int(inflight.Load()),
-			"some handlers exited after limit decrease")
+			"Some handlers exited after limit decrease")
 
 		// Force all currently detached handlers to finish before any new keys can
 		// be handled.
@@ -627,7 +640,10 @@ func TestQueueLimitDecrease(t *testing.T) {
 		close(extraInflights)
 		assert.Equal(t, extraKeyCount, len(extraInflights))
 		for x := range extraInflights {
-			assert.Equal(t, 1, x, "handler started under decreased limit saw another active")
+			if !assert.Equal(t, 1, x,
+				"Handler started under decreased limit saw another active") {
+				return
+			}
 		}
 	})
 }
