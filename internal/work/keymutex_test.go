@@ -15,6 +15,7 @@ func TestKeyMutexZeroUnlock(t *testing.T) {
 	var km work.KeyMutex[int]
 	result := catch.Do(func() (int, error) { km.Unlock(0); return 0, nil })
 	assert.True(t, result.Panicked())
+	assert.Contains(t, result.Recovered(), "key is already unlocked")
 }
 
 func TestKeyMutextDoubleUnlock(t *testing.T) {
@@ -25,6 +26,7 @@ func TestKeyMutextDoubleUnlock(t *testing.T) {
 		km.Unlock(1)
 		result := catch.Do(func() (int, error) { km.Unlock(1); return 0, nil })
 		assert.True(t, result.Panicked())
+		assert.Contains(t, result.Recovered(), "key is already unlocked")
 	})
 }
 
