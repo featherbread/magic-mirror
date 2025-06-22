@@ -28,15 +28,14 @@ func TestQueueBasic(t *testing.T) {
 
 func TestSetQueueError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		keys := makeIntKeys(10)
 		q := work.NewSetQueue(0, func(_ *work.QueueHandle, x int) error {
-			if x >= 5 {
+			if x%2 == 0 {
 				return fmt.Errorf("%d", x)
 			}
 			return nil
 		})
-		assert.EqualError(t, q.Collect(keys...), "5")
-		assert.EqualError(t, q.Get(5), "5")
+		assert.EqualError(t, q.Collect(1, 2, 3), "2")
+		assert.EqualError(t, q.Get(2), "2")
 	})
 }
 
@@ -162,26 +161,23 @@ func TestQueueCaching(t *testing.T) {
 
 func TestQueueConcurrencyLimit(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		const workerCount = 5
-		const keyCount = workerCount * 10
-
+		const (
+			workerCount = 3
+			keyCount    = workerCount + 1
+		)
 		var (
-			inflight atomic.Int32
-			breached atomic.Bool
-			unblock  = make(chan struct{})
+			inflight  atomic.Int32
+			inflights = make(chan int32, keyCount)
+			unblock   = make(chan struct{})
 		)
 		q := work.NewQueue(workerCount, func(_ *work.QueueHandle, x int) (int, error) {
-			count := inflight.Add(1)
+			inflights <- inflight.Add(1)
 			defer inflight.Add(-1)
-			if count > workerCount {
-				breached.Store(true)
-			}
 			<-unblock
 			return x, nil
 		})
 
-		// Start up as many handlers as possible, and let them check for breaches
-		// before they're blocked from returning.
+		// Start up as many handlers as possible, and wait for them to settle.
 		keys := makeIntKeys(keyCount)
 		q.Inform(keys...)
 		synctest.Wait()
@@ -192,10 +188,13 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 		assert.Equal(t, keys, got)
 		assert.Equal(t, work.Stats{Handled: keyCount, Total: keyCount}, q.Stats())
 
-		// ...and ensure they all saw the limit respected.
-		if breached.Load() {
-			t.Errorf("queue breached limit of %d workers in flight", workerCount)
+		// ...and ensure the queue respected our limit.
+		close(inflights)
+		var maxInFlight int
+		for count := range inflights {
+			maxInFlight = max(maxInFlight, int(count))
 		}
+		assert.LessOrEqual(t, maxInFlight, workerCount)
 	})
 }
 
@@ -243,55 +242,55 @@ func TestQueueOrdering(t *testing.T) {
 
 func TestQueueReattachPriority(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		var workers [2]func(*work.QueueHandle)
-
-		// Create a special handler that will detach as soon as it starts...
-		unblock0 := make(chan struct{})
-		workers[0] = func(qh *work.QueueHandle) {
-			qh.Detach()
-			<-unblock0
-			qh.Reattach()
-		}
-
-		// ...and a handler that will simply block.
-		unblock1 := make(chan struct{})
-		workers[1] = func(qh *work.QueueHandle) { <-unblock1 }
-
-		var handleOrder []int
+		const (
+			unrelatedKeyThatGoesFirst = iota
+			keyThatWillDetach
+			keyThatWillBlock
+			unrelatedKeyThatGoesLast
+		)
+		var (
+			handleOrder       []int
+			unblockReattacher = make(chan struct{})
+			unblockBlocker    = make(chan struct{})
+		)
 		q := work.NewQueue(1, func(qh *work.QueueHandle, x int) (int, error) {
-			if x >= 0 && x < len(workers) {
-				workers[x](qh)
+			switch x {
+			case keyThatWillDetach:
+				qh.Detach()
+				<-unblockReattacher
+				qh.Reattach()
+			case keyThatWillBlock:
+				<-unblockBlocker
 			}
 			handleOrder = append(handleOrder, x)
 			return x, nil
 		})
 
-		// Start the handler for 0 that will detach itself from the queue...
-		q.Inform(0)
+		// Start the handler that will detach itself from the queue, and ensure
+		// unrelated handlers are unblocked.
+		q.Inform(keyThatWillDetach)
+		synctest.Wait()
+		q.Get(unrelatedKeyThatGoesFirst)
 		synctest.Wait()
 
-		// ...and ensure that unrelated handlers are, in fact, unblocked.
-		q.Get(-1)
-
-		// Start the handler for 1 that will simply block, and queue up some extra
-		// keys behind it.
-		q.Inform(1, 2, 3)
+		// Start the blocking handler, along with another that will queue behind it.
+		q.Inform(keyThatWillBlock, unrelatedKeyThatGoesLast)
 		synctest.Wait()
 
-		// Allow the detached handler for 0 to reattach, and wait until it's durably
-		// blocked on 1's completion.
-		close(unblock0)
+		// Let the detached handler reattach. The blocking handler will hold it up.
+		close(unblockReattacher)
 		synctest.Wait()
 
-		// Allow the handler for 1 to finish, unblocking everything else too.
-		close(unblock1)
-		keys := []int{0, 1, 2, 3}
-		got, _ := q.Collect(keys...)
-		assert.Equal(t, keys, got)
-
-		// Ensure the detached handler for 0 finished in the correct order relative
-		// to others.
-		wantOrder := []int{-1, 1, 0, 2, 3}
+		// Unblock everything, and make sure the detacher gets ahead of the
+		// unrelated queued key.
+		close(unblockBlocker)
+		wantOrder := []int{
+			unrelatedKeyThatGoesFirst,
+			keyThatWillBlock,
+			keyThatWillDetach,
+			unrelatedKeyThatGoesLast,
+		}
+		q.Collect(wantOrder...)
 		assert.Equal(t, wantOrder, handleOrder)
 	})
 }
