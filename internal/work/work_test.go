@@ -8,6 +8,14 @@ func makeIntKeys(n int) []int {
 	return keys
 }
 
+func maxOfChannel(ch <-chan int) int {
+	var maxI int
+	for i := range ch {
+		maxI = max(i, maxI)
+	}
+	return maxI
+}
+
 func promise(fn func()) <-chan struct{} {
 	done := make(chan struct{})
 	go func() { defer close(done); fn() }()

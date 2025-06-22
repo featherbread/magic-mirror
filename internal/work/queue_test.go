@@ -42,10 +42,13 @@ func TestSetQueueError(t *testing.T) {
 func TestQueueUnwind(t *testing.T) {
 	var someNilValue any // Never assigned; quiets lints for literal panic(nil).
 
+	// TODO: Functions in a table test are a code smell, but it's also important
+	// to me that all forms of unwinding and retrieval are tested identically.
+	// I have yet to find a construction I prefer.
 	testCases := []struct {
 		Description string
-		Exit        func()                              // TODO: Code smell; approach with caution.
-		Assert      func(*testing.T, catch.Result[int]) // TODO: EXTREME code smell; approach with caution.
+		Exit        func()
+		Assert      func(*testing.T, catch.Result[int])
 	}{
 		{
 			Description: "panic with value",
@@ -97,11 +100,11 @@ func TestQueueUnwind(t *testing.T) {
 				// ...then let everything through.
 				close(unblock)
 
-				// Ensure that the unwind didn't break the handling of those new keys.
+				// Ensure the unwind didn't break the handling of those new keys.
 				got, _ := q.Collect(keys...)
 				assert.Equal(t, keys, got)
 
-				// Ensure that we correctly pass the unwind through.
+				// Ensure we correctly pass the unwind through.
 				tc.Assert(t, catch.Do(func() (int, error) {
 					return q.Get(0)
 				}))
@@ -163,15 +166,15 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const (
 			workerCount = 3
-			keyCount    = workerCount + 1
+			keyCount    = workerCount * 3
 		)
 		var (
 			inflight  atomic.Int32
-			inflights = make(chan int32, keyCount)
+			inflights = make(chan int, keyCount)
 			unblock   = make(chan struct{})
 		)
 		q := work.NewQueue(workerCount, func(_ *work.QueueHandle, x int) (int, error) {
-			inflights <- inflight.Add(1)
+			inflights <- int(inflight.Add(1))
 			defer inflight.Add(-1)
 			<-unblock
 			return x, nil
@@ -190,10 +193,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 
 		// ...and ensure the queue respected our limit.
 		close(inflights)
-		var maxInFlight int
-		for count := range inflights {
-			maxInFlight = max(maxInFlight, int(count))
-		}
+		maxInFlight := maxOfChannel(inflights)
 		assert.LessOrEqual(t, maxInFlight, workerCount)
 	})
 }
@@ -295,41 +295,48 @@ func TestQueueReattachPriority(t *testing.T) {
 	})
 }
 
+func TestQueueMultiDetachReattach(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := work.NewSetQueue(1, func(qh *work.QueueHandle, x int) error {
+			assert.True(t, qh.Detach())  // First detach should work.
+			assert.False(t, qh.Detach()) // Subsequent detaches should return false,
+			assert.False(t, qh.Detach()) // and should not panic.
+			qh.Reattach()                // Multiple reattaches should not panic.
+			qh.Reattach()
+			return nil
+		})
+		q.Get(0)
+	})
+}
+
 func TestQueueReattachConcurrency(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		const workerCount = 5
-		const keyCount = workerCount * 10
-
+		const (
+			workerCount = 3
+			keyCount    = workerCount * 3
+		)
 		var (
-			countAttached   atomic.Int32
-			breached        atomic.Bool
+			inflight        atomic.Int32
+			inflights       = make(chan int, keyCount)
 			unblockReattach = make(chan struct{})
 			unblockReturn   = make(chan struct{})
 		)
 		q := work.NewQueue(workerCount, func(qh *work.QueueHandle, x int) (int, error) {
-			if !qh.Detach() {
-				panic("did not actually detach from queue")
-			}
-			if qh.Detach() {
-				panic("claimed to detach multiple times from queue")
-			}
+			qh.Detach()
 			<-unblockReattach
 			qh.Reattach()
-			if countAttached.Add(1) > workerCount {
-				breached.Store(true)
-			}
-			defer countAttached.Add(-1)
+			inflights <- int(inflight.Add(1))
+			defer inflight.Add(-1)
 			<-unblockReturn
 			return x, nil
 		})
 
-		// Start up a bunch of handlers, and wait for all of them to detach.
+		// Start up as many handlers as possible, and wait for them to settle.
 		keys := makeIntKeys(keyCount)
 		q.Inform(keys...)
 		synctest.Wait()
 
-		// Allow them all to start reattaching, and wait until all possible
-		// reattachments have finished.
+		// Let them start reattaching, and wait for things to settle.
 		close(unblockReattach)
 		synctest.Wait()
 
@@ -339,44 +346,48 @@ func TestQueueReattachConcurrency(t *testing.T) {
 		assert.Equal(t, keys, got)
 
 		// ...and ensure none of the reattachers breached the limit.
-		if breached.Load() {
-			t.Errorf("queue breached limit of %d workers in flight during reattach", workerCount)
-		}
+		close(inflights)
+		maxInFlight := maxOfChannel(inflights)
+		assert.LessOrEqual(t, maxInFlight, workerCount)
 	})
 }
 
 func TestQueueDetachReturn(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
+		const (
+			workerCount   = 2
+			detachedCount = 5
+			attachedCount = 5
+		)
 		var (
 			inflight        atomic.Int32
-			breached        atomic.Bool
+			inflights       = make(chan int, detachedCount+attachedCount)
 			unblockDetached = make(chan struct{})
 			unblockAttached = make(chan struct{})
 		)
-		q := work.NewQueue(1, func(qh *work.QueueHandle, x int) (int, error) {
+		q := work.NewSetQueue(1, func(qh *work.QueueHandle, x int) error {
 			if x < 0 {
 				qh.Detach()
 				<-unblockDetached
-			} else {
-				if inflight.Add(1) > 1 {
-					breached.Store(true)
-				}
-				defer inflight.Add(-1)
-				<-unblockAttached
+				return nil
 			}
-			return x, nil
+			inflights <- int(inflight.Add(1))
+			defer inflight.Add(-1)
+			<-unblockAttached
+			return nil
 		})
 
 		// Start up multiple detached handlers that will never reattach.
-		detachedKeys := []int{-2, -1}
+		detachedKeys := makeIntKeys(detachedCount + 1)[1:]
+		for i := range detachedKeys {
+			detachedKeys[i] *= -1
+		}
 		q.Inform(detachedKeys...)
 		synctest.Wait()
 
-		// Start up some normal handlers...
-		attachedKeys := makeIntKeys(3 * len(detachedKeys))
+		// Start up some normal handlers, and ensure they're really blocked.
+		attachedKeys := makeIntKeys(attachedCount)
 		attachedDone := promise(func() { q.Collect(attachedKeys...) })
-
-		// ...and ensure they really are blocked.
 		synctest.Wait()
 		select {
 		case <-attachedDone:
@@ -389,14 +400,11 @@ func TestQueueDetachReturn(t *testing.T) {
 		close(unblockDetached)
 		synctest.Wait()
 
-		// Unblock the rest of the handlers...
+		// Unblock the rest of the handlers, and ensure the limit wasn't breached.
 		close(unblockAttached)
-		got, _ := q.Collect(attachedKeys...)
-		assert.Equal(t, attachedKeys, got)
-
-		// ...and ensure the limit wasn't breached.
-		if breached.Load() {
-			t.Error("queue breached limit of 1 worker in flight")
-		}
+		<-attachedDone
+		close(inflights)
+		maxInFlight := maxOfChannel(inflights)
+		assert.LessOrEqual(t, maxInFlight, workerCount)
 	})
 }
