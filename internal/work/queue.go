@@ -206,17 +206,22 @@ func (q *Queue[K, V]) scheduleNewKeys(enqueue enqueueFunc[K], keys []K) {
 		return // No need to lock up the state.
 	}
 
-	// Issue work grants up to the concurrency limit, then transfer them to new
-	// goroutines to discharge our own responsibility for them and restore the
-	// invariant that no goroutine holds more than one.
-	q.stateMu.Lock()
-	newGrants := min(q.state.maxGrants-q.state.grants, len(keys))
-	initialKeys, queuedKeys := keys[:newGrants], keys[newGrants:]
-	q.state.grants += newGrants
-	enqueue(&q.state.keys, queuedKeys)
-	q.stateMu.Unlock()
+	immediateKeys := func() []K {
+		q.stateMu.Lock()
+		defer q.stateMu.Unlock()
 
-	for _, key := range initialKeys {
+		// Issue as many new work grants as we can.
+		newGrants := min(q.state.maxGrants-q.state.grants, len(keys))
+		q.state.grants += newGrants
+
+		immediateKeys, queuedKeys := keys[:newGrants], keys[newGrants:]
+		enqueue(&q.state.keys, queuedKeys)
+		return immediateKeys
+	}()
+
+	// Transfer our issued work grants, to discharge our own responsibility and
+	// restore the invariant that no goroutine holds more than one.
+	for _, key := range immediateKeys {
 		go q.work(&key)
 	}
 }
@@ -322,20 +327,25 @@ func (q *Queue[K, V]) handleDetach() {
 // handleReattach obtains a work grant for the current goroutine, which must be
 // prepared to fulfill the work grant invariants.
 func (q *Queue[K, V]) handleReattach() {
-	q.stateMu.Lock()
+	mustObtain := func() bool {
+		q.stateMu.Lock()
+		defer q.stateMu.Unlock()
 
-	if q.state.grants < q.state.maxGrants {
-		// There is capacity for a new work grant, so we must issue one.
-		q.state.grants += 1
-		q.stateMu.Unlock()
-		return
+		if q.state.grants < q.state.maxGrants {
+			// There is capacity for a new work grant, so we must issue one.
+			q.state.grants += 1
+			return false
+		}
+
+		// There is no capacity for a new work grant, so we must inform an existing
+		// worker that a reattacher is ready to take theirs.
+		q.state.reattachers += 1
+		return true
+	}()
+
+	if mustObtain {
+		q.reattach.ObtainGrant()
 	}
-
-	// There is no capacity for a new work grant, so we must inform an existing
-	// worker that a reattacher is ready to take theirs.
-	q.state.reattachers += 1
-	q.stateMu.Unlock()
-	q.reattach.ObtainGrant()
 }
 
 // QueueHandle allows a [Handler] to interact with its parent queue.
