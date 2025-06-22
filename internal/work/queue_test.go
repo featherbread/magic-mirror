@@ -19,9 +19,10 @@ import (
 
 func TestQueueBasic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := work.NewQueue(1, func(_ *work.QueueHandle, x int) (int, error) {
+		q := work.NewQueue(func(_ *work.QueueHandle, x int) (int, error) {
 			return x % 3, nil
 		})
+		q.Limit(1)
 
 		got, err := q.Get(42)
 		assert.NoError(t, err)
@@ -40,7 +41,7 @@ func TestQueueBasic(t *testing.T) {
 func TestQueueCollectOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const keyCount = 10
-		q := work.NewQueue(0, func(_ *work.QueueHandle, x int) (int, error) {
+		q := work.NewQueue(func(_ *work.QueueHandle, x int) (int, error) {
 			time.Sleep(rand.N(time.Duration(math.MaxInt64)))
 			return x, nil
 		})
@@ -53,7 +54,7 @@ func TestQueueCollectOrder(t *testing.T) {
 
 func TestSetQueueError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := work.NewSetQueue(0, func(_ *work.QueueHandle, x int) error {
+		q := work.NewSetQueue(func(_ *work.QueueHandle, x int) error {
 			if x%2 == 0 {
 				return fmt.Errorf("%d", x)
 			}
@@ -104,7 +105,7 @@ func TestQueueUnwind(t *testing.T) {
 		t.Run(tc.Description, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				unblock := make(chan struct{})
-				q := work.NewSetQueue(1, func(_ *work.QueueHandle, x int) error {
+				q := work.NewSetQueue(func(_ *work.QueueHandle, x int) error {
 					if x == 0 {
 						<-unblock
 						tc.Exit()
@@ -112,6 +113,7 @@ func TestQueueUnwind(t *testing.T) {
 					}
 					return nil
 				})
+				q.Limit(1)
 
 				// Start the handler that will unwind, and ensure that it's blocked.
 				q.Inform(0)
@@ -150,7 +152,7 @@ func TestQueueCaching(t *testing.T) {
 		)
 
 		unblock := make(chan struct{})
-		q := work.NewSetQueue(0, func(_ *work.QueueHandle, x int) error {
+		q := work.NewSetQueue(func(_ *work.QueueHandle, x int) error {
 			<-unblock
 			return nil
 		})
@@ -194,12 +196,13 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 			inflights = make(chan int, keyCount)
 			unblock   = make(chan struct{})
 		)
-		q := work.NewSetQueue(workerCount, func(_ *work.QueueHandle, x int) error {
+		q := work.NewSetQueue(func(_ *work.QueueHandle, x int) error {
 			inflights <- int(inflight.Add(1))
 			defer inflight.Add(-1)
 			<-unblock
 			return nil
 		})
+		q.Limit(workerCount)
 
 		// Start up as many handlers as possible, and wait for them to settle.
 		keys := makeIntKeys(keyCount)
@@ -222,11 +225,12 @@ func TestQueueOrdering(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var handledOrder []int
 		unblock := make(chan struct{})
-		q := work.NewSetQueue(1, func(_ *work.QueueHandle, x int) error {
+		q := work.NewSetQueue(func(_ *work.QueueHandle, x int) error {
 			<-unblock
 			handledOrder = append(handledOrder, x)
 			return nil
 		})
+		q.Limit(1)
 
 		// Start a new blocked handler to force the queueing of subsequent keys.
 		q.Inform(0)
@@ -269,7 +273,7 @@ func TestQueueReattachPriority(t *testing.T) {
 			unblockReattacher = make(chan struct{})
 			unblockBlocker    = make(chan struct{})
 		)
-		q := work.NewSetQueue(1, func(qh *work.QueueHandle, x int) error {
+		q := work.NewSetQueue(func(qh *work.QueueHandle, x int) error {
 			switch x {
 			case keyThatWillDetach:
 				qh.Detach()
@@ -281,6 +285,7 @@ func TestQueueReattachPriority(t *testing.T) {
 			handleOrder = append(handleOrder, x)
 			return nil
 		})
+		q.Limit(1)
 
 		// Start the handler that will detach itself from the queue, and ensure
 		// unrelated handlers are unblocked.
@@ -313,7 +318,7 @@ func TestQueueReattachPriority(t *testing.T) {
 
 func TestQueueMultiDetachReattach(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := work.NewSetQueue(1, func(qh *work.QueueHandle, x int) error {
+		q := work.NewSetQueue(func(qh *work.QueueHandle, x int) error {
 			assert.True(t, qh.Detach())  // First detach should work.
 			assert.False(t, qh.Detach()) // Subsequent detaches should return false,
 			assert.False(t, qh.Detach()) // and should not panic.
@@ -337,7 +342,7 @@ func TestQueueReattachConcurrency(t *testing.T) {
 			unblockReattach = make(chan struct{})
 			unblockReturn   = make(chan struct{})
 		)
-		q := work.NewSetQueue(workerCount, func(qh *work.QueueHandle, x int) error {
+		q := work.NewSetQueue(func(qh *work.QueueHandle, x int) error {
 			qh.Detach()
 			<-unblockReattach
 			qh.Reattach()
@@ -346,6 +351,7 @@ func TestQueueReattachConcurrency(t *testing.T) {
 			<-unblockReturn
 			return nil
 		})
+		q.Limit(workerCount)
 
 		// Start up as many handlers as possible, and wait for them to settle.
 		keys := makeIntKeys(keyCount)
@@ -380,7 +386,7 @@ func TestQueueDetachReturn(t *testing.T) {
 			unblockDetached = make(chan struct{})
 			unblockAttached = make(chan struct{})
 		)
-		q := work.NewSetQueue(1, func(qh *work.QueueHandle, x int) error {
+		q := work.NewSetQueue(func(qh *work.QueueHandle, x int) error {
 			if x < 0 {
 				qh.Detach()
 				<-unblockDetached
@@ -391,6 +397,7 @@ func TestQueueDetachReturn(t *testing.T) {
 			<-unblockAttached
 			return nil
 		})
+		q.Limit(1)
 
 		// Start up multiple detached handlers that will never reattach.
 		detachedKeys := makeIntKeys(detachedCount + 1)[1:]

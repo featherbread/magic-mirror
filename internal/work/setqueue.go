@@ -10,9 +10,9 @@ type SetQueue[K comparable] struct {
 }
 
 // NewSetQueue is analogous to [NewQueue].
-func NewSetQueue[K comparable](concurrency int, handle SetHandler[K]) SetQueue[K] {
+func NewSetQueue[K comparable](handle SetHandler[K]) SetQueue[K] {
 	return SetQueue[K]{
-		Queue: NewQueue(concurrency, func(qh *QueueHandle, key K) (_ struct{}, err error) {
+		Queue: NewQueue(func(qh *QueueHandle, key K) (_ struct{}, err error) {
 			err = handle(qh, key)
 			return
 		}),
