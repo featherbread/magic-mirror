@@ -50,7 +50,7 @@ type Queue[K comparable, V any] struct {
 // invariants:
 //
 //   - Exactly one work grant is outstanding for every unhandled key known to
-//     the queue, up to a limit of maxGrants.
+//     the queue, up to grantLimit.
 //   - No goroutine holds more than one work grant.
 //   - Any goroutine holding a work grant is either executing the handler for an
 //     unhandled key or maintaining these invariants.
@@ -61,7 +61,7 @@ type Queue[K comparable, V any] struct {
 // handling of new keys.
 type workState[K comparable] struct {
 	grants      int
-	maxGrants   int
+	grantLimit  int
 	reattachers int
 	keys        deque.Deque[K]
 }
@@ -100,9 +100,9 @@ func (t *task[V]) Wait() (V, error) {
 // If concurrency <= 0, the queue is created with an effectively unlimited
 // concurrency of [math.MaxInt].
 func NewQueue[K comparable, V any](concurrency int, handle Handler[K, V]) *Queue[K, V] {
-	state := workState[K]{maxGrants: concurrency}
-	if state.maxGrants <= 0 {
-		state.maxGrants = math.MaxInt
+	state := workState[K]{grantLimit: concurrency}
+	if state.grantLimit <= 0 {
+		state.grantLimit = math.MaxInt
 	}
 	return &Queue[K, V]{
 		handle:   handle,
@@ -213,7 +213,7 @@ func (q *Queue[K, V]) scheduleNewKeys(enqueue enqueueFunc[K], keys []K) {
 		defer q.stateMu.Unlock()
 
 		// Issue as many new work grants as we can.
-		newGrants := min(q.state.maxGrants-q.state.grants, len(keys))
+		newGrants := max(0, min(q.state.grantLimit-q.state.grants, len(keys)))
 		q.state.grants += newGrants
 
 		var queuedKeys []K
@@ -294,7 +294,7 @@ func (q *Queue[K, V]) tryGetQueuedKey() (key K, ok bool) {
 		defer q.stateMu.Unlock()
 
 		switch {
-		case q.state.grants > q.state.maxGrants:
+		case q.state.grants > q.state.grantLimit:
 			// We are in violation of a decreased concurrency limit, and must retire
 			// the work grant even if work is pending.
 			q.state.grants -= 1
@@ -346,7 +346,7 @@ func (q *Queue[K, V]) handleReattach() {
 		q.stateMu.Lock()
 		defer q.stateMu.Unlock()
 
-		if q.state.grants < q.state.maxGrants {
+		if q.state.grants < q.state.grantLimit {
 			// There is capacity for a new work grant, so we must issue one.
 			q.state.grants += 1
 			return
