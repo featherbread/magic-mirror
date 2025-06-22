@@ -3,10 +3,13 @@ package work_test
 
 import (
 	"fmt"
+	"math"
+	"math/rand/v2"
 	"runtime"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -17,12 +20,34 @@ import (
 func TestQueueBasic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		q := work.NewQueue(1, func(_ *work.QueueHandle, x int) (int, error) {
-			return x, nil
+			return x % 3, nil
 		})
+
 		got, err := q.Get(42)
 		assert.NoError(t, err)
-		assert.Equal(t, 42, got)
+		assert.Equal(t, 0, got)
 		assert.Equal(t, work.Stats{Handled: 1, Total: 1}, q.Stats())
+
+		keys := makeIntKeys(6)
+		collected, err := q.Collect(keys...)
+		assert.NoError(t, err)
+		want := []int{0, 1, 2, 0, 1, 2}
+		assert.Equal(t, want, collected)
+		assert.Equal(t, work.Stats{Handled: 7, Total: 7}, q.Stats())
+	})
+}
+
+func TestQueueCollectOrder(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const keyCount = 10
+		q := work.NewQueue(0, func(_ *work.QueueHandle, x int) (int, error) {
+			time.Sleep(rand.N(time.Duration(math.MaxInt64)))
+			return x, nil
+		})
+		keys := makeIntKeys(keyCount)
+		collected, err := q.Collect(keys...)
+		assert.NoError(t, err)
+		assert.Equal(t, keys, collected)
 	})
 }
 
@@ -48,12 +73,12 @@ func TestQueueUnwind(t *testing.T) {
 	testCases := []struct {
 		Description string
 		Exit        func()
-		Assert      func(*testing.T, catch.Result[int])
+		Assert      func(*testing.T, catch.Result[struct{}])
 	}{
 		{
 			Description: "panic with value",
 			Exit:        func() { panic("test panic") },
-			Assert: func(t *testing.T, result catch.Result[int]) {
+			Assert: func(t *testing.T, result catch.Result[struct{}]) {
 				assert.True(t, result.Panicked())
 				assert.Equal(t, "test panic", result.Recovered())
 			},
@@ -61,7 +86,7 @@ func TestQueueUnwind(t *testing.T) {
 		{
 			Description: "panic(nil)",
 			Exit:        func() { panic(someNilValue) },
-			Assert: func(t *testing.T, result catch.Result[int]) {
+			Assert: func(t *testing.T, result catch.Result[struct{}]) {
 				assert.True(t, result.Panicked())
 				assert.Nil(t, result.Recovered())
 			},
@@ -69,7 +94,7 @@ func TestQueueUnwind(t *testing.T) {
 		{
 			Description: "runtime.Goexit",
 			Exit:        func() { runtime.Goexit(); panic("continued after Goexit") },
-			Assert: func(t *testing.T, result catch.Result[int]) {
+			Assert: func(t *testing.T, result catch.Result[struct{}]) {
 				assert.True(t, result.Goexited())
 			},
 		},
@@ -79,13 +104,13 @@ func TestQueueUnwind(t *testing.T) {
 		t.Run(tc.Description, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				unblock := make(chan struct{})
-				q := work.NewQueue(1, func(_ *work.QueueHandle, x int) (int, error) {
+				q := work.NewSetQueue(1, func(_ *work.QueueHandle, x int) error {
 					if x == 0 {
 						<-unblock
 						tc.Exit()
 						t.Error("test case failed to unwind from handler")
 					}
-					return x, nil
+					return nil
 				})
 
 				// Start the handler that will unwind, and ensure that it's blocked.
@@ -100,16 +125,16 @@ func TestQueueUnwind(t *testing.T) {
 				// ...then let everything through.
 				close(unblock)
 
-				// Ensure the unwind didn't break the handling of those new keys.
-				got, _ := q.Collect(keys...)
-				assert.Equal(t, keys, got)
+				// Ensure the unwind didn't block the handling of those new keys.
+				q.Collect(keys...)
 
 				// Ensure we correctly pass the unwind through.
-				tc.Assert(t, catch.Do(func() (int, error) {
-					return q.Get(0)
+				tc.Assert(t, catch.Do(func() (_ struct{}, err error) {
+					err = q.Get(0)
+					return
 				}))
-				tc.Assert(t, catch.Do(func() (_ int, err error) {
-					_, err = q.Collect(1, 0, 2)
+				tc.Assert(t, catch.Do(func() (_ struct{}, err error) {
+					err = q.Collect(1, 0, 2)
 					return
 				}))
 			})
@@ -125,15 +150,14 @@ func TestQueueCaching(t *testing.T) {
 		)
 
 		unblock := make(chan struct{})
-		q := work.NewQueue(0, func(_ *work.QueueHandle, x int) (int, error) {
+		q := work.NewSetQueue(0, func(_ *work.QueueHandle, x int) error {
 			<-unblock
-			return x, nil
+			return nil
 		})
 
 		// Handle an initial key.
 		close(unblock)
-		got, _ := q.Get(initialCachedKey)
-		assert.Equal(t, initialCachedKey, got)
+		q.Get(initialCachedKey)
 		assert.Equal(t, work.Stats{Handled: 1, Total: 1}, q.Stats())
 
 		// Re-block the handler.
@@ -149,15 +173,12 @@ func TestQueueCaching(t *testing.T) {
 			assert.Equal(t, work.Stats{Handled: 1, Total: 2}, q.Stats())
 		}
 
-		// Ensure the previous key is cached and available without delay.
-		got, _ = q.Get(initialCachedKey)
-		assert.Equal(t, initialCachedKey, got)
+		// Ensure the previous key is cached and available without blocking.
+		q.Get(initialCachedKey)
 
 		// Finish handling the blocked key.
 		close(unblock)
-		keys := []int{initialCachedKey, keyThatWillBlock}
-		collected, _ := q.Collect(keys...)
-		assert.Equal(t, keys, collected)
+		q.Get(keyThatWillBlock)
 		assert.Equal(t, work.Stats{Handled: 2, Total: 2}, q.Stats())
 	})
 }
@@ -173,11 +194,11 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 			inflights = make(chan int, keyCount)
 			unblock   = make(chan struct{})
 		)
-		q := work.NewQueue(workerCount, func(_ *work.QueueHandle, x int) (int, error) {
+		q := work.NewSetQueue(workerCount, func(_ *work.QueueHandle, x int) error {
 			inflights <- int(inflight.Add(1))
 			defer inflight.Add(-1)
 			<-unblock
-			return x, nil
+			return nil
 		})
 
 		// Start up as many handlers as possible, and wait for them to settle.
@@ -187,8 +208,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 
 		// Let them all finish...
 		close(unblock)
-		got, _ := q.Collect(keys...)
-		assert.Equal(t, keys, got)
+		q.Collect(keys...)
 		assert.Equal(t, work.Stats{Handled: keyCount, Total: keyCount}, q.Stats())
 
 		// ...and ensure the queue respected our limit.
@@ -202,10 +222,10 @@ func TestQueueOrdering(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var handledOrder []int
 		unblock := make(chan struct{})
-		q := work.NewQueue(1, func(_ *work.QueueHandle, x int) (int, error) {
+		q := work.NewSetQueue(1, func(_ *work.QueueHandle, x int) error {
 			<-unblock
 			handledOrder = append(handledOrder, x)
-			return x, nil
+			return nil
 		})
 
 		// Start a new blocked handler to force the queueing of subsequent keys.
@@ -218,13 +238,8 @@ func TestQueueOrdering(t *testing.T) {
 		q.Inform(3)
 		q.InformFront(-3)
 
-		// Unblock all the handlers...
+		// Unblock all the handlers, and ensure they were queued in the right order.
 		close(unblock)
-		keys := []int{-3, -2, -1, 0, 1, 2, 3}
-		got, _ := q.Collect(keys...)
-		assert.Equal(t, keys, got)
-
-		// ...and ensure that everything was queued in the correct order:
 		wantOrder := []int{
 			// The initial blocked handler.
 			0,
@@ -236,6 +251,7 @@ func TestQueueOrdering(t *testing.T) {
 			1, 2,
 			3,
 		}
+		q.Collect(wantOrder...)
 		assert.Equal(t, wantOrder, handledOrder)
 	})
 }
@@ -253,7 +269,7 @@ func TestQueueReattachPriority(t *testing.T) {
 			unblockReattacher = make(chan struct{})
 			unblockBlocker    = make(chan struct{})
 		)
-		q := work.NewQueue(1, func(qh *work.QueueHandle, x int) (int, error) {
+		q := work.NewSetQueue(1, func(qh *work.QueueHandle, x int) error {
 			switch x {
 			case keyThatWillDetach:
 				qh.Detach()
@@ -263,7 +279,7 @@ func TestQueueReattachPriority(t *testing.T) {
 				<-unblockBlocker
 			}
 			handleOrder = append(handleOrder, x)
-			return x, nil
+			return nil
 		})
 
 		// Start the handler that will detach itself from the queue, and ensure
@@ -321,14 +337,14 @@ func TestQueueReattachConcurrency(t *testing.T) {
 			unblockReattach = make(chan struct{})
 			unblockReturn   = make(chan struct{})
 		)
-		q := work.NewQueue(workerCount, func(qh *work.QueueHandle, x int) (int, error) {
+		q := work.NewSetQueue(workerCount, func(qh *work.QueueHandle, x int) error {
 			qh.Detach()
 			<-unblockReattach
 			qh.Reattach()
 			inflights <- int(inflight.Add(1))
 			defer inflight.Add(-1)
 			<-unblockReturn
-			return x, nil
+			return nil
 		})
 
 		// Start up as many handlers as possible, and wait for them to settle.
@@ -342,8 +358,7 @@ func TestQueueReattachConcurrency(t *testing.T) {
 
 		// Let them all return...
 		close(unblockReturn)
-		got, _ := q.Collect(keys...)
-		assert.Equal(t, keys, got)
+		q.Collect(keys...)
 
 		// ...and ensure none of the reattachers breached the limit.
 		close(inflights)
