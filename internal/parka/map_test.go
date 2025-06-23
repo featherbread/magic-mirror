@@ -348,6 +348,13 @@ func TestMapDetachAndFinish(t *testing.T) {
 			Description:  "return nil",
 			DetachedExit: func() error { return nil },
 		},
+		{
+			Description: "runtime.Goexit",
+			DetachedExit: func() error {
+				runtime.Goexit()
+				return nil
+			},
+		},
 	}
 
 	for _, tc := range testCases {

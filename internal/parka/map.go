@@ -306,8 +306,8 @@ func (m *Map[K, V]) work(initialKey *K) {
 		}
 		func() {
 			defer func() {
-				if task.result.Goexited() {
-					go m.work(nil) // We can't stop Goexit, so we must transfer our work grant.
+				if task.result.Goexited() && !qh.detached {
+					go m.work(nil) // We have a work grant and can't stop Goexit, so must transfer.
 				}
 			}()
 			task.Handle(func() (V, error) {
