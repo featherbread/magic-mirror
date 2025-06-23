@@ -69,10 +69,12 @@ func (eb exitBehavior) String() string {
 	panic("unknown exitBehavior")
 }
 
-func assertExitBehavior[T any](t assert.TestingT, eb exitBehavior, result catch.Result[T]) {
+func assertExitBehavior(t assert.TestingT, eb exitBehavior, fn func() error) {
 	if h, ok := t.(interface{ Helper() }); ok {
 		h.Helper()
 	}
+
+	result := catch.Do(func() (any, error) { return nil, fn() })
 
 	switch eb {
 	case exitNilReturn:
@@ -100,12 +102,8 @@ func assertExitBehavior[T any](t assert.TestingT, eb exitBehavior, result catch.
 func TestExitBehaviorConsistency(t *testing.T) {
 	for exit := range _exitBehaviorCount {
 		t.Run(exit.String(), func(t *testing.T) {
-			result := catch.Do(func() (any, error) {
-				return nil, exit.Do()
-			})
-
 			// Ensure the assertions match up with the real behavior of this exit.
-			assertExitBehavior(t, exit, result)
+			assertExitBehavior(t, exit, exit.Do)
 
 			// Ensure the _other_ assertions do _not_ match up.
 			for wrongExit := range _exitBehaviorCount {
@@ -113,7 +111,7 @@ func TestExitBehaviorConsistency(t *testing.T) {
 					continue
 				}
 				var fakeT testFailed
-				assertExitBehavior(&fakeT, wrongExit, result)
+				assertExitBehavior(&fakeT, wrongExit, exit.Do)
 				assert.True(t, fakeT.Load(), "Asserts for %s also allow %s", exit, wrongExit)
 			}
 		})

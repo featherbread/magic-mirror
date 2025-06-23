@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ahamlinman/magic-mirror/internal/parka"
-	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
 )
 
 // someNilValue is an interface value intentionally kept unassigned, to test
@@ -103,13 +102,10 @@ func TestMapUnwind(t *testing.T) {
 				// Ensure the unwind didn't block the handling of those new keys.
 				s.Collect(keys...)
 
-				// Ensure we correctly pass the unwind through.
-				assertExitBehavior(t, exit, catch.Do(func() (any, error) {
-					return nil, s.Get(0)
-				}))
-				assertExitBehavior(t, exit, catch.Do(func() (any, error) {
-					return nil, s.Collect(1, 0, 2)
-				}))
+				// Ensure we correctly propagate the unwind when necessary.
+				assertExitBehavior(t, exit, func() error { return s.Get(0) })
+				assertExitBehavior(t, exit, func() error { return s.Collect(1, 0, 2) })
+				assertExitBehavior(t, exitNilReturn, func() error { return s.Collect(1, 2) })
 			})
 		})
 	}
@@ -375,9 +371,7 @@ func TestMapDetachAndFinish(t *testing.T) {
 					"Breached concurrency limit")
 
 				// Ensure the detached keys used the correct exit behavior.
-				assertExitBehavior(t, exit, catch.Do(func() (any, error) {
-					return nil, s.Get(detachedKeys[0])
-				}))
+				assertExitBehavior(t, exit, func() error { return s.Get(detachedKeys[0]) })
 			})
 		})
 	}
