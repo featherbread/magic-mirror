@@ -17,6 +17,10 @@ import (
 	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
 )
 
+// someNilValue is an interface value intentionally kept unassigned, to test
+// panic(nil) calls without triggering lints.
+var someNilValue any
+
 func TestMapBasic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		m := parka.NewMap(func(_ *parka.Handle, x int) (int, error) {
@@ -66,8 +70,6 @@ func TestSetError(t *testing.T) {
 }
 
 func TestMapUnwind(t *testing.T) {
-	var someNilValue any // Never assigned; quiets lints for literal panic(nil).
-
 	// TODO: Functions in a table test are a code smell, but it's also important
 	// to me that all forms of unwinding and retrieval are tested identically.
 	// I have yet to find a construction I prefer.
@@ -347,6 +349,14 @@ func TestMapDetachAndFinish(t *testing.T) {
 		{
 			Description:  "return nil",
 			DetachedExit: func() error { return nil },
+		},
+		{
+			Description:  "panic with value",
+			DetachedExit: func() error { panic("test panic") },
+		},
+		{
+			Description:  "panic(nil)",
+			DetachedExit: func() error { panic(someNilValue) },
 		},
 		{
 			Description: "runtime.Goexit",
