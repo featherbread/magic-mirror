@@ -104,13 +104,11 @@ func TestMapUnwind(t *testing.T) {
 				s.Collect(keys...)
 
 				// Ensure we correctly pass the unwind through.
-				assertExitBehavior(t, exit, catch.Do(func() (_ struct{}, err error) {
-					err = s.Get(0)
-					return
+				assertExitBehavior(t, exit, catch.Do(func() (any, error) {
+					return nil, s.Get(0)
 				}))
-				assertExitBehavior(t, exit, catch.Do(func() (_ struct{}, err error) {
-					err = s.Collect(1, 0, 2)
-					return
+				assertExitBehavior(t, exit, catch.Do(func() (any, error) {
+					return nil, s.Collect(1, 0, 2)
 				}))
 			})
 		})
@@ -377,9 +375,8 @@ func TestMapDetachAndFinish(t *testing.T) {
 					"Breached concurrency limit")
 
 				// Ensure the detached keys used the correct exit behavior.
-				assertExitBehavior(t, exit, catch.Do(func() (_ struct{}, err error) {
-					err = s.Get(detachedKeys[0])
-					return
+				assertExitBehavior(t, exit, catch.Do(func() (any, error) {
+					return nil, s.Get(detachedKeys[0])
 				}))
 			})
 		})

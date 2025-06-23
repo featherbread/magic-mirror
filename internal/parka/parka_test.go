@@ -100,9 +100,8 @@ func assertExitBehavior[T any](t assert.TestingT, eb exitBehavior, result catch.
 func TestExitBehaviorConsistency(t *testing.T) {
 	for exit := range _exitBehaviorCount {
 		t.Run(exit.String(), func(t *testing.T) {
-			result := catch.Do(func() (_ struct{}, err error) {
-				err = exit.Do()
-				return
+			result := catch.Do(func() (any, error) {
+				return nil, exit.Do()
 			})
 
 			// Ensure the assertions match up with the real behavior of this exit.
