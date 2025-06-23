@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
-	"runtime"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -70,47 +69,19 @@ func TestSetError(t *testing.T) {
 }
 
 func TestMapUnwind(t *testing.T) {
-	// TODO: Functions in a table test are a code smell, but it's also important
-	// to me that all forms of unwinding and retrieval are tested identically.
-	// I have yet to find a construction I prefer.
-	testCases := []struct {
-		Description string
-		Exit        func()
-		Assert      func(*testing.T, catch.Result[struct{}])
-	}{
-		{
-			Description: "panic with value",
-			Exit:        func() { panic("test panic") },
-			Assert: func(t *testing.T, result catch.Result[struct{}]) {
-				assert.True(t, result.Panicked())
-				assert.Equal(t, "test panic", result.Recovered())
-			},
-		},
-		{
-			Description: "panic(nil)",
-			Exit:        func() { panic(someNilValue) },
-			Assert: func(t *testing.T, result catch.Result[struct{}]) {
-				assert.True(t, result.Panicked())
-				assert.Nil(t, result.Recovered())
-			},
-		},
-		{
-			Description: "runtime.Goexit",
-			Exit:        func() { runtime.Goexit(); panic("continued after Goexit") },
-			Assert: func(t *testing.T, result catch.Result[struct{}]) {
-				assert.True(t, result.Goexited())
-			},
-		},
+	exitBehaviors := []exitBehavior{
+		exitValuePanic,
+		exitNilPanic,
+		exitRuntimeGoexit,
 	}
-
-	for _, tc := range testCases {
-		t.Run(tc.Description, func(t *testing.T) {
+	for _, exit := range exitBehaviors {
+		t.Run(exit.String(), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				unblock := make(chan struct{})
 				s := parka.NewSet(func(_ *parka.Handle, x int) error {
 					if x == 0 {
 						<-unblock
-						tc.Exit()
+						exit.Do()
 						assert.Fail(t, "Test case failed to unwind from handler")
 					}
 					return nil
@@ -133,11 +104,11 @@ func TestMapUnwind(t *testing.T) {
 				s.Collect(keys...)
 
 				// Ensure we correctly pass the unwind through.
-				tc.Assert(t, catch.Do(func() (_ struct{}, err error) {
+				assertExitBehavior(t, exit, catch.Do(func() (_ struct{}, err error) {
 					err = s.Get(0)
 					return
 				}))
-				tc.Assert(t, catch.Do(func() (_ struct{}, err error) {
+				assertExitBehavior(t, exit, catch.Do(func() (_ struct{}, err error) {
 					err = s.Collect(1, 0, 2)
 					return
 				}))
@@ -341,34 +312,14 @@ func TestMapReattachConcurrency(t *testing.T) {
 }
 
 func TestMapDetachAndFinish(t *testing.T) {
-	// TODO: See previous note about functions in table tests.
-	testCases := []struct {
-		Description  string
-		DetachedExit func() error
-	}{
-		{
-			Description:  "return nil",
-			DetachedExit: func() error { return nil },
-		},
-		{
-			Description:  "panic with value",
-			DetachedExit: func() error { panic("test panic") },
-		},
-		{
-			Description:  "panic(nil)",
-			DetachedExit: func() error { panic(someNilValue) },
-		},
-		{
-			Description: "runtime.Goexit",
-			DetachedExit: func() error {
-				runtime.Goexit()
-				return nil
-			},
-		},
+	exitBehaviors := []exitBehavior{
+		exitNilReturn,
+		exitValuePanic,
+		exitNilPanic,
+		exitRuntimeGoexit,
 	}
-
-	for _, tc := range testCases {
-		t.Run(tc.Description, func(t *testing.T) {
+	for _, exit := range exitBehaviors {
+		t.Run(exit.String(), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				const (
 					workerCount   = 2
@@ -385,7 +336,7 @@ func TestMapDetachAndFinish(t *testing.T) {
 					if x < 0 {
 						qh.Detach()
 						<-unblockDetached
-						return tc.DetachedExit()
+						return exit.Do()
 					}
 					inflights <- int(inflight.Add(1))
 					defer inflight.Add(-1)
@@ -424,6 +375,12 @@ func TestMapDetachAndFinish(t *testing.T) {
 				maxInFlight := maxOfChannel(inflights)
 				assert.LessOrEqual(t, maxInFlight, workerCount,
 					"Breached concurrency limit")
+
+				// Ensure the detached keys used the correct exit behavior.
+				assertExitBehavior(t, exit, catch.Do(func() (_ struct{}, err error) {
+					err = s.Get(detachedKeys[0])
+					return
+				}))
 			})
 		})
 	}
