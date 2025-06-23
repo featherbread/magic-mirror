@@ -40,6 +40,7 @@ const (
 	exitValuePanic
 	exitNilPanic
 	exitRuntimeGoexit
+	_exitBehaviorCount
 )
 
 func (eb exitBehavior) Do() error {
@@ -51,11 +52,13 @@ func (eb exitBehavior) Do() error {
 	case exitRuntimeGoexit:
 		runtime.Goexit()
 	}
-	return nil
+	return nil // Any other fallback would be too confusing.
 }
 
 func (eb exitBehavior) String() string {
 	switch eb {
+	case exitNilReturn:
+		return "return nil"
 	case exitValuePanic:
 		return `panic("exitBehavior")`
 	case exitNilPanic:
@@ -63,7 +66,7 @@ func (eb exitBehavior) String() string {
 	case exitRuntimeGoexit:
 		return `runtime.Goexit()`
 	}
-	return "return nil"
+	panic("unknown exitBehavior")
 }
 
 func assertExitBehavior[T any](t assert.TestingT, eb exitBehavior, result catch.Result[T]) {
@@ -95,13 +98,7 @@ func assertExitBehavior[T any](t assert.TestingT, eb exitBehavior, result catch.
 }
 
 func TestExitBehaviorConsistency(t *testing.T) {
-	exitBehaviors := []exitBehavior{
-		exitNilReturn,
-		exitValuePanic,
-		exitNilPanic,
-		exitRuntimeGoexit,
-	}
-	for _, exit := range exitBehaviors {
+	for exit := range _exitBehaviorCount {
 		t.Run(exit.String(), func(t *testing.T) {
 			result := catch.Do(func() (_ struct{}, err error) {
 				err = exit.Do()
@@ -112,7 +109,7 @@ func TestExitBehaviorConsistency(t *testing.T) {
 			assertExitBehavior(t, exit, result)
 
 			// Ensure the _other_ assertions do _not_ match up.
-			for _, wrongExit := range exitBehaviors {
+			for wrongExit := range _exitBehaviorCount {
 				if wrongExit == exit {
 					continue
 				}
