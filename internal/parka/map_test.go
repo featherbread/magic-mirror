@@ -19,6 +19,40 @@ import (
 // panic(nil) calls without triggering lints.
 var someNilValue any
 
+func ExampleMap() {
+	m := parka.NewMap(func(_ *parka.Handle, x int) (int, error) {
+		return x % 3, nil
+	})
+	mods, _ := m.Collect(0, 1, 2, 3, 4, 5)
+	fmt.Println(mods)
+	// Output: [0 1 2 0 1 2]
+}
+
+func ExampleMap_limited() {
+	var lsbMu parka.KeyMutex[int]
+	m := parka.NewMap(func(h *parka.Handle, x int) (int, error) {
+		// Ensure one active handler per least-significant bit (LSB).
+		lsb := x % 2
+		lsbMu.LockDetached(h, lsb)
+		defer lsbMu.Unlock(lsb)
+
+		n := 1
+		for range x {
+			n *= 2
+		}
+		return n, nil
+	})
+
+	// Limit to two active handlers (and any number of detached handlers).
+	// Because of the KeyMutex, the two permitted handlers must be working
+	// on different LSBs despite our queueing order below.
+	m.Limit(2)
+
+	exps, _ := m.Collect(0, 2, 4, 1, 3, 5)
+	fmt.Println(exps)
+	// Output: [1 4 16 2 8 32]
+}
+
 func TestMapBasic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		m := parka.NewMap(func(_ *parka.Handle, x int) (int, error) {
