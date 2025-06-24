@@ -2,6 +2,7 @@
 package parka_test
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -26,6 +27,30 @@ func ExampleMap() {
 	mods, _ := m.Collect(0, 1, 2, 3, 4, 5)
 	fmt.Println(mods)
 	// Output: [0 1 2 0 1 2]
+}
+
+func ExampleMap_inform() {
+	m := parka.NewMap(func(_ *parka.Handle, x int) (int, error) {
+		if x >= 3 {
+			return 0, errors.New("out of range")
+		}
+		return x * x, nil
+	})
+
+	// Use Inform to pre-submit keys for handling.
+	m.Inform(0, 1, 2, 3, 4, 5)
+
+	// Even though we use Get to obtain each key's error
+	// (rather than coalesce to a single error with Collect),
+	// all handlers are able to run concurrently.
+	var errs []error
+	for x := range 6 {
+		if _, err := m.Get(x); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	fmt.Println(len(errs))
+	// Output: 3
 }
 
 func ExampleMap_limited() {
