@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -317,6 +318,65 @@ func TestMapMultiDetachReattach(t *testing.T) {
 			return nil
 		})
 		s.Get(0)
+	})
+}
+
+func TestMapConcurrentDetachThenReattach(t *testing.T) {
+	// TODO: I can reliably trigger fatal errors by using sync.WaitGroup.Go
+	// in this synctest bubble that don't reproduce with good ol' Add + Done.
+	// That may deserve a Go issue; I don't see anything matching on GitHub.
+	synctest.Test(t, func(t *testing.T) {
+		unblock := make(chan struct{})
+		s := parka.NewSet(func(qh *parka.Handle, x int) error {
+			if x > 0 {
+				return nil
+			}
+
+			var (
+				dg       sync.WaitGroup
+				detached atomic.Bool
+			)
+			dg.Add(10)
+			for range 10 {
+				go func() {
+					defer dg.Done()
+					if qh.Detach() {
+						detached.Store(true)
+					}
+				}()
+			}
+			dg.Wait()
+			assert.True(t, detached.Load(), "Failed to Detach() at least once")
+
+			var rg sync.WaitGroup
+			rg.Add(10)
+			for range 10 {
+				go func() { defer rg.Done(); qh.Reattach() }()
+			}
+			rg.Wait()
+
+			<-unblock
+			return nil
+		})
+
+		// Start our ridiculous test for parka.Handle concurrency.
+		// (Run it under the race detector for best results.)
+		s.Inform(0)
+		synctest.Wait()
+
+		// Try starting another handler, and confirm that it's blocked
+		// (which means the first handler reattached correctly).
+		s.Limit(1)
+		done := promise(func() { s.Get(1) })
+		synctest.Wait()
+		select {
+		case <-done:
+			assert.Fail(t, "Computation of key was not blocked")
+		default:
+		}
+
+		// Unblock everything.
+		close(unblock)
 	})
 }
 
