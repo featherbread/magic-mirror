@@ -117,8 +117,7 @@ func (m *Map[K, V]) Inform(keys ...K) {
 
 // InformFront behaves like [Map.Inform], but enqueues new keys at the front of
 // the map's work queue rather than the back. Like Inform, it does not affect
-// the order of keys already pending; it is not possible to move pending keys to
-// the front of the queue.
+// the order of keys already pending.
 func (m *Map[K, V]) InformFront(keys ...K) {
 	m.getTasks(pushAllFront, keys...)
 }
