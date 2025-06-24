@@ -305,7 +305,7 @@ func (m *Map[K, V]) work(initialKey *K) {
 		}
 		func() {
 			defer func() {
-				if task.result.Goexited() && !qh.detached {
+				if task.result.Goexited() && !qh.state.IsDetached() {
 					go m.work(nil) // We have a work grant and can't stop Goexit, so must transfer.
 				}
 			}()
@@ -314,7 +314,7 @@ func (m *Map[K, V]) work(initialKey *K) {
 				return m.handle(qh, key)
 			})
 		}()
-		if qh.detached {
+		if qh.state.IsDetached() {
 			return // We no longer have a work grant.
 		}
 	}
@@ -401,14 +401,9 @@ func (m *Map[K, V]) handleReattach() {
 
 // Handle allows a handler to interact with its parent [Map].
 type Handle struct {
-	// detached indicates that the goroutine running the handler has relinquished
-	// its work grant.
-	detached bool
+	state    handleState
 	detach   func()
 	reattach func()
-
-	// TODO: Multiple forms of unsoundness: no concurrency story, and can persist
-	// a *Handle beyond the handler lifetime to violate work grant invariants.
 }
 
 // Detach unbounds the calling handler from the concurrency limit of the [Map]
@@ -416,20 +411,54 @@ type Handle struct {
 // It returns true if this call detached the handler, or false if the handler
 // already detached.
 func (h *Handle) Detach() bool {
-	if h.detached {
-		return false
+	shouldDetach := h.state.WantDetach()
+	if shouldDetach {
+		h.detach()
+		return true
 	}
-	h.detach()
-	h.detached = true
-	return true
+	return false
 }
 
 // Reattach blocks the calling handler until it can execute within the
 // concurrency limit of the [Map] that invoked it, taking priority over
 // unhandled queued keys. It has no effect if the handler is already attached.
 func (h *Handle) Reattach() {
-	if h.detached {
+	shouldReattach := h.state.WantReattach()
+	if shouldReattach {
 		h.reattach()
-		h.detached = false
 	}
+	// TODO: Out of multiple concurrent Reattach calls, only one will wait for the
+	// reattach to finish. Does that matter? I mean, the _point_ of Reattach is
+	// that you want to lose some concurrency. I think I'll just get creative with
+	// the documentation on this one. It's still better than the old racy version.
+}
+
+type handleState struct{ atomic.Uint32 }
+
+const (
+	handleDetachedBit uint32 = 1 << iota
+	handleTerminatedBit
+)
+
+func (hs *handleState) IsDetached() bool {
+	old := hs.Uint32.Load()
+	return old&handleDetachedBit != 0
+}
+
+func (hs *handleState) WantDetach() (shouldDetach bool) {
+	old := hs.Uint32.Or(handleDetachedBit)
+	if old&handleTerminatedBit != 0 {
+		panic("parka: attempted Detach() outside handler lifetime")
+	}
+
+	return old&handleDetachedBit == 0
+}
+
+func (hs *handleState) WantReattach() (shouldReattach bool) {
+	old := hs.Uint32.And(^handleDetachedBit)
+	if old&handleTerminatedBit != 0 {
+		panic("parka: attempted Reattach() outside handler lifetime")
+	}
+
+	return old&handleDetachedBit != 0
 }
