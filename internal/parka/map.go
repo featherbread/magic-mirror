@@ -406,6 +406,9 @@ type Handle struct {
 	detached bool
 	detach   func()
 	reattach func()
+
+	// TODO: Multiple forms of unsoundness: no concurrency story, and can persist
+	// a *Handle beyond the handler lifetime to violate work grant invariants.
 }
 
 // Detach unbounds the calling handler from the concurrency limit of the [Map]
