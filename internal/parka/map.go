@@ -299,22 +299,28 @@ func (m *Map[K, V]) work(initialKey *K) {
 		task := m.tasks[key]
 		m.tasksMu.Unlock()
 
-		qh := &Handle{
-			detach:   m.handleDetach,
-			reattach: m.handleReattach,
-		}
+		var (
+			h = &Handle{
+				detach:   m.handleDetach,
+				reattach: m.handleReattach,
+			}
+			detached bool
+		)
 		func() {
 			defer func() {
-				if task.result.Goexited() && !qh.state.IsDetached() {
+				if task.result.Goexited() && !detached {
 					go m.work(nil) // We have a work grant and can't stop Goexit, so must transfer.
 				}
 			}()
 			task.Handle(func() (V, error) {
-				defer m.tasksHandled.Add(1)
-				return m.handle(qh, key)
+				defer func() {
+					detached = h.state.Terminate()
+					m.tasksHandled.Add(1)
+				}()
+				return m.handle(h, key)
 			})
 		}()
-		if qh.state.IsDetached() {
+		if detached {
 			return // We no longer have a work grant.
 		}
 	}
@@ -433,31 +439,31 @@ func (h *Handle) Reattach() {
 	// the documentation on this one. It's still better than the old racy version.
 }
 
-type handleState struct{ atomic.Uint32 }
+type handleState struct{ bits atomic.Uint32 }
 
 const (
 	handleDetachedBit uint32 = 1 << iota
 	handleTerminatedBit
 )
 
-func (hs *handleState) IsDetached() bool {
-	old := hs.Uint32.Load()
+func (hs *handleState) Terminate() (wasDetached bool) {
+	old := hs.bits.Or(handleTerminatedBit)
 	return old&handleDetachedBit != 0
 }
 
 func (hs *handleState) WantDetach() (shouldDetach bool) {
-	old := hs.Uint32.Or(handleDetachedBit)
+	old := hs.bits.Or(handleDetachedBit)
 	if old&handleTerminatedBit != 0 {
-		panic("parka: attempted Detach() outside handler lifetime")
+		panic("parka: attempted Detach outside handler lifetime")
 	}
 
 	return old&handleDetachedBit == 0
 }
 
 func (hs *handleState) WantReattach() (shouldReattach bool) {
-	old := hs.Uint32.And(^handleDetachedBit)
+	old := hs.bits.And(^handleDetachedBit)
 	if old&handleTerminatedBit != 0 {
-		panic("parka: attempted Reattach() outside handler lifetime")
+		panic("parka: attempted Reattach outside handler lifetime")
 	}
 
 	return old&handleDetachedBit != 0
