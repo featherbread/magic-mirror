@@ -433,32 +433,31 @@ func (h *Handle) Reattach() {
 	if shouldReattach {
 		h.reattach()
 	}
-	// TODO: Reattach has never been sound against the handler invoking it in a
-	// goroutine other than its own. When this happens, we may provide a work
-	// grant to a goroutine that's not prepared to handle its invariants, and
-	// permanently burn the concurrency it represents.
+	// TODO: What happens when a handler spawns Reattach in a goroutine and
+	// doesn't wait for it to finish?
 	//
-	// I think we can solve this if the main work loop tracks whether the handler
-	// has _ever_ reattached, and if so spawns a fresh `go work(nil)` to replace
-	// itself. There are two cases to consider:
+	// First, a key point: while we talk about _goroutines_ as upholding the work
+	// grant invariants, that's not the best framing here. When work() spawns a
+	// handler, we should think of it as putting its own work grant inside the
+	// Handle, and then trying to take it back out of the Handle after the handler
+	// terminates. It doesn't matter if we call Reattach in a separate goroutine
+	// as long as the Handle legitimately has its work grant back by the time we
+	// reenter the work loop (whether because we waited, or because of chance).
 	//
-	//   1. This goroutine waited properly for the Reattach, so the main work loop
-	//      actually holds a work grant. Spawning the new worker is just as valid
-	//      as in the typical Goexit case.
+	// The dangerous case is when we reenter the work loop at a point where we
+	// _think_ the Handler has a work grant, but it actually doesn't. At that
+	// point, we might actually retire or transfer the work grant we _think_ we
+	// have, allowing a goroutine unprepared to handle the work grant invariants
+	// to take it for real.
 	//
-	//   2. This goroutine spawned a _concurrent_ Reattach. Another goroutine may
-	//      hold the work grant destined for that worker, and when the work grant
-	//      makes it to that worker it will be burned.
+	// At minimum, we need the state to track whether we're in the middle of
+	// reattaching. Should we block all concurrent Reattach calls until we get the
+	// grant back? Or at least block termination?
 	//
-	// One sub-case of #2 is if the Reattach is already done, and the work grant
-	// is transferred. In that case, spawning a new worker is basically picking up
-	// that work grant off the ground and brushing the dirt off.
-	//
-	// The other sub-case of #2 is if the Reattach is _not_ done, and a sneaky
-	// goroutine _will_ drop it on the ground if we do nothing. In fact, we may
-	// even give them _our_ work grant to drop on the ground!
-	//
-	// (Actually, wait, I think that's the _only_ problem.)
+	// Perhaps this is another case where I've tried and utterly failed to get
+	// fancy with atomics, and it's time to use a plain mutex and some booleans.
+	// The invariant is that our detached bit must match up with whether we have a
+	// work grant, and atomics fundamentally can't satisfy that invariant.
 }
 
 // handleState provides atomic, finalizable tracking of a [Map] handler's
