@@ -314,7 +314,7 @@ func (m *Map[K, V]) work(initialKey *K) {
 			}()
 			task.Handle(func() (V, error) {
 				defer func() {
-					detached = h.state.Terminate()
+					detached = h.terminate()
 					m.tasksHandled.Add(1)
 				}()
 				return m.handle(h, key)
@@ -407,9 +407,14 @@ func (m *Map[K, V]) handleReattach() {
 
 // Handle allows a handler to interact with its parent [Map].
 type Handle struct {
-	state    handleState
 	detach   func()
 	reattach func()
+
+	// mu protects the invariant that this Handle contains a work grant iff
+	// !detached && !terminated.
+	mu         sync.Mutex
+	detached   bool
+	terminated bool
 }
 
 // Detach unbounds the calling handler from the concurrency limit of the [Map]
@@ -417,9 +422,15 @@ type Handle struct {
 // It returns true if this call detached the handler, or false if the handler
 // already detached.
 func (h *Handle) Detach() bool {
-	shouldDetach := h.state.WantDetach()
-	if shouldDetach {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if h.terminated {
+		panic("parka: attempted Detach outside handler lifetime")
+	}
+	if !h.detached {
 		h.detach()
+		h.detached = true
 		return true
 	}
 	return false
@@ -429,65 +440,25 @@ func (h *Handle) Detach() bool {
 // concurrency limit of the [Map] that invoked it, taking priority over
 // unhandled queued keys. It has no effect if the handler is already attached.
 func (h *Handle) Reattach() {
-	shouldReattach := h.state.WantReattach()
-	if shouldReattach {
-		h.reattach()
-	}
-	// TODO: What happens when a handler spawns Reattach in a goroutine and
-	// doesn't wait for it to finish?
-	//
-	// First, a key point: while we talk about _goroutines_ as upholding the work
-	// grant invariants, that's not the best framing here. When work() spawns a
-	// handler, we should think of it as putting its own work grant inside the
-	// Handle, and then trying to take it back out of the Handle after the handler
-	// terminates. It doesn't matter if we call Reattach in a separate goroutine
-	// as long as the Handle legitimately has its work grant back by the time we
-	// reenter the work loop (whether because we waited, or because of chance).
-	//
-	// The dangerous case is when we reenter the work loop at a point where we
-	// _think_ the Handler has a work grant, but it actually doesn't. At that
-	// point, we might actually retire or transfer the work grant we _think_ we
-	// have, allowing a goroutine unprepared to handle the work grant invariants
-	// to take it for real.
-	//
-	// At minimum, we need the state to track whether we're in the middle of
-	// reattaching. Should we block all concurrent Reattach calls until we get the
-	// grant back? Or at least block termination?
-	//
-	// Perhaps this is another case where I've tried and utterly failed to get
-	// fancy with atomics, and it's time to use a plain mutex and some booleans.
-	// The invariant is that our detached bit must match up with whether we have a
-	// work grant, and atomics fundamentally can't satisfy that invariant.
-}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
-// handleState provides atomic, finalizable tracking of a [Map] handler's
-// attachment state.
-type handleState struct{ bits atomic.Uint32 }
-
-const (
-	handleDetachedBit uint32 = 1 << iota
-	handleTerminatedBit
-)
-
-func (hs *handleState) Terminate() (wasDetached bool) {
-	old := hs.bits.Or(handleTerminatedBit)
-	return old&handleDetachedBit != 0
-}
-
-func (hs *handleState) WantDetach() (shouldDetach bool) {
-	old := hs.bits.Or(handleDetachedBit)
-	if old&handleTerminatedBit != 0 {
-		panic("parka: attempted Detach outside handler lifetime")
-	}
-
-	return old&handleDetachedBit == 0
-}
-
-func (hs *handleState) WantReattach() (shouldReattach bool) {
-	old := hs.bits.And(^handleDetachedBit)
-	if old&handleTerminatedBit != 0 {
+	if h.terminated {
 		panic("parka: attempted Reattach outside handler lifetime")
 	}
+	if h.detached {
+		h.reattach()
+		h.detached = false
+	}
+}
 
-	return old&handleDetachedBit != 0
+// terminate extracts the work grant, if any, currently held by h. The goroutine
+// that loaned h its work grant is trusted to call terminate exactly once and
+// rely on that single return value.
+func (h *Handle) terminate() (wasDetached bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.terminated = true
+	return h.detached
 }
