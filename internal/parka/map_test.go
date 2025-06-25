@@ -6,14 +6,19 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"reflect"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ahamlinman/magic-mirror/internal/parka"
+	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
 )
 
 // someNilValue is an interface value intentionally kept unassigned, to test
@@ -320,6 +325,65 @@ func TestMapMultiDetachReattach(t *testing.T) {
 	})
 }
 
+func TestMapConcurrentDetachThenReattach(t *testing.T) {
+	// TODO: I can reliably trigger fatal errors by using sync.WaitGroup.Go
+	// in this synctest bubble that don't reproduce with good ol' Add + Done.
+	// That may deserve a Go issue; I don't see anything matching on GitHub.
+	synctest.Test(t, func(t *testing.T) {
+		unblock := make(chan struct{})
+		s := parka.NewSet(func(qh *parka.Handle, x int) error {
+			if x > 0 {
+				return nil
+			}
+
+			var (
+				dg       sync.WaitGroup
+				detached atomic.Bool
+			)
+			dg.Add(10)
+			for range 10 {
+				go func() {
+					defer dg.Done()
+					if qh.Detach() {
+						detached.Store(true)
+					}
+				}()
+			}
+			dg.Wait()
+			assert.True(t, detached.Load(), "Failed to Detach() at least once")
+
+			var rg sync.WaitGroup
+			rg.Add(10)
+			for range 10 {
+				go func() { defer rg.Done(); qh.Reattach() }()
+			}
+			rg.Wait()
+
+			<-unblock
+			return nil
+		})
+
+		// Start our ridiculous test for parka.Handle concurrency.
+		// (Run it under the race detector for best results.)
+		s.Inform(0)
+		synctest.Wait()
+
+		// Try starting another handler, and confirm that it's blocked
+		// (which means the first handler reattached correctly).
+		s.Limit(1)
+		done := promise(func() { s.Get(1) })
+		synctest.Wait()
+		select {
+		case <-done:
+			assert.Fail(t, "Computation of key was not blocked")
+		default:
+		}
+
+		// Unblock everything.
+		close(unblock)
+	})
+}
+
 func TestMapReattachConcurrency(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const (
@@ -431,6 +495,35 @@ func TestMapDetachAndFinish(t *testing.T) {
 
 				// Ensure the detached keys used the correct exit behavior.
 				assertExitBehavior(t, exit, func() error { return s.Get(detachedKeys[0]) })
+			})
+		})
+	}
+}
+
+func TestMapHandlerEscape(t *testing.T) {
+	testCases := []string{"Detach", "Reattach", "Detach+Detach", "Detach+Reattach"}
+	for _, tc := range testCases {
+		t.Run(tc, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var handle *parka.Handle
+				s := parka.NewSet(func(h *parka.Handle, _ struct{}) error {
+					if strings.HasPrefix(tc, "Detach+") {
+						h.Detach()
+					}
+					handle = h
+					return nil
+				})
+
+				s.Get(struct{}{})
+				require.NotNil(t, handle, "Failed to set handle")
+
+				result := catch.Do(func() ([]reflect.Value, error) {
+					return reflect.ValueOf(handle).
+						MethodByName(strings.TrimPrefix(tc, "Detach+")).
+						Call(nil), nil
+				})
+				assert.True(t, result.Panicked(), "Handle call did not panic")
+				assert.Contains(t, result.Recovered(), "outside handler lifetime")
 			})
 		})
 	}

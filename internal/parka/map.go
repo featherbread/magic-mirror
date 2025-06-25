@@ -299,22 +299,28 @@ func (m *Map[K, V]) work(initialKey *K) {
 		task := m.tasks[key]
 		m.tasksMu.Unlock()
 
-		qh := &Handle{
-			detach:   m.handleDetach,
-			reattach: m.handleReattach,
-		}
+		var (
+			h = &Handle{
+				detach:   m.handleDetach,
+				reattach: m.handleReattach,
+			}
+			detached bool
+		)
 		func() {
 			defer func() {
-				if task.result.Goexited() && !qh.detached {
+				if task.result.Goexited() && !detached {
 					go m.work(nil) // We have a work grant and can't stop Goexit, so must transfer.
 				}
 			}()
 			task.Handle(func() (V, error) {
-				defer m.tasksHandled.Add(1)
-				return m.handle(qh, key)
+				defer func() {
+					detached = h.terminate()
+					m.tasksHandled.Add(1)
+				}()
+				return m.handle(h, key)
 			})
 		}()
-		if qh.detached {
+		if detached {
 			return // We no longer have a work grant.
 		}
 	}
@@ -400,15 +406,19 @@ func (m *Map[K, V]) handleReattach() {
 }
 
 // Handle allows a handler to interact with its parent [Map].
+//
+// It is permitted to call Handle methods in goroutines separate from the
+// handler's own. In the terminology of the Go memory model, the return of every
+// Handle call must be synchronized before the handler's termination.
 type Handle struct {
-	// detached indicates that the goroutine running the handler has relinquished
-	// its work grant.
-	detached bool
 	detach   func()
 	reattach func()
 
-	// TODO: Multiple forms of unsoundness: no concurrency story, and can persist
-	// a *Handle beyond the handler lifetime to violate work grant invariants.
+	// mu protects the invariant that this Handle contains a work grant iff
+	// !detached && !terminated.
+	mu         sync.Mutex
+	detached   bool
+	terminated bool
 }
 
 // Detach unbounds the calling handler from the concurrency limit of the [Map]
@@ -416,20 +426,43 @@ type Handle struct {
 // It returns true if this call detached the handler, or false if the handler
 // already detached.
 func (h *Handle) Detach() bool {
-	if h.detached {
-		return false
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if h.terminated {
+		panic("parka: attempted Detach outside handler lifetime")
 	}
-	h.detach()
-	h.detached = true
-	return true
+	if !h.detached {
+		h.detach()
+		h.detached = true
+		return true
+	}
+	return false
 }
 
 // Reattach blocks the calling handler until it can execute within the
 // concurrency limit of the [Map] that invoked it, taking priority over
 // unhandled queued keys. It has no effect if the handler is already attached.
 func (h *Handle) Reattach() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if h.terminated {
+		panic("parka: attempted Reattach outside handler lifetime")
+	}
 	if h.detached {
 		h.reattach()
 		h.detached = false
 	}
+}
+
+// terminate extracts the work grant, if any, currently held by h. The goroutine
+// that loaned h its work grant is trusted to call terminate exactly once and
+// rely on that single return value.
+func (h *Handle) terminate() (wasDetached bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.terminated = true
+	return h.detached
 }
