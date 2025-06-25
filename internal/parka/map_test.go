@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ahamlinman/magic-mirror/internal/parka"
+	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
 )
 
 // someNilValue is an interface value intentionally kept unassigned, to test
@@ -494,6 +496,43 @@ func TestMapDetachAndFinish(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestMapHandlerEscape(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var (
+			attachedHandle *parka.Handle
+			detachedHandle *parka.Handle
+		)
+		s := parka.NewSet(func(h *parka.Handle, shouldDetach bool) error {
+			if shouldDetach {
+				h.Detach()
+				detachedHandle = h
+			} else {
+				attachedHandle = h
+			}
+			return nil
+		})
+		s.Collect(false, true)
+		require.NotNil(t, attachedHandle, "Failed to set attachedHandle")
+		require.NotNil(t, detachedHandle, "Failed to set detachedHandle")
+
+		attachedDetach := catch.Do(func() (bool, error) { return attachedHandle.Detach(), nil })
+		assert.True(t, attachedDetach.Panicked(), "Detach (from attached handle) did not panic")
+		assert.Contains(t, attachedDetach.Recovered(), "attempted Detach outside handler lifetime")
+
+		attachedReattach := catch.Do(func() (_ any, _ error) { attachedHandle.Reattach(); return })
+		assert.True(t, attachedReattach.Panicked(), "Reattach (from attached handle) did not panic")
+		assert.Contains(t, attachedReattach.Recovered(), "attempted Reattach outside handler lifetime")
+
+		detachedDetach := catch.Do(func() (bool, error) { return detachedHandle.Detach(), nil })
+		assert.True(t, detachedDetach.Panicked(), "Detach (from detached handle) did not panic")
+		assert.Contains(t, detachedDetach.Recovered(), "attempted Detach outside handler lifetime")
+
+		detachedReattach := catch.Do(func() (_ any, _ error) { detachedHandle.Reattach(); return })
+		assert.True(t, detachedReattach.Panicked(), "Reattach (from detached handle) did not panic")
+		assert.Contains(t, detachedReattach.Recovered(), "attempted Reattach outside handler lifetime")
+	})
 }
 
 func TestMapLimitBasic(t *testing.T) {

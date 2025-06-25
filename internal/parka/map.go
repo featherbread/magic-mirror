@@ -437,8 +437,12 @@ func (h *Handle) Reattach() {
 	// reattach to finish. Does that matter? I mean, the _point_ of Reattach is
 	// that you want to lose some concurrency. I think I'll just get creative with
 	// the documentation on this one. It's still better than the old racy version.
+	// TODO TODO: No, I think there may be a real problem here, but I'm too tired
+	// to think through it.
 }
 
+// handleState provides atomic, finalizable tracking of a [Map] handler's
+// attachment state.
 type handleState struct{ bits atomic.Uint32 }
 
 const (
