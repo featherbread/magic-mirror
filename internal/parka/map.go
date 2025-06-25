@@ -366,8 +366,7 @@ func (m *Map[K, V]) tryGetQueuedKey() (key K, ok bool) {
 	return
 }
 
-// handleDetach relinquishes the current goroutine's work grant. Its behavior is
-// undefined if its caller does not hold a work grant.
+// handleDetach relinquishes a work grant held by its caller.
 func (m *Map[K, V]) handleDetach() {
 	// `go q.work(nil)` would be a correct implementation of this function that
 	// biases toward unblocking the detacher as quickly as possible. But since the
@@ -379,8 +378,8 @@ func (m *Map[K, V]) handleDetach() {
 	}
 }
 
-// handleReattach obtains a work grant for the current goroutine, which must be
-// prepared to fulfill the work grant invariants.
+// handleReattach obtains a work grant to replace one previously relinquished by
+// [Map.handleDetach].
 func (m *Map[K, V]) handleReattach() {
 	var mustReceiveGrant bool
 
