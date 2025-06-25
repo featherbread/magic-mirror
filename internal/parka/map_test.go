@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ahamlinman/magic-mirror/internal/parka"
 	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
@@ -511,20 +513,17 @@ func TestMapHandlerEscape(t *testing.T) {
 					handle = h
 					return nil
 				})
+
 				s.Get(struct{}{})
-				result := catch.Do(func() (_ any, _ error) {
-					switch {
-					case strings.HasSuffix(tc, "Detach"):
-						handle.Detach()
-					case strings.HasSuffix(tc, "Reattach"):
-						handle.Reattach()
-					}
-					return nil, nil
+				require.NotNil(t, handle, "Failed to set handle")
+
+				result := catch.Do(func() ([]reflect.Value, error) {
+					return reflect.ValueOf(handle).
+						MethodByName(strings.TrimPrefix(tc, "Detach+")).
+						Call(nil), nil
 				})
-				if assert.NotNil(t, handle, "Failed to set handle") {
-					assert.True(t, result.Panicked(), "Handle call did not panic")
-					assert.Contains(t, result.Recovered(), "outside handler lifetime")
-				}
+				assert.True(t, result.Panicked(), "Handle call did not panic")
+				assert.Contains(t, result.Recovered(), "outside handler lifetime")
 			})
 		})
 	}
