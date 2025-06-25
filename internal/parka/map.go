@@ -406,6 +406,10 @@ func (m *Map[K, V]) handleReattach() {
 }
 
 // Handle allows a handler to interact with its parent [Map].
+//
+// It is permitted to call Handle methods in goroutines separate from the
+// handler's own. In the terminology of the Go memory model, the return of every
+// Handle call must be synchronized before the handler's termination.
 type Handle struct {
 	detach   func()
 	reattach func()
