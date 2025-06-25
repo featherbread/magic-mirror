@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,7 +14,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/ahamlinman/magic-mirror/internal/parka"
 	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
@@ -499,40 +499,35 @@ func TestMapDetachAndFinish(t *testing.T) {
 }
 
 func TestMapHandlerEscape(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		var (
-			attachedHandle *parka.Handle
-			detachedHandle *parka.Handle
-		)
-		s := parka.NewSet(func(h *parka.Handle, shouldDetach bool) error {
-			if shouldDetach {
-				h.Detach()
-				detachedHandle = h
-			} else {
-				attachedHandle = h
-			}
-			return nil
+	testCases := []string{"Detach", "Reattach", "Detach+Detach", "Detach+Reattach"}
+	for _, tc := range testCases {
+		t.Run(tc, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var handle *parka.Handle
+				s := parka.NewSet(func(h *parka.Handle, _ struct{}) error {
+					if strings.HasPrefix(tc, "Detach+") {
+						h.Detach()
+					}
+					handle = h
+					return nil
+				})
+				s.Get(struct{}{})
+				result := catch.Do(func() (_ any, _ error) {
+					switch {
+					case strings.HasSuffix(tc, "Detach"):
+						handle.Detach()
+					case strings.HasSuffix(tc, "Reattach"):
+						handle.Reattach()
+					}
+					return nil, nil
+				})
+				if assert.NotNil(t, handle, "Failed to set handle") {
+					assert.True(t, result.Panicked(), "Handle call did not panic")
+					assert.Contains(t, result.Recovered(), "outside handler lifetime")
+				}
+			})
 		})
-		s.Collect(false, true)
-		require.NotNil(t, attachedHandle, "Failed to set attachedHandle")
-		require.NotNil(t, detachedHandle, "Failed to set detachedHandle")
-
-		attachedDetach := catch.Do(func() (bool, error) { return attachedHandle.Detach(), nil })
-		assert.True(t, attachedDetach.Panicked(), "Detach (from attached handle) did not panic")
-		assert.Contains(t, attachedDetach.Recovered(), "attempted Detach outside handler lifetime")
-
-		attachedReattach := catch.Do(func() (_ any, _ error) { attachedHandle.Reattach(); return })
-		assert.True(t, attachedReattach.Panicked(), "Reattach (from attached handle) did not panic")
-		assert.Contains(t, attachedReattach.Recovered(), "attempted Reattach outside handler lifetime")
-
-		detachedDetach := catch.Do(func() (bool, error) { return detachedHandle.Detach(), nil })
-		assert.True(t, detachedDetach.Panicked(), "Detach (from detached handle) did not panic")
-		assert.Contains(t, detachedDetach.Recovered(), "attempted Detach outside handler lifetime")
-
-		detachedReattach := catch.Do(func() (_ any, _ error) { detachedHandle.Reattach(); return })
-		assert.True(t, detachedReattach.Panicked(), "Reattach (from detached handle) did not panic")
-		assert.Contains(t, detachedReattach.Recovered(), "attempted Reattach outside handler lifetime")
-	})
+	}
 }
 
 func TestMapLimitBasic(t *testing.T) {
