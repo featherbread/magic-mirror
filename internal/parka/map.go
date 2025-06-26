@@ -38,24 +38,22 @@ type Map[K comparable, V any] struct {
 }
 
 // workState tracks a map's pending work, along with the "work grants" that
-// control the concurrency of goroutines handling it.
+// control the concurrency of handler execution.
 //
-// A work grant is an abstract resource that both permits and obligates the
-// goroutine holding it to execute the map's handler for any pending keys.
-// Work grants are issued (by incrementing grants), retired (by decrementing
-// grants), and transferred between goroutines to maintain the following
-// invariants:
+// A work grant is an abstract resource that both permits and obligates its
+// holder to execute a map's pending work. Work grants are issued (incrementing
+// grants), retired (decrementing grants), and transferred between holders to
+// maintain the following invariants:
 //
 //   - Exactly one work grant is outstanding for every unhandled key known to
 //     the map, up to grantLimit.
 //   - No goroutine holds more than one work grant.
-//   - Any goroutine holding a work grant is either executing the handler for an
-//     unhandled key or maintaining these invariants.
+//   - Any work grant holder is either executing the handler for an unhandled
+//     key or maintaining these invariants.
 //
-// Detaching handlers relinquish their goroutine's work grant to continue
-// execution outside of the concurrency limit. Reattaching handlers that wish to
-// re-obtain their work grant should receive priority over the handling of new
-// keys.
+// Detaching handlers relinquish their work grant to continue execution outside
+// of the concurrency limit. Reattaching handlers that wish to re-obtain their
+// work grant should receive priority over the handling of new keys.
 type workState[K comparable] struct {
 	grants      int
 	grantLimit  int
@@ -284,6 +282,7 @@ func pushAllFront[T any](d *deque.Deque[T], all []T) {
 // fulfills all duties associated with it. If provided with an initial key, it
 // executes the task for that key before handling queued work.
 func (m *Map[K, V]) work(initialKey *K) {
+	// Precondition: we hold a single work grant.
 	for {
 		var (
 			key K
@@ -300,7 +299,7 @@ func (m *Map[K, V]) work(initialKey *K) {
 		m.tasksMu.Unlock()
 
 		var (
-			h = &Handle{
+			h = &Handle{ // Loan our work grant to the handler.
 				detach:   m.handleDetach,
 				reattach: m.handleReattach,
 			}
@@ -313,10 +312,8 @@ func (m *Map[K, V]) work(initialKey *K) {
 				}
 			}()
 			task.Handle(func() (V, error) {
-				defer func() {
-					detached = h.terminate()
-					m.tasksHandled.Add(1)
-				}()
+				defer m.tasksHandled.Add(1)
+				defer func() { detached = h.terminate() }() // Try taking the work grant back.
 				return m.handle(h, key)
 			})
 		}()
@@ -413,8 +410,13 @@ type Handle struct {
 	detach   func()
 	reattach func()
 
+	// [Map.work] loans its goroutine's work grant to the map's handler.
+	// Then, the handler may relinquish or reobtain it in a controlled manner.
+	// Finally, the worker takes its work grant back if the Handle still holds it.
+	//
 	// mu protects the invariant that this Handle contains a work grant iff
-	// !detached && !terminated.
+	// !detached && !terminated. detached marks the temporary loss of a work grant
+	// through the handler's actions, while terminated marks its permanent loss.
 	mu         sync.Mutex
 	detached   bool
 	terminated bool
