@@ -325,6 +325,62 @@ func TestMapMultiDetachReattach(t *testing.T) {
 	})
 }
 
+func TestMapHandleConcurrencyTorture(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const iterations = 10
+		var (
+			inflightFinal atomic.Int32
+			unblockFinal  = make(chan struct{})
+		)
+		s := parka.NewSet(func(qh *parka.Handle, x int) error {
+			switch {
+			case x >= 0: // parka.Handle concurrency torture test.
+				ch := make(chan struct{}, iterations) // TODO: sync.WaitGroup is flaky here.
+				for range iterations {
+					switch rand.N(2) {
+					case 0:
+						go func() { qh.Detach(); ch <- struct{}{} }()
+					case 1:
+						go func() { qh.Reattach(); ch <- struct{}{} }()
+					}
+				}
+				for range iterations {
+					<-ch
+				}
+
+			case x < 0: // Final handler concurrency invariant test.
+				inflightFinal.Add(1)
+				defer inflightFinal.Add(-1)
+				<-unblockFinal
+			}
+
+			return nil
+		})
+
+		// Run the initial torture test, ensuring we don't deadlock or crash.
+		keys := makeIntKeys(10)
+		s.Limit(2)
+		s.Collect(keys...)
+
+		// Start up two handlers within the concurrency limit.
+		s.Inform(-1, -2)
+		synctest.Wait()
+		assert.Equal(t, 2, int(inflightFinal.Load()))
+
+		// Start up one more, and ensure it's blocked.
+		done := promise(func() { s.Get(-3) })
+		synctest.Wait()
+		select {
+		case <-done:
+			assert.Fail(t, "Computation of key was not blocked")
+		default:
+		}
+
+		// Unblock those final handlers.
+		close(unblockFinal)
+	})
+}
+
 func TestMapConcurrentDetachThenReattach(t *testing.T) {
 	// TODO: I can reliably trigger fatal errors by using sync.WaitGroup.Go
 	// in this synctest bubble that don't reproduce with good ol' Add + Done.
