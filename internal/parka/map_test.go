@@ -59,10 +59,10 @@ func ExampleMap_inform() {
 
 func ExampleMap_limited() {
 	var lsbMu parka.KeyMutex[int]
-	m := parka.NewMap(func(h *parka.Handle, x int) (int, error) {
+	m := parka.NewMap(func(ph *parka.Handle, x int) (int, error) {
 		// Ensure one active handler per least-significant bit (LSB).
 		lsb := x % 2
-		lsbMu.LockDetached(h, lsb)
+		lsbMu.LockDetached(ph, lsb)
 		defer lsbMu.Unlock(lsb)
 
 		n := 1
@@ -267,12 +267,12 @@ func TestMapReattachPriority(t *testing.T) {
 			unblockReattacher = make(chan struct{})
 			unblockBlocker    = make(chan struct{})
 		)
-		s := parka.NewSet(func(qh *parka.Handle, x int) error {
+		s := parka.NewSet(func(ph *parka.Handle, x int) error {
 			switch x {
 			case keyThatWillDetach:
-				qh.Detach()
+				ph.Detach()
 				<-unblockReattacher
-				qh.Reattach()
+				ph.Reattach()
 			case keyThatWillBlock:
 				<-unblockBlocker
 			}
@@ -312,12 +312,12 @@ func TestMapReattachPriority(t *testing.T) {
 
 func TestMapMultiDetachReattach(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		s := parka.NewSet(func(qh *parka.Handle, x int) error {
-			assert.True(t, qh.Detach(), "First Detach() claimed to do nothing")
-			assert.False(t, qh.Detach(), "Second Detach() claimed to detach")
-			assert.False(t, qh.Detach(), "Third Detach() claimed to detach")
-			qh.Reattach()
-			qh.Reattach()
+		s := parka.NewSet(func(ph *parka.Handle, x int) error {
+			assert.True(t, ph.Detach(), "First Detach() claimed to do nothing")
+			assert.False(t, ph.Detach(), "Second Detach() claimed to detach")
+			assert.False(t, ph.Detach(), "Third Detach() claimed to detach")
+			ph.Reattach()
+			ph.Reattach()
 			return nil
 		})
 		s.Get(0)
@@ -331,16 +331,16 @@ func TestMapHandleConcurrencyTorture(t *testing.T) {
 			inflightFinal atomic.Int32
 			unblockFinal  = make(chan struct{})
 		)
-		s := parka.NewSet(func(qh *parka.Handle, x int) error {
+		s := parka.NewSet(func(ph *parka.Handle, x int) error {
 			switch {
 			case x >= 0: // parka.Handle concurrency torture test.
 				ch := make(chan struct{}, iterations) // TODO: sync.WaitGroup is flaky here.
 				for range iterations {
 					switch rand.N(2) {
 					case 0:
-						go func() { qh.Detach(); ch <- struct{}{} }()
+						go func() { ph.Detach(); ch <- struct{}{} }()
 					case 1:
-						go func() { qh.Reattach(); ch <- struct{}{} }()
+						go func() { ph.Reattach(); ch <- struct{}{} }()
 					}
 				}
 				for range iterations {
@@ -392,10 +392,10 @@ func TestMapReattachConcurrency(t *testing.T) {
 			unblockReattach = make(chan struct{})
 			unblockReturn   = make(chan struct{})
 		)
-		s := parka.NewSet(func(qh *parka.Handle, x int) error {
-			qh.Detach()
+		s := parka.NewSet(func(ph *parka.Handle, x int) error {
+			ph.Detach()
 			<-unblockReattach
-			qh.Reattach()
+			ph.Reattach()
 			inflights <- int(inflight.Add(1))
 			defer inflight.Add(-1)
 			<-unblockReturn
@@ -445,9 +445,9 @@ func TestMapDetachAndFinish(t *testing.T) {
 					unblockDetached = make(chan struct{})
 					unblockAttached = make(chan struct{})
 				)
-				s := parka.NewSet(func(qh *parka.Handle, x int) error {
+				s := parka.NewSet(func(ph *parka.Handle, x int) error {
 					if x < 0 {
-						qh.Detach()
+						ph.Detach()
 						<-unblockDetached
 						return exit.Do()
 					}
@@ -580,12 +580,12 @@ func TestMapLimitIncrease(t *testing.T) {
 			unblockReattach = make(chan struct{})
 			unblockReturn   = make(chan struct{})
 		)
-		s := parka.NewSet(func(qh *parka.Handle, k Key) error {
+		s := parka.NewSet(func(ph *parka.Handle, k Key) error {
 			if k.Detach {
-				qh.Detach()
+				ph.Detach()
 				detached.Add(1)
 				<-unblockReattach
-				qh.Reattach()
+				ph.Reattach()
 				detached.Add(-1)
 			}
 			inflights <- int(inflight.Add(1))
@@ -670,13 +670,13 @@ func TestMapLimitIncreaseMax(t *testing.T) {
 			active  atomic.Int32
 			unblock = make(chan struct{})
 		)
-		s := parka.NewSet(func(qh *parka.Handle, x int) error {
+		s := parka.NewSet(func(ph *parka.Handle, x int) error {
 			active.Add(1)
 			defer active.Add(-1)
 			if x == 0 {
-				qh.Detach()
+				ph.Detach()
 				<-unblock
-				qh.Reattach()
+				ph.Reattach()
 			}
 			<-unblock
 			return nil
@@ -713,12 +713,12 @@ func TestMapLimitDecrease(t *testing.T) {
 			unblockReattach = make(chan struct{})
 			unblockReturn   = make(chan struct{})
 		)
-		s := parka.NewSet(func(qh *parka.Handle, x int) error {
+		s := parka.NewSet(func(ph *parka.Handle, x int) error {
 			if x < initialKeyCount && x%2 == 0 {
-				qh.Detach()
+				ph.Detach()
 				detached.Add(1)
 				<-unblockReattach
-				qh.Reattach()
+				ph.Reattach()
 				detached.Add(-1)
 			}
 

@@ -79,12 +79,12 @@ func (c *blobCopier) sources(dgst digest.Digest) mapset.Set[image.Repository] {
 	return set
 }
 
-func (c *blobCopier) copyBlob(qh *parka.Handle, req blobCopyKey) (err error) {
+func (c *blobCopier) copyBlob(ph *parka.Handle, req blobCopyKey) (err error) {
 	// If another handler is copying this blob to the same registry, wait for it
 	// to finish so we can do a cross-repository mount instead of pulling from the
 	// source again.
 	key := blobMutexKey{Digest: req.Digest, Registry: req.Dst.Registry}
-	c.copyMu.LockDetached(qh, key)
+	c.copyMu.LockDetached(ph, key)
 	defer c.copyMu.Unlock(key)
 
 	srcSet := c.sources(req.Digest)

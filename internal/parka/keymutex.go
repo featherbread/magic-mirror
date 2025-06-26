@@ -25,8 +25,8 @@ func noopReattach() {}
 // provided key is released. If the lock is not immediately available,
 // it detaches the handler from the map's concurrency limit while it waits
 // for the lock, and reattaches before returning.
-func (km *KeyMutex[K]) LockDetached(qh *Handle, key K) {
-	km.lock(key, qh.Detach, qh.Reattach)
+func (km *KeyMutex[K]) LockDetached(ph *Handle, key K) {
+	km.lock(key, ph.Detach, ph.Reattach)
 }
 
 func (km *KeyMutex[K]) lock(key K, detach func() bool, reattach func()) {

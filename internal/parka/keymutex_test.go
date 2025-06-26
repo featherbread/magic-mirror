@@ -73,9 +73,9 @@ func TestKeyMutexDetachReattach(t *testing.T) {
 			km       parka.KeyMutex[struct{}]
 			unblock0 = make(chan struct{})
 		)
-		s := parka.NewSet(func(qh *parka.Handle, x int) error {
+		s := parka.NewSet(func(ph *parka.Handle, x int) error {
 			if x == 0 {
-				km.LockDetached(qh, struct{}{})
+				km.LockDetached(ph, struct{}{})
 				<-unblock0
 				km.Unlock(struct{}{})
 			}

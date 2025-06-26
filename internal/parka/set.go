@@ -10,8 +10,8 @@ type Set[K comparable] struct {
 // only an error.
 func NewSet[K comparable](handle func(*Handle, K) error) Set[K] {
 	return Set[K]{
-		Map: NewMap(func(qh *Handle, key K) (_ struct{}, err error) {
-			err = handle(qh, key)
+		Map: NewMap(func(ph *Handle, key K) (_ struct{}, err error) {
+			err = handle(ph, key)
 			return
 		}),
 	}
