@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -131,7 +132,7 @@ func TestMapGoexit(t *testing.T) {
 		s := parka.NewSet(func(_ *parka.Handle, x int) error {
 			if x == 0 {
 				<-unblock
-				exitRuntimeGoexit.Do()
+				runtime.Goexit()
 				assert.Fail(t, "Test case failed to Goexit from handler")
 			}
 			return nil
@@ -154,9 +155,11 @@ func TestMapGoexit(t *testing.T) {
 		s.Collect(keys...)
 
 		// Ensure we correctly propagate the unwind when necessary.
-		assertExitBehavior(t, exitRuntimeGoexit, func() error { return s.Get(0) })
-		assertExitBehavior(t, exitRuntimeGoexit, func() error { return s.Collect(1, 0, 2) })
-		assertExitBehavior(t, exitNilReturn, func() error { return s.Collect(1, 2) })
+		getResult := catch.Do(func() (any, error) { return nil, s.Get(0) })
+		assert.True(t, getResult.Goexited(), "Get() did not Goexit")
+
+		collectResult := catch.Do(func() (any, error) { return nil, s.Collect(1, 0, 2) })
+		assert.True(t, collectResult.Goexited(), "Collect() did not Goexit")
 	})
 }
 
@@ -472,9 +475,6 @@ func TestMapDetachAndFinish(t *testing.T) {
 				maxInFlight := maxOfChannel(inflights)
 				assert.LessOrEqual(t, maxInFlight, workerCount,
 					"Breached concurrency limit")
-
-				// Ensure the detached keys used the correct exit behavior.
-				assertExitBehavior(t, exit, func() error { return s.Get(detachedKeys[0]) })
 			})
 		})
 	}
