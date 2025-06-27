@@ -139,7 +139,7 @@ func TestMapGoexit(t *testing.T) {
 		})
 		s.Limit(1)
 
-		// Start the handler that will unwind, and ensure that it's blocked.
+		// Start the handler that will Goexit, and ensure that it's blocked.
 		s.Inform(0)
 		synctest.Wait()
 
@@ -154,12 +154,14 @@ func TestMapGoexit(t *testing.T) {
 		// Ensure the unwind didn't block the handling of those new keys.
 		s.Collect(keys...)
 
-		// Ensure we correctly propagate the unwind when necessary.
+		// Ensure we panic when retrieving the Goexited handler's result.
 		getResult := catch.Do(func() (any, error) { return nil, s.Get(0) })
-		assert.True(t, getResult.Goexited(), "Get() did not Goexit")
+		assert.True(t, getResult.Panicked(), "Get() did not panic")
+		assert.ErrorIs(t, getResult.Recovered().(error), parka.ErrHandlerGoexit)
 
 		collectResult := catch.Do(func() (any, error) { return nil, s.Collect(1, 0, 2) })
-		assert.True(t, collectResult.Goexited(), "Collect() did not Goexit")
+		assert.True(t, collectResult.Panicked(), "Collect() did not panic")
+		assert.ErrorIs(t, collectResult.Recovered().(error), parka.ErrHandlerGoexit)
 	})
 }
 

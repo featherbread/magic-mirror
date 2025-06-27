@@ -36,8 +36,15 @@ func TestHandlerPanic(t *testing.T) {
 		})
 
 		done := make(chan struct{})
-		go func() { defer close(done); s.Get(struct{}{}) }()
+		go func() {
+			defer func() {
+				recover() // Our panic() mock Goexits, which makes Get panic.
+				close(done)
+			}()
+			s.Get(struct{}{})
+		}()
 		synctest.Wait()
+
 		select {
 		case <-done:
 			assert.Fail(t, "Computation from panicked handler was not blocked")

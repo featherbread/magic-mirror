@@ -1,6 +1,7 @@
 package parka
 
 import (
+	"errors"
 	"math"
 	"slices"
 	"sync"
@@ -10,6 +11,10 @@ import (
 
 	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
 )
+
+// ErrHandlerGoexit is panicked when retrieving a [Map] result for which the
+// corresponding handler called [runtime.Goexit].
+var ErrHandlerGoexit = errors.New("parka: handler executed runtime.Goexit")
 
 // Map runs a handler function once per key in a distinct goroutine and caches
 // the result, while supporting dynamic concurrency limits on handlers.
@@ -77,6 +82,9 @@ type task[V any] struct {
 
 func (t *task[V]) Wait() (V, error) {
 	t.wg.Wait()
+	if !t.result.Returned() {
+		panic(ErrHandlerGoexit)
+	}
 	return t.result.Unwrap()
 }
 
