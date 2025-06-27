@@ -19,6 +19,11 @@ var ErrHandlerGoexit = errors.New("parka: handler executed runtime.Goexit")
 // Map runs a handler function once per key in a distinct goroutine and caches
 // the result, while supporting dynamic concurrency limits on handlers.
 //
+// The result from the handler consists of a value and error. Map does not
+// recover panics; they crash the program if not recovered within the handler.
+// If a handler calls [runtime.Goexit], retrieving the key's result panics with
+// [ErrHandlerGoexit].
+//
 // New maps permit an effectively unlimited number of goroutines ([math.MaxInt])
 // to concurrently handle new keys. [Map.Limit] can change this limit at any
 // time. [Handle.Detach] permits an individual handler to exclude itself from
@@ -119,17 +124,18 @@ func (m *Map[K, V]) InformFront(keys ...K) {
 }
 
 // Get informs the map of the key as if by [Map.Inform], blocks until it has
-// handled the key, then propagates the key's result.
+// handled the key, then returns the key's result.
 //
-// TODO(alexhamlin): Explain propagation semantics.
+// If the key's handler called [runtime.Goexit], Get panics with [ErrHandlerGoexit].
 func (m *Map[K, V]) Get(key K) (V, error) {
 	return m.getTasks(pushAllBack, key)[0].Wait()
 }
 
 // Collect informs the map of the keys as if by [Map.Inform], then coalesces
-// their results.
-//
-// TODO(alexhamlin): Explain propagation semantics.
+// their results. If any key's handler returns an error or calls [runtime.Goexit],
+// Collect returns that error or panics with [ErrHandlerGoexit] without waiting
+// for the map to handle subsequent keys. Otherwise, Collect returns a slice of
+// values corresponding to the keys.
 func (m *Map[K, V]) Collect(keys ...K) ([]V, error) {
 	var err error
 	tasks := m.getTasks(pushAllBack, keys...)
