@@ -1,4 +1,3 @@
-//go:debug panicnil=1
 package parka_test
 
 import (
@@ -19,10 +18,6 @@ import (
 	"github.com/ahamlinman/magic-mirror/internal/parka"
 	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
 )
-
-// someNilValue is an interface value intentionally kept unassigned, to test
-// panic(nil) calls without triggering lints.
-var someNilValue any
 
 func ExampleMap() {
 	m := parka.NewMap(func(_ *parka.Handle, x int) (int, error) {

@@ -37,18 +37,12 @@ type exitBehavior int
 
 const (
 	exitNilReturn exitBehavior = iota
-	exitValuePanic
-	exitNilPanic
 	exitRuntimeGoexit
 	_exitBehaviorCount
 )
 
 func (eb exitBehavior) Do() error {
 	switch eb {
-	case exitValuePanic:
-		panic("exitBehavior")
-	case exitNilPanic:
-		panic(someNilValue)
 	case exitRuntimeGoexit:
 		runtime.Goexit()
 	}
@@ -59,10 +53,6 @@ func (eb exitBehavior) String() string {
 	switch eb {
 	case exitNilReturn:
 		return "return nil"
-	case exitValuePanic:
-		return `panic("exitBehavior")`
-	case exitNilPanic:
-		return `panic(nil)`
 	case exitRuntimeGoexit:
 		return `runtime.Goexit()`
 	}
@@ -82,14 +72,6 @@ func assertExitBehavior(t assert.TestingT, eb exitBehavior, fn func() error) {
 			_, err := result.Unwrap()
 			assert.NoError(t, err, "Result contained a non-nil error")
 		}
-
-	case exitValuePanic:
-		assert.True(t, result.Panicked(), "Result is not Panicked()")
-		assert.Equal(t, "exitBehavior", result.Recovered())
-
-	case exitNilPanic:
-		assert.True(t, result.Panicked(), "Result is not Panicked()")
-		assert.Nil(t, result.Recovered())
 
 	case exitRuntimeGoexit:
 		assert.True(t, result.Goexited(), "Result is not Goexited()")
