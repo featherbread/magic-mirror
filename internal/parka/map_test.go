@@ -130,48 +130,39 @@ func TestSetError(t *testing.T) {
 	})
 }
 
-func TestMapUnwind(t *testing.T) {
-	exitBehaviors := []exitBehavior{
-		exitValuePanic,
-		exitNilPanic,
-		exitRuntimeGoexit,
-	}
-	for _, exit := range exitBehaviors {
-		t.Run(exit.String(), func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				unblock := make(chan struct{})
-				s := parka.NewSet(func(_ *parka.Handle, x int) error {
-					if x == 0 {
-						<-unblock
-						exit.Do()
-						assert.Fail(t, "Test case failed to unwind from handler")
-					}
-					return nil
-				})
-				s.Limit(1)
-
-				// Start the handler that will unwind, and ensure that it's blocked.
-				s.Inform(0)
-				synctest.Wait()
-
-				// Force some more handlers to queue up...
-				keys := []int{1, 2}
-				s.Inform(keys...)
-				synctest.Wait()
-
-				// ...then let everything through.
-				close(unblock)
-
-				// Ensure the unwind didn't block the handling of those new keys.
-				s.Collect(keys...)
-
-				// Ensure we correctly propagate the unwind when necessary.
-				assertExitBehavior(t, exit, func() error { return s.Get(0) })
-				assertExitBehavior(t, exit, func() error { return s.Collect(1, 0, 2) })
-				assertExitBehavior(t, exitNilReturn, func() error { return s.Collect(1, 2) })
-			})
+func TestMapGoexit(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		unblock := make(chan struct{})
+		s := parka.NewSet(func(_ *parka.Handle, x int) error {
+			if x == 0 {
+				<-unblock
+				exitRuntimeGoexit.Do()
+				assert.Fail(t, "Test case failed to Goexit from handler")
+			}
+			return nil
 		})
-	}
+		s.Limit(1)
+
+		// Start the handler that will unwind, and ensure that it's blocked.
+		s.Inform(0)
+		synctest.Wait()
+
+		// Force some more handlers to queue up...
+		keys := []int{1, 2}
+		s.Inform(keys...)
+		synctest.Wait()
+
+		// ...then let everything through.
+		close(unblock)
+
+		// Ensure the unwind didn't block the handling of those new keys.
+		s.Collect(keys...)
+
+		// Ensure we correctly propagate the unwind when necessary.
+		assertExitBehavior(t, exitRuntimeGoexit, func() error { return s.Get(0) })
+		assertExitBehavior(t, exitRuntimeGoexit, func() error { return s.Collect(1, 0, 2) })
+		assertExitBehavior(t, exitNilReturn, func() error { return s.Collect(1, 2) })
+	})
 }
 
 func TestMapCaching(t *testing.T) {
@@ -427,8 +418,6 @@ func TestMapReattachConcurrency(t *testing.T) {
 func TestMapDetachAndFinish(t *testing.T) {
 	exitBehaviors := []exitBehavior{
 		exitNilReturn,
-		exitValuePanic,
-		exitNilPanic,
 		exitRuntimeGoexit,
 	}
 	for _, exit := range exitBehaviors {

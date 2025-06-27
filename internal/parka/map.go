@@ -297,17 +297,21 @@ func (m *Map[K, V]) work(initialKey *K) {
 		)
 		func() {
 			defer func() {
-				if task.result.Goexited() && !detached {
-					go m.work(nil) // We have a work grant and can't stop Goexit, so must transfer.
+				detached = h.terminate()
+				if rv := recover(); rv != nil {
+					// If the unwind is due to a panic, the program will soon crash.
+					// There's no point in letting a waiter see our worthless non-result,
+					// or in transferring any work grant we have.
+					panic(rv)
 				}
+				if !detached && !task.result.Returned() {
+					go m.work(nil) // We have a work grant and are Goexiting; must transfer.
+				}
+				m.tasksHandled.Add(1)
+				task.wg.Done()
 			}()
-			defer task.wg.Done()
 			task.result = catch.Goexit[V]()
-			task.result = catch.DoOrExit(func() (V, error) {
-				defer m.tasksHandled.Add(1)
-				defer func() { detached = h.terminate() }() // Try taking the work grant back.
-				return m.handle(h, key)
-			})
+			task.result = catch.Return(m.handle(h, key))
 		}()
 		if detached {
 			return // We no longer have a work grant.
