@@ -75,12 +75,6 @@ type task[V any] struct {
 	result catch.Result[V]
 }
 
-func (t *task[V]) Handle(fn func() (V, error)) {
-	defer t.wg.Done()
-	t.result = catch.Goexit[V]()
-	t.result = catch.DoOrExit(fn)
-}
-
 func (t *task[V]) Wait() (V, error) {
 	t.wg.Wait()
 	return t.result.Unwrap()
@@ -307,7 +301,9 @@ func (m *Map[K, V]) work(initialKey *K) {
 					go m.work(nil) // We have a work grant and can't stop Goexit, so must transfer.
 				}
 			}()
-			task.Handle(func() (V, error) {
+			defer task.wg.Done()
+			task.result = catch.Goexit[V]()
+			task.result = catch.DoOrExit(func() (V, error) {
 				defer m.tasksHandled.Add(1)
 				defer func() { detached = h.terminate() }() // Try taking the work grant back.
 				return m.handle(h, key)
