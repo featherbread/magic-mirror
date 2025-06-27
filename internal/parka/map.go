@@ -83,7 +83,7 @@ type task[V any] struct {
 func (t *task[V]) Wait() (V, error) {
 	t.wg.Wait()
 	if !t.result.Returned() {
-		panic(ErrHandlerGoexit)
+		panic(ErrHandlerGoexit) // Must be Goexit, since wg isn't done when the handler panics.
 	}
 	return t.result.Unwrap()
 }
@@ -308,7 +308,7 @@ func (m *Map[K, V]) work(initialKey *K) {
 		)
 		func() {
 			defer func() {
-				detached = h.terminate()
+				detached = h.terminate() // Try to take our work grant back.
 				if rv := recover(); rv != nil {
 					// If the unwind is due to a panic, the program will soon crash.
 					// There's no point in letting a waiter see our worthless non-result,
@@ -316,7 +316,10 @@ func (m *Map[K, V]) work(initialKey *K) {
 					workPanic(rv)
 				}
 				if !detached && !task.result.Returned() {
-					go m.work(nil) // We have a work grant and are Goexiting; must transfer.
+					// We have a work grant and are (likely) Goexiting, so must transfer it.
+					// This could also be a panic(nil) if GODEBUG=panicnil=1, but the only
+					// harm is one extra goroutine stack in the forthcoming crash dump.
+					go m.work(nil)
 				}
 				m.tasksHandled.Add(1)
 				task.wg.Done()
