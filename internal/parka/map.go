@@ -268,6 +268,9 @@ func pushAllFront[T any](d *deque.Deque[T], all []T) {
 	}
 }
 
+// workPanic supports mocking panic() in unit tests.
+var workPanic = func(v any) { panic(v) }
+
 // work, when invoked in a new goroutine, accepts ownership of a work grant and
 // fulfills all duties associated with it. If provided with an initial key, it
 // executes the task for that key before handling queued work.
@@ -302,7 +305,7 @@ func (m *Map[K, V]) work(initialKey *K) {
 					// If the unwind is due to a panic, the program will soon crash.
 					// There's no point in letting a waiter see our worthless non-result,
 					// or in transferring any work grant we have.
-					panic(rv)
+					workPanic(rv)
 				}
 				if !detached && !task.result.Returned() {
 					go m.work(nil) // We have a work grant and are Goexiting; must transfer.
