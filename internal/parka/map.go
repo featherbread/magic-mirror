@@ -14,10 +14,6 @@ import (
 // Map runs a handler function once per key in a distinct goroutine and caches
 // the result, while supporting dynamic concurrency limits on handlers.
 //
-// The result for each key nominally consists of a value and error, but may
-// instead capture a panic or a call to [runtime.Goexit], which propagates to
-// any caller retrieving that key's result.
-//
 // New maps permit an effectively unlimited number of goroutines ([math.MaxInt])
 // to concurrently handle new keys. [Map.Limit] can change this limit at any
 // time. [Handle.Detach] permits an individual handler to exclude itself from
@@ -121,17 +117,17 @@ func (m *Map[K, V]) InformFront(keys ...K) {
 }
 
 // Get informs the map of the key as if by [Map.Inform], blocks until it has
-// handled the key, then propagates the key's result: returning its value and
-// error, or forwarding a panic or [runtime.Goexit].
+// handled the key, then propagates the key's result.
+//
+// TODO(alexhamlin): Explain propagation semantics.
 func (m *Map[K, V]) Get(key K) (V, error) {
 	return m.getTasks(pushAllBack, key)[0].Wait()
 }
 
 // Collect informs the map of the keys as if by [Map.Inform], then coalesces
-// their results. If any key's handler returns an error, panics, or calls
-// [runtime.Goexit], Collect propagates the first of those results with respect
-// to the order of the keys, without waiting for the map to handle the remaining
-// keys. Otherwise, it returns the values corresponding to the keys.
+// their results.
+//
+// TODO(alexhamlin): Explain propagation semantics.
 func (m *Map[K, V]) Collect(keys ...K) ([]V, error) {
 	var err error
 	tasks := m.getTasks(pushAllBack, keys...)
