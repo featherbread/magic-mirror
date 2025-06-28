@@ -1,4 +1,3 @@
-//go:debug panicnil=1
 package parka_test
 
 import (
@@ -7,6 +6,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -19,10 +19,6 @@ import (
 	"github.com/ahamlinman/magic-mirror/internal/parka"
 	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
 )
-
-// someNilValue is an interface value intentionally kept unassigned, to test
-// panic(nil) calls without triggering lints.
-var someNilValue any
 
 func ExampleMap() {
 	m := parka.NewMap(func(_ *parka.Handle, x int) (int, error) {
@@ -130,48 +126,43 @@ func TestSetError(t *testing.T) {
 	})
 }
 
-func TestMapUnwind(t *testing.T) {
-	exitBehaviors := []exitBehavior{
-		exitValuePanic,
-		exitNilPanic,
-		exitRuntimeGoexit,
-	}
-	for _, exit := range exitBehaviors {
-		t.Run(exit.String(), func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				unblock := make(chan struct{})
-				s := parka.NewSet(func(_ *parka.Handle, x int) error {
-					if x == 0 {
-						<-unblock
-						exit.Do()
-						assert.Fail(t, "Test case failed to unwind from handler")
-					}
-					return nil
-				})
-				s.Limit(1)
-
-				// Start the handler that will unwind, and ensure that it's blocked.
-				s.Inform(0)
-				synctest.Wait()
-
-				// Force some more handlers to queue up...
-				keys := []int{1, 2}
-				s.Inform(keys...)
-				synctest.Wait()
-
-				// ...then let everything through.
-				close(unblock)
-
-				// Ensure the unwind didn't block the handling of those new keys.
-				s.Collect(keys...)
-
-				// Ensure we correctly propagate the unwind when necessary.
-				assertExitBehavior(t, exit, func() error { return s.Get(0) })
-				assertExitBehavior(t, exit, func() error { return s.Collect(1, 0, 2) })
-				assertExitBehavior(t, exitNilReturn, func() error { return s.Collect(1, 2) })
-			})
+func TestMapGoexit(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		unblock := make(chan struct{})
+		s := parka.NewSet(func(_ *parka.Handle, x int) error {
+			if x == 0 {
+				<-unblock
+				runtime.Goexit()
+				assert.Fail(t, "Test case failed to Goexit from handler")
+			}
+			return nil
 		})
-	}
+		s.Limit(1)
+
+		// Start the handler that will Goexit, and ensure that it's blocked.
+		s.Inform(0)
+		synctest.Wait()
+
+		// Force some more handlers to queue up...
+		keys := []int{1, 2}
+		s.Inform(keys...)
+		synctest.Wait()
+
+		// ...then let everything through.
+		close(unblock)
+
+		// Ensure the unwind didn't block the handling of those new keys.
+		s.Collect(keys...)
+
+		// Ensure we panic when retrieving the Goexited handler's result.
+		getResult := catch.Do(func() (any, error) { return nil, s.Get(0) })
+		assert.True(t, getResult.Panicked(), "Get() did not panic")
+		assert.ErrorIs(t, getResult.Recovered().(error), parka.ErrHandlerGoexit)
+
+		collectResult := catch.Do(func() (any, error) { return nil, s.Collect(1, 0, 2) })
+		assert.True(t, collectResult.Panicked(), "Collect() did not panic")
+		assert.ErrorIs(t, collectResult.Recovered().(error), parka.ErrHandlerGoexit)
+	})
 }
 
 func TestMapCaching(t *testing.T) {
@@ -425,75 +416,65 @@ func TestMapReattachConcurrency(t *testing.T) {
 }
 
 func TestMapDetachAndFinish(t *testing.T) {
-	exitBehaviors := []exitBehavior{
-		exitNilReturn,
-		exitValuePanic,
-		exitNilPanic,
-		exitRuntimeGoexit,
-	}
-	for _, exit := range exitBehaviors {
-		t.Run(exit.String(), func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				const (
-					workerCount   = 2
-					detachedCount = 5
-					attachedCount = 5
-				)
-				var (
-					inflight        atomic.Int32
-					inflights       = make(chan int, detachedCount+attachedCount)
-					unblockDetached = make(chan struct{})
-					unblockAttached = make(chan struct{})
-				)
-				s := parka.NewSet(func(ph *parka.Handle, x int) error {
-					if x < 0 {
-						ph.Detach()
-						<-unblockDetached
-						return exit.Do()
-					}
-					inflights <- int(inflight.Add(1))
-					defer inflight.Add(-1)
-					<-unblockAttached
-					return nil
-				})
-				s.Limit(1)
-
-				// Start up multiple detached handlers that will never reattach.
-				detachedKeys := makeIntKeys(detachedCount + 1)[1:]
-				for i := range detachedKeys {
-					detachedKeys[i] *= -1
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			workerCount   = 2
+			detachedCount = 10
+			attachedCount = 5
+		)
+		var (
+			inflight        atomic.Int32
+			inflights       = make(chan int, detachedCount+attachedCount)
+			unblockDetached = make(chan struct{})
+			unblockAttached = make(chan struct{})
+		)
+		s := parka.NewSet(func(ph *parka.Handle, x int) error {
+			if x < 0 {
+				ph.Detach()
+				<-unblockDetached
+				if x%2 == 0 {
+					runtime.Goexit()
 				}
-				s.Inform(detachedKeys...)
-				synctest.Wait()
-
-				// Start up some normal handlers, and ensure they're really blocked.
-				attachedKeys := makeIntKeys(attachedCount)
-				attachedDone := promise(func() { s.Collect(attachedKeys...) })
-				synctest.Wait()
-				select {
-				case <-attachedDone:
-					assert.Fail(t, "Computation of keys was not blocked")
-				default:
-				}
-
-				// Let the detached handlers finish, and push them forward if they're
-				// going to incorrectly pick up keys rather than exit.
-				close(unblockDetached)
-				synctest.Wait()
-
-				// Unblock the rest of the handlers, and ensure the limit was respected.
-				close(unblockAttached)
-				<-attachedDone
-				close(inflights)
-				maxInFlight := maxOfChannel(inflights)
-				assert.LessOrEqual(t, maxInFlight, workerCount,
-					"Breached concurrency limit")
-
-				// Ensure the detached keys used the correct exit behavior.
-				assertExitBehavior(t, exit, func() error { return s.Get(detachedKeys[0]) })
-			})
+				return nil
+			}
+			inflights <- int(inflight.Add(1))
+			defer inflight.Add(-1)
+			<-unblockAttached
+			return nil
 		})
-	}
+		s.Limit(1)
+
+		// Start up multiple detached handlers that will never reattach.
+		detachedKeys := makeIntKeys(detachedCount + 1)[1:]
+		for i := range detachedKeys {
+			detachedKeys[i] *= -1
+		}
+		s.Inform(detachedKeys...)
+		synctest.Wait()
+
+		// Start up some normal handlers, and ensure they're really blocked.
+		attachedKeys := makeIntKeys(attachedCount)
+		attachedDone := promise(func() { s.Collect(attachedKeys...) })
+		synctest.Wait()
+		select {
+		case <-attachedDone:
+			assert.Fail(t, "Computation of keys was not blocked")
+		default:
+		}
+
+		// Let the detached handlers finish, and push them forward if they're
+		// going to incorrectly pick up keys rather than exit.
+		close(unblockDetached)
+		synctest.Wait()
+
+		// Unblock the rest of the handlers, and ensure the limit was respected.
+		close(unblockAttached)
+		<-attachedDone
+		close(inflights)
+		maxInFlight := maxOfChannel(inflights)
+		assert.LessOrEqual(t, maxInFlight, workerCount,
+			"Breached concurrency limit")
+	})
 }
 
 func TestMapHandlerEscape(t *testing.T) {

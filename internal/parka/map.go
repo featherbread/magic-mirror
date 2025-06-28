@@ -1,6 +1,7 @@
 package parka
 
 import (
+	"errors"
 	"math"
 	"slices"
 	"sync"
@@ -11,12 +12,17 @@ import (
 	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
 )
 
+// ErrHandlerGoexit is panicked when retrieving a [Map] result for which the
+// corresponding handler called [runtime.Goexit].
+var ErrHandlerGoexit = errors.New("parka: handler executed runtime.Goexit")
+
 // Map runs a handler function once per key in a distinct goroutine and caches
 // the result, while supporting dynamic concurrency limits on handlers.
 //
-// The result for each key nominally consists of a value and error, but may
-// instead capture a panic or a call to [runtime.Goexit], which propagates to
-// any caller retrieving that key's result.
+// The result from the handler consists of a value and error. Map does not
+// recover panics; they crash the program if not recovered within the handler.
+// If a handler calls [runtime.Goexit], retrieving the key's result panics with
+// [ErrHandlerGoexit].
 //
 // New maps permit an effectively unlimited number of goroutines ([math.MaxInt])
 // to concurrently handle new keys. [Map.Limit] can change this limit at any
@@ -79,14 +85,11 @@ type task[V any] struct {
 	result catch.Result[V]
 }
 
-func (t *task[V]) Handle(fn func() (V, error)) {
-	defer t.wg.Done()
-	t.result = catch.Goexit[V]()
-	t.result = catch.DoOrExit(fn)
-}
-
 func (t *task[V]) Wait() (V, error) {
 	t.wg.Wait()
+	if !t.result.Returned() {
+		panic(ErrHandlerGoexit) // Must be Goexit, since wg isn't done when the handler panics.
+	}
 	return t.result.Unwrap()
 }
 
@@ -121,17 +124,18 @@ func (m *Map[K, V]) InformFront(keys ...K) {
 }
 
 // Get informs the map of the key as if by [Map.Inform], blocks until it has
-// handled the key, then propagates the key's result: returning its value and
-// error, or forwarding a panic or [runtime.Goexit].
+// handled the key, then returns the key's result.
+//
+// If the key's handler called [runtime.Goexit], Get panics with [ErrHandlerGoexit].
 func (m *Map[K, V]) Get(key K) (V, error) {
 	return m.getTasks(pushAllBack, key)[0].Wait()
 }
 
 // Collect informs the map of the keys as if by [Map.Inform], then coalesces
-// their results. If any key's handler returns an error, panics, or calls
-// [runtime.Goexit], Collect propagates the first of those results with respect
-// to the order of the keys, without waiting for the map to handle the remaining
-// keys. Otherwise, it returns the values corresponding to the keys.
+// their results. If any key's handler returns an error or calls [runtime.Goexit],
+// Collect returns that error or panics with [ErrHandlerGoexit] without waiting
+// for the map to handle subsequent keys. Otherwise, Collect returns a slice of
+// values corresponding to the keys.
 func (m *Map[K, V]) Collect(keys ...K) ([]V, error) {
 	var err error
 	tasks := m.getTasks(pushAllBack, keys...)
@@ -278,6 +282,9 @@ func pushAllFront[T any](d *deque.Deque[T], all []T) {
 	}
 }
 
+// workPanic supports mocking panic() in unit tests.
+var workPanic = func(v any) { panic(v) }
+
 // work, when invoked in a new goroutine, accepts ownership of a work grant and
 // fulfills all duties associated with it. If provided with an initial key, it
 // executes the task for that key before handling queued work.
@@ -307,15 +314,24 @@ func (m *Map[K, V]) work(initialKey *K) {
 		)
 		func() {
 			defer func() {
-				if task.result.Goexited() && !detached {
-					go m.work(nil) // We have a work grant and can't stop Goexit, so must transfer.
+				detached = h.terminate() // Try to take our work grant back.
+				if rv := recover(); rv != nil {
+					// If the unwind is due to a panic, the program will soon crash.
+					// There's no point in letting a waiter see our worthless non-result,
+					// or in transferring any work grant we have.
+					workPanic(rv)
 				}
+				if !detached && !task.result.Returned() {
+					// We have a work grant and are (likely) Goexiting, so must transfer it.
+					// This could also be a panic(nil) if GODEBUG=panicnil=1, but the only
+					// harm is one extra goroutine stack in the forthcoming crash dump.
+					go m.work(nil)
+				}
+				m.tasksHandled.Add(1)
+				task.wg.Done()
 			}()
-			task.Handle(func() (V, error) {
-				defer m.tasksHandled.Add(1)
-				defer func() { detached = h.terminate() }() // Try taking the work grant back.
-				return m.handle(h, key)
-			})
+			task.result = catch.Goexit[V]()
+			task.result = catch.Return(m.handle(h, key))
 		}()
 		if detached {
 			return // We no longer have a work grant.
