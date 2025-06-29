@@ -81,9 +81,9 @@ type Result[T any] struct {
 // abnormal exit behaviors rather than inspect and handle them.
 func (r Result[T]) Unwrap() (T, error) {
 	switch {
-	case !r.started || r.returned:
+	case r.Returned():
 		return r.value, r.err
-	case r.recovered:
+	case r.Panicked():
 		panic(r.panicval)
 	default:
 		runtime.Goexit()
@@ -93,17 +93,17 @@ func (r Result[T]) Unwrap() (T, error) {
 
 // Goexited is true if this result captures [runtime.Goexit].
 func (r Result[T]) Goexited() bool {
-	return r.started && !r.returned && !r.recovered
+	return r.started && !r.recovered
 }
 
 // Panicked is true if this result captures a panic.
 func (r Result[T]) Panicked() bool {
-	return r.started && !r.returned && r.recovered
+	return r.recovered && !r.returned
 }
 
 // Returned is true if this result captures a normal return.
 func (r Result[T]) Returned() bool {
-	return !r.started || r.returned
+	return r.returned || !r.started
 }
 
 // Recovered returns any panic value captured by this result.
