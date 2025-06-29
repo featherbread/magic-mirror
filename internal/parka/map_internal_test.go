@@ -37,10 +37,8 @@ func TestHandlerPanic(t *testing.T) {
 
 		done := make(chan struct{})
 		go func() {
-			defer func() {
-				recover() // Our panic() mock Goexits, which makes Get panic.
-				close(done)
-			}()
+			defer close(done)
+			defer func() { recover() }() // Our panic() mock Goexits, which makes Get panic.
 			s.Get(struct{}{})
 		}()
 		synctest.Wait()
