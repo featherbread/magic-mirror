@@ -282,9 +282,6 @@ func pushAllFront[T any](d *deque.Deque[T], all []T) {
 	}
 }
 
-// workPanic supports mocking panic() in unit tests.
-var workPanic = func(v any) { panic(v) }
-
 // work, when invoked in a new goroutine, accepts ownership of a work grant and
 // fulfills all duties associated with it. If provided with an initial key, it
 // executes the task for that key before handling queued work.
@@ -305,38 +302,45 @@ func (m *Map[K, V]) work(initialKey *K) {
 		task := m.tasks[key]
 		m.tasksMu.Unlock()
 
-		var (
-			h = &Handle{ // Loan our work grant to the handler.
-				detach:   m.handleDetach,
-				reattach: m.handleReattach,
-			}
-			detached bool
-		)
-		func() {
-			defer func() {
-				detached = h.terminate() // Try to take our work grant back.
-				if rv := recover(); rv != nil {
-					// If the unwind is due to a panic, the program will soon crash.
-					// There's no point in letting a waiter see our worthless non-result,
-					// or in transferring any work grant we have.
-					workPanic(rv)
-				}
-				if !detached && !task.result.Returned() {
-					// We have a work grant and are (likely) Goexiting, so must transfer it.
-					// This could also be a panic(nil) if GODEBUG=panicnil=1, but the only
-					// harm is one extra goroutine stack in the forthcoming crash dump.
-					go m.work(nil)
-				}
-				m.tasksHandled.Add(1)
-				task.wg.Done()
-			}()
-			task.result = catch.Goexit[V]()
-			task.result = catch.Return(m.handle(h, key))
-		}()
+		detached := m.completeTask(key, task)
 		if detached {
 			return // We no longer have a work grant.
 		}
 	}
+}
+
+// workPanic supports mocking panic() in unit tests.
+var workPanic = func(v any) { panic(v) }
+
+// completeTask, when called with a work grant held, executes the handler for
+// key, which may relinquish the work grant if it detaches.
+func (m *Map[K, V]) completeTask(key K, task *task[V]) (detached bool) {
+	h := &Handle{ // Loan our work grant to the handler.
+		detach:   m.handleDetach,
+		reattach: m.handleReattach,
+	}
+
+	defer func() {
+		detached = h.terminate() // Try to take our work grant back.
+		if rv := recover(); rv != nil {
+			// If we're panicking, the program will soon crash.
+			// There's no point in letting a waiter see our worthless non-result,
+			// or in transferring any work grant we have.
+			workPanic(rv)
+		}
+		if !detached && !task.result.Returned() {
+			// We have a work grant and are (likely) Goexiting, so must transfer it.
+			// This could also be a panic(nil) if GODEBUG=panicnil=1, but the only
+			// harm is one extra goroutine stack in the forthcoming crash dump.
+			go m.work(nil)
+		}
+		m.tasksHandled.Add(1)
+		task.wg.Done()
+	}()
+
+	task.result = catch.Goexit[V]()
+	task.result = catch.Return(m.handle(h, key)) // May unwind before assignment.
+	return
 }
 
 // tryGetQueuedKey, when called with a work grant held, either relinquishes the
