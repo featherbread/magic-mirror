@@ -35,11 +35,11 @@ type Map[K comparable, V any] struct {
 	handle func(*Handle, K) (V, error)
 
 	state    workState[K]
-	stateMu  sync.Mutex
+	stateMu  sync.Mutex // 1st in locking order.
 	reattach reattachQueue
 
 	tasks        map[K]*task[V]
-	tasksMu      sync.Mutex
+	tasksMu      sync.Mutex // 2nd in locking order.
 	tasksHandled atomic.Uint64
 }
 
