@@ -38,13 +38,17 @@ var ErrTaskEjected = errors.New("task ejected from queue")
 type Map[K comparable, V any] struct {
 	handle func(*Handle, K) (V, error)
 
-	state    workState[K]
-	stateMu  sync.Mutex // 1st in locking order.
-	reattach reattachQueue
-
+	// tasks tracks all pending and completed work known to the map.
+	// Modifications to the task set must maintain the invariant that every
+	// incomplete key can become known to a worker that can run its handler.
 	tasks        map[K]*task[V]
-	tasksMu      sync.Mutex // 2nd in locking order.
+	tasksMu      sync.Mutex // 1st in locking order.
 	tasksHandled atomic.Uint64
+
+	// See [workState].
+	state    workState[K]
+	stateMu  sync.Mutex // 2nd in locking order.
+	reattach reattachQueue
 }
 
 // workState tracks a map's pending work, along with the "work grants" that
@@ -231,17 +235,19 @@ func (m *Map[K, V]) Flush() []K {
 	)
 
 	func() {
+		// The tasks invariant precludes emptying the queue and removing the tasks
+		// in separate critical sections, as the incomplete keys in the map
+		// can no longer "become known to a worker" once we empty the queue.
+		m.tasksMu.Lock()
+		defer m.tasksMu.Unlock()
 		m.stateMu.Lock()
 		defer m.stateMu.Unlock()
 
 		var swapped deque.Deque[K]
 		swapped, m.state.keys = m.state.keys, swapped
+
 		keys = make([]K, swapped.Len())
 		tasks = make([]*task[V], swapped.Len())
-
-		m.tasksMu.Lock()
-		defer m.tasksMu.Unlock()
-
 		for i := range swapped.Len() {
 			keys[i] = swapped.At(i)
 			tasks[i] = m.tasks[keys[i]]
