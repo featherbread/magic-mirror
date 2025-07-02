@@ -1,10 +1,12 @@
 package parka_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"net/http"
 	"reflect"
 	"runtime"
 	"strings"
@@ -27,6 +29,38 @@ func ExampleMap() {
 	mods, _ := m.Collect(0, 1, 2, 3, 4, 5)
 	fmt.Println(mods)
 	// Output: [0 1 2 0 1 2]
+}
+
+func ExampleMap_context() {
+	// Create a context as usual.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	codes := parka.NewMap(func(_ *parka.Handle, url string) (int, error) {
+		// Use the context from the surrounding scope in the handler.
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
+		if err != nil {
+			return 0, nil
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return 0, nil
+		}
+		resp.Body.Close()
+		return resp.StatusCode, nil
+	})
+
+	// If Collect bails early on error, dequeue pending work before canceling the
+	// context (later in defer order). The map avoids starting new handlers that
+	// would fail anyways, while the context cancels the in-flight handlers.
+	// Note: this strategy does not wait for in-flight handlers to finish.
+	defer codes.DequeueAll()
+
+	codes.Collect(
+		"https://www.example.com/",
+		"https://www.example.net/",
+		// ...
+	)
 }
 
 func ExampleMap_inform() {
