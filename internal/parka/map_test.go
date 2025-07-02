@@ -800,3 +800,43 @@ func TestMapFlushBasic(t *testing.T) {
 		assert.Len(t, handled, keyCount)
 	})
 }
+
+func TestMapFlushTorture(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			keyCount    = 100
+			workerCount = 3
+		)
+		var (
+			handled   atomic.Int32
+			handleErr error
+		)
+		m := parka.NewMap(func(_ *parka.Handle, x int) (float64, error) {
+			defer handled.Add(1)
+			return math.Exp(float64(x)), handleErr
+		})
+		m.Limit(workerCount)
+
+		// Flush and re-inform in a tight loop. This isn't _guaranteed_ to overlap
+		// with handler execution, but nearly always does (especially with -race).
+		var flushed int
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for handled.Load() < keyCount {
+				flushed++
+				m.Inform(m.Flush()...)
+			}
+		}()
+		keys := makeIntKeys(keyCount)
+		m.Inform(keys...)
+		<-done
+
+		handleErr = errors.New("handling should fail for unseen keys")
+		got, err := m.Collect(keys...)
+		assert.NoError(t, err)
+		assert.Len(t, got, len(keys))
+
+		t.Logf("Flushed %d time(s)", flushed)
+	})
+}
