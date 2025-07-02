@@ -756,3 +756,47 @@ func TestMapLimitDecrease(t *testing.T) {
 		}
 	})
 }
+
+func TestMapFlushBasic(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			keyCount    = 10
+			workerCount = 3
+		)
+		var (
+			unblock = make(chan struct{})
+			handled = make(chan int, keyCount)
+		)
+		s := parka.NewSet(func(_ *parka.Handle, x int) error {
+			handled <- x
+			<-unblock
+			return nil
+		})
+
+		// Start up some blocked handlers.
+		s.Limit(workerCount)
+		keys := makeIntKeys(keyCount)
+		errCh := make(chan error)
+		go func() { errCh <- s.Collect(keys...) }()
+		synctest.Wait()
+		assert.Len(t, handled, workerCount)
+		select {
+		case <-errCh:
+			assert.Fail(t, "Computation of keys was not blocked")
+		default:
+		}
+
+		// Flush the unhandled keys from the queue.
+		flushed := s.Flush()
+		assert.Equal(t, keys[workerCount:], flushed)
+
+		// Unblock everything and make sure we only handled the first keys.
+		close(unblock)
+		assert.ErrorIs(t, <-errCh, parka.ErrTaskEjected)
+		assert.Len(t, handled, workerCount)
+
+		// Ensure we can resubmit the flushed keys and have them handled.
+		assert.NoError(t, s.Collect(flushed...))
+		assert.Len(t, handled, keyCount)
+	})
+}
