@@ -757,7 +757,7 @@ func TestMapLimitDecrease(t *testing.T) {
 	})
 }
 
-func TestMapFlushBasic(t *testing.T) {
+func TestMapDequeueAllBasic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const (
 			keyCount    = 10
@@ -786,22 +786,22 @@ func TestMapFlushBasic(t *testing.T) {
 		default:
 		}
 
-		// Flush the unhandled keys from the queue.
-		flushed := s.Flush()
-		assert.Equal(t, keys[workerCount:], flushed)
+		// Remove the unhandled keys from the queue.
+		dequeued := s.DequeueAll()
+		assert.Equal(t, keys[workerCount:], dequeued)
 
 		// Unblock everything and make sure we only handled the first keys.
 		close(unblock)
 		assert.ErrorIs(t, <-errCh, parka.ErrTaskEjected)
 		assert.Len(t, handled, workerCount)
 
-		// Ensure we can resubmit the flushed keys and have them handled.
-		assert.NoError(t, s.Collect(flushed...))
+		// Ensure we can resubmit the removed keys and have them handled.
+		assert.NoError(t, s.Collect(dequeued...))
 		assert.Len(t, handled, keyCount)
 	})
 }
 
-func TestMapFlushTorture(t *testing.T) {
+func TestMapDequeueAllTorture(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const (
 			keyCount    = 100
@@ -817,15 +817,15 @@ func TestMapFlushTorture(t *testing.T) {
 		})
 		m.Limit(workerCount)
 
-		// Flush and re-inform in a tight loop. This isn't _guaranteed_ to overlap
+		// Dequeue and reinform in a tight loop. This isn't _guaranteed_ to overlap
 		// with handler execution, but nearly always does (especially with -race).
-		var flushed int
+		var cycled int
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
 			for handled.Load() < keyCount {
-				flushed++
-				m.Inform(m.Flush()...)
+				cycled++
+				m.Inform(m.DequeueAll()...)
 			}
 		}()
 		keys := makeIntKeys(keyCount)
@@ -837,6 +837,6 @@ func TestMapFlushTorture(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, got, len(keys))
 
-		t.Logf("Flushed %d time(s)", flushed)
+		t.Logf("Cycled queue %d time(s)", cycled)
 	})
 }

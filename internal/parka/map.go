@@ -223,12 +223,12 @@ func (m *Map[K, V]) Stats() Stats {
 	return stats
 }
 
-// Flush removes and returns any queued keys that have not been picked up for
-// handling. Any retrieval of the keys' corresponding results started before
-// Flush returns the zero value of V and [ErrTaskEjected]. Any retrieval started
-// after Flush re-informs the map of the key. Flush has no effect on cached
-// results or handlers in flight.
-func (m *Map[K, V]) Flush() []K {
+// DequeueAll removes and returns any queued keys that have not been picked up
+// for handling. Any retrieval of the keys' corresponding results started before
+// DequeueAll returns the zero value of V and [ErrTaskEjected]. Any retrieval
+// started after DequeueAll re-informs the map of the key. DequeueAll has no
+// effect on cached results or handlers in flight.
+func (m *Map[K, V]) DequeueAll() []K {
 	var (
 		keys  []K
 		tasks []*task[V]
