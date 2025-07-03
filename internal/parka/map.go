@@ -233,7 +233,6 @@ func (m *Map[K, V]) DequeueAll() []K {
 		keys  []K
 		tasks []*task[V]
 	)
-
 	func() {
 		// The tasks invariant precludes emptying the queue and removing the tasks
 		// in separate critical sections, as the incomplete keys in the map
