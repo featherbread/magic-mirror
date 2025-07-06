@@ -42,7 +42,7 @@ type Map[K comparable, V any] struct {
 	// Modifications to the task set must maintain the invariant that every
 	// incomplete key can become known to a worker that can run its handler.
 	tasks        map[K]*task[V]
-	tasksMu      sync.Mutex // 1st in locking order.
+	tasksMu      sync.RWMutex // 1st in locking order.
 	tasksHandled atomic.Uint64
 
 	// See [workState].
@@ -217,9 +217,9 @@ type Stats struct {
 func (m *Map[K, V]) Stats() Stats {
 	var stats Stats
 	stats.Handled = m.tasksHandled.Load()
-	m.tasksMu.Lock()
+	m.tasksMu.RLock()
 	stats.Total = uint64(len(m.tasks))
-	m.tasksMu.Unlock()
+	m.tasksMu.RUnlock()
 	return stats
 }
 
@@ -344,9 +344,9 @@ func (m *Map[K, V]) work(initialKey *K) {
 			return // We no longer have a work grant; see tryGetQueuedKey.
 		}
 
-		m.tasksMu.Lock()
+		m.tasksMu.RLock()
 		task := m.tasks[key]
-		m.tasksMu.Unlock()
+		m.tasksMu.RUnlock()
 
 		detached := m.completeTask(key, task)
 		if detached {
