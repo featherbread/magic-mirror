@@ -16,6 +16,10 @@ import (
 // corresponding handler called [runtime.Goexit].
 var ErrHandlerGoexit = errors.New("parka: handler executed runtime.Goexit")
 
+// ErrTaskEjected is the error returned when retrieving a [Map] result for which
+// the corresponding handler run was canceled.
+var ErrTaskEjected = errors.New("task ejected from queue")
+
 // Map runs a handler function once per key in a distinct goroutine and caches
 // the result, while supporting dynamic concurrency limits on handlers.
 //
@@ -34,13 +38,17 @@ var ErrHandlerGoexit = errors.New("parka: handler executed runtime.Goexit")
 type Map[K comparable, V any] struct {
 	handle func(*Handle, K) (V, error)
 
-	state    workState[K]
-	stateMu  sync.Mutex
-	reattach reattachQueue
-
+	// tasks tracks all pending and completed work known to the map.
+	// Modifications to the task set must maintain the invariant that every
+	// incomplete key can become known to a worker that can run its handler.
 	tasks        map[K]*task[V]
-	tasksMu      sync.Mutex
+	tasksMu      sync.Mutex // 1st in locking order.
 	tasksHandled atomic.Uint64
+
+	// See [workState].
+	state    workState[K]
+	stateMu  sync.Mutex // 2nd in locking order.
+	reattach reattachQueue
 }
 
 // workState tracks a map's pending work, along with the "work grants" that
@@ -213,6 +221,44 @@ func (m *Map[K, V]) Stats() Stats {
 	stats.Total = uint64(len(m.tasks))
 	m.tasksMu.Unlock()
 	return stats
+}
+
+// DequeueAll removes and returns any queued keys that have not been picked up
+// for handling. Any retrieval of the keys' corresponding results started before
+// DequeueAll returns the zero value of V and [ErrTaskEjected]. Any retrieval
+// started after DequeueAll re-informs the map of the key. DequeueAll has no
+// effect on cached results or handlers in flight.
+func (m *Map[K, V]) DequeueAll() []K {
+	var (
+		keys  []K
+		tasks []*task[V]
+	)
+	func() {
+		// The tasks invariant precludes emptying the queue and removing the tasks
+		// in separate critical sections, as the incomplete keys in the map
+		// can no longer "become known to a worker" once we empty the queue.
+		m.tasksMu.Lock()
+		defer m.tasksMu.Unlock()
+		m.stateMu.Lock()
+		defer m.stateMu.Unlock()
+
+		var swapped deque.Deque[K]
+		swapped, m.state.keys = m.state.keys, swapped
+
+		keys = make([]K, swapped.Len())
+		tasks = make([]*task[V], swapped.Len())
+		for i := range swapped.Len() {
+			keys[i] = swapped.At(i)
+			tasks[i] = m.tasks[keys[i]]
+			delete(m.tasks, keys[i])
+		}
+	}()
+
+	for _, task := range tasks {
+		task.result = catch.Return(*new(V), ErrTaskEjected)
+		task.wg.Done()
+	}
+	return keys
 }
 
 func (m *Map[K, V]) getTasks(enqueue enqueueFunc[K], keys ...K) []*task[V] {

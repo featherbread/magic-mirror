@@ -1,10 +1,12 @@
 package parka_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"net/http"
 	"reflect"
 	"runtime"
 	"strings"
@@ -27,6 +29,38 @@ func ExampleMap() {
 	mods, _ := m.Collect(0, 1, 2, 3, 4, 5)
 	fmt.Println(mods)
 	// Output: [0 1 2 0 1 2]
+}
+
+func ExampleMap_context() {
+	// Create a context as usual.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	codes := parka.NewMap(func(_ *parka.Handle, url string) (int, error) {
+		// Use the context from the surrounding scope in the handler.
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
+		if err != nil {
+			return 0, nil
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return 0, nil
+		}
+		resp.Body.Close()
+		return resp.StatusCode, nil
+	})
+
+	// If Collect bails early on error, dequeue pending work before canceling the
+	// context (later in defer order). The map avoids starting new handlers that
+	// would fail anyways, while the context cancels the in-flight handlers.
+	// Note: this strategy does not wait for in-flight handlers to finish.
+	defer codes.DequeueAll()
+
+	codes.Collect(
+		"https://www.example.com/",
+		"https://www.example.net/",
+		// ...
+	)
 }
 
 func ExampleMap_inform() {
@@ -754,5 +788,89 @@ func TestMapLimitDecrease(t *testing.T) {
 				return
 			}
 		}
+	})
+}
+
+func TestMapDequeueAllBasic(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			keyCount    = 10
+			workerCount = 3
+		)
+		var (
+			unblock = make(chan struct{})
+			handled = make(chan int, keyCount)
+		)
+		s := parka.NewSet(func(_ *parka.Handle, x int) error {
+			handled <- x
+			<-unblock
+			return nil
+		})
+
+		// Start up some blocked handlers.
+		s.Limit(workerCount)
+		keys := makeIntKeys(keyCount)
+		errCh := make(chan error)
+		go func() { errCh <- s.Collect(keys...) }()
+		synctest.Wait()
+		assert.Len(t, handled, workerCount)
+		select {
+		case <-errCh:
+			assert.Fail(t, "Computation of keys was not blocked")
+		default:
+		}
+
+		// Remove the unhandled keys from the queue.
+		dequeued := s.DequeueAll()
+		assert.Equal(t, keys[workerCount:], dequeued)
+
+		// Unblock everything and make sure we only handled the first keys.
+		close(unblock)
+		assert.ErrorIs(t, <-errCh, parka.ErrTaskEjected)
+		assert.Len(t, handled, workerCount)
+
+		// Ensure we can resubmit the removed keys and have them handled.
+		assert.NoError(t, s.Collect(dequeued...))
+		assert.Len(t, handled, keyCount)
+	})
+}
+
+func TestMapDequeueAllTorture(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			keyCount    = 100
+			workerCount = 3
+		)
+		var (
+			handled   atomic.Int32
+			handleErr error
+		)
+		m := parka.NewMap(func(_ *parka.Handle, x int) (float64, error) {
+			defer handled.Add(1)
+			return math.Exp(float64(x)), handleErr
+		})
+		m.Limit(workerCount)
+
+		// Dequeue and reinform in a tight loop. This isn't _guaranteed_ to overlap
+		// with handler execution, but nearly always does (especially with -race).
+		var cycled int
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for handled.Load() < keyCount {
+				cycled++
+				m.Inform(m.DequeueAll()...)
+			}
+		}()
+		keys := makeIntKeys(keyCount)
+		m.Inform(keys...)
+		<-done
+
+		handleErr = errors.New("handling should fail for unseen keys")
+		got, err := m.Collect(keys...)
+		assert.NoError(t, err)
+		assert.Len(t, got, len(keys))
+
+		t.Logf("Cycled queue %d time(s)", cycled)
 	})
 }
