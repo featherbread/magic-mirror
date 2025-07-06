@@ -111,6 +111,24 @@ func NewMap[K comparable, V any](handle func(*Handle, K) (V, error)) *Map[K, V] 
 	}
 }
 
+// Stats is returned by [Map.Stats].
+type Stats struct {
+	// Handled is the count of keys whose results are computed and cached.
+	Handled uint64
+	// Total is the count of all pending and handled keys in the map.
+	Total uint64
+}
+
+// Stats returns statistics for a map's handler executions.
+func (m *Map[K, V]) Stats() Stats {
+	var stats Stats
+	stats.Handled = m.tasksHandled.Load()
+	m.tasksMu.RLock()
+	stats.Total = uint64(len(m.tasks))
+	m.tasksMu.RUnlock()
+	return stats
+}
+
 // Inform advises the map of keys that it should ensure are handled and cached
 // as soon as possible.
 //
@@ -203,24 +221,6 @@ func (m *Map[K, V]) Limit(limit int) {
 	for range transfers {
 		m.reattach.SendGrant()
 	}
-}
-
-// Stats conveys information about the keys and results in a [Map].
-type Stats struct {
-	// Handled is the count of keys whose results are computed and cached.
-	Handled uint64
-	// Total is the count of all pending and handled keys in the map.
-	Total uint64
-}
-
-// Stats returns the [Stats] for a [Map] as of the time of the call.
-func (m *Map[K, V]) Stats() Stats {
-	var stats Stats
-	stats.Handled = m.tasksHandled.Load()
-	m.tasksMu.RLock()
-	stats.Total = uint64(len(m.tasks))
-	m.tasksMu.RUnlock()
-	return stats
 }
 
 // DequeueAll removes and returns any queued keys that have not been picked up
