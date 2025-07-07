@@ -433,11 +433,9 @@ func (m *Map[K, V]) tryGetQueuedKey() (key K, ok bool) {
 		switch {
 		case m.state.grants > m.state.grantLimit:
 			// We are in violation of a decreased concurrency limit, and must retire
-			// the work grant even if work is pending.
+			// the work grant even if work is pending. Since grantLimit must be >= 1,
+			// this case will never need to close the emptied channel.
 			m.state.grants -= 1
-			if m.state.grants == 0 {
-				mustClose, m.state.emptied = m.state.emptied, nil
-			}
 
 		case m.state.reattachers > 0:
 			// We can transfer our work grant to a reattacher; see handleReattach for
