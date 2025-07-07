@@ -73,6 +73,10 @@ type workState[K comparable] struct {
 	grantLimit  int
 	reattachers int
 	keys        deque.Deque[K]
+
+	// emptied may be non-nil if there are outstanding work grants.
+	// If so, it must be closed as soon as all work grants are retired.
+	emptied chan struct{}
 }
 
 // reattachQueue defines the protocol by which a goroutine transfers its work
@@ -261,6 +265,30 @@ func (m *Map[K, V]) DequeueAll() []K {
 	return keys
 }
 
+// Wait blocks until the map has no handlers running within its concurrency
+// limit. Handlers that detach from the map and do not reattach before the
+// completion of all attached handlers may still be running after Wait returns.
+func (m *Map[K, V]) Wait() {
+	var done <-chan struct{}
+
+	func() {
+		m.stateMu.Lock()
+		defer m.stateMu.Unlock()
+
+		if m.state.grants == 0 {
+			return
+		}
+		if m.state.emptied == nil {
+			m.state.emptied = make(chan struct{})
+		}
+		done = m.state.emptied
+	}()
+
+	if done != nil {
+		<-done
+	}
+}
+
 func (m *Map[K, V]) getTasks(enqueue enqueueFunc[K], keys ...K) []*task[V] {
 	tasks, newKeys := m.getOrCreateTasks(keys)
 	m.scheduleNewKeys(enqueue, newKeys)
@@ -393,7 +421,10 @@ func (m *Map[K, V]) completeTask(key K, task *task[V]) (detached bool) {
 // work grant (returning ok == false) or returns a key (ok == true) whose work
 // the caller must execute.
 func (m *Map[K, V]) tryGetQueuedKey() (key K, ok bool) {
-	var mustSendGrant bool
+	var (
+		mustSendGrant bool
+		mustClose     chan struct{}
+	)
 
 	func() {
 		m.stateMu.Lock()
@@ -404,6 +435,9 @@ func (m *Map[K, V]) tryGetQueuedKey() (key K, ok bool) {
 			// We are in violation of a decreased concurrency limit, and must retire
 			// the work grant even if work is pending.
 			m.state.grants -= 1
+			if m.state.grants == 0 {
+				mustClose, m.state.emptied = m.state.emptied, nil
+			}
 
 		case m.state.reattachers > 0:
 			// We can transfer our work grant to a reattacher; see handleReattach for
@@ -415,6 +449,9 @@ func (m *Map[K, V]) tryGetQueuedKey() (key K, ok bool) {
 			// With no reattachers and no keys, we have no pending work and must
 			// retire the work grant.
 			m.state.grants -= 1
+			if m.state.grants == 0 {
+				mustClose, m.state.emptied = m.state.emptied, nil
+			}
 
 		default:
 			// We have pending work and must use the work grant to execute it.
@@ -425,6 +462,9 @@ func (m *Map[K, V]) tryGetQueuedKey() (key K, ok bool) {
 
 	if mustSendGrant {
 		m.reattach.SendGrant()
+	}
+	if mustClose != nil {
+		close(mustClose)
 	}
 	return
 }
