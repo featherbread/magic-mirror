@@ -1,3 +1,4 @@
+//go:debug panicnil=1
 package parka_test
 
 import (
@@ -196,6 +197,40 @@ func TestMapGoexit(t *testing.T) {
 		collectResult := catch.Do(func() (any, error) { return nil, s.Collect(1, 0, 2) })
 		assert.True(t, collectResult.Panicked(), "Collect() did not panic")
 		assert.ErrorIs(t, collectResult.Recovered().(error), parka.ErrHandlerGoexit)
+	})
+}
+
+// someNilValue is never assigned. It quiets lints for literal panic(nil) calls.
+var someNilValue any
+
+func TestMapPanicNil(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const keyCount = 10
+		var (
+			inflight  atomic.Int32
+			inflights = make(chan int, keyCount)
+		)
+		s := parka.NewSet(func(_ *parka.Handle, _ int) error {
+			inflights <- int(inflight.Add(1))
+			defer inflight.Add(-1)
+			panic(someNilValue)
+		})
+		s.Limit(1)
+
+		keys := makeIntKeys(keyCount)
+		s.Inform(keys...)
+		for _, key := range keys {
+			func() {
+				defer func() { recover() }() // This looks like Goexit, so Get panics.
+				s.Get(key)
+			}()
+		}
+
+		// Make sure that confusion between panic(nil) and runtime.Goexit didn't
+		// break concurrency limits.
+		close(inflights)
+		maxInFlight := maxOfChannel(inflights)
+		assert.Equal(t, 1, maxInFlight)
 	})
 }
 

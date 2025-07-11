@@ -3,6 +3,7 @@ package parka
 import (
 	"errors"
 	"math"
+	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -402,14 +403,15 @@ func (m *Map[K, V]) completeTask(key K, task *task[V]) (detached bool) {
 			// or in transferring any work grant we have.
 			workPanic(rv)
 		}
-		if !detached && !task.result.Returned() {
-			// We have a work grant and are (likely) Goexiting, so must transfer it.
-			// This could also be a panic(nil) if GODEBUG=panicnil=1, but the only
-			// harm is one extra goroutine stack in the forthcoming crash dump.
-			go m.work(nil)
-		}
 		m.tasksHandled.Add(1)
 		task.wg.Done()
+		if !detached && !task.result.Returned() {
+			// We have a work grant and are (likely) Goexiting, so must transfer it.
+			// This could also be a panic(nil) if GODEBUG=panicnil=1, in which case
+			// we'll turn it into a Goexit to keep our invariants in check.
+			go m.work(nil)
+			runtime.Goexit()
+		}
 	}()
 
 	task.result = catch.Goexit[V]()
