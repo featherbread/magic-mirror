@@ -94,12 +94,12 @@ func (rq reattachQueue) ReceiveGrant() { rq <- struct{}{} }
 
 // task represents a unit of pending or handled work for a single key.
 type task[V any] struct {
-	wg     sync.WaitGroup
+	done   chan struct{} // TODO: Consider sync.WaitGroup if synctest flakiness is fixed?
 	result catch.Result[V]
 }
 
 func (t *task[V]) Wait() (V, error) {
-	t.wg.Wait()
+	<-t.done
 	if !t.result.Returned() {
 		panic(ErrHandlerGoexit) // Must be Goexit, since wg isn't done when the handler panics.
 	}
@@ -261,7 +261,7 @@ func (m *Map[K, V]) DequeueAll() []K {
 
 	for _, task := range tasks {
 		task.result = catch.Return(*new(V), ErrTaskEjected)
-		task.wg.Done()
+		close(task.done)
 	}
 	return keys
 }
@@ -307,8 +307,7 @@ func (m *Map[K, V]) getOrCreateTasks(keys []K) (tasks []*task[V], newKeys []K) {
 			tasks[i] = task
 			continue
 		}
-		task := &task[V]{}
-		task.wg.Add(1)
+		task := &task[V]{done: make(chan struct{})}
 		m.tasks[key] = task
 		tasks[i] = task
 		newKeys = append(newKeys, key)
@@ -404,7 +403,7 @@ func (m *Map[K, V]) completeTask(key K, task *task[V]) (detached bool) {
 			workPanic(rv)
 		}
 		m.tasksHandled.Add(1)
-		task.wg.Done()
+		close(task.done)
 		if !detached && !task.result.Returned() {
 			// We have a work grant and are (likely) Goexiting, so must transfer it.
 			// This could also be a panic(nil) if GODEBUG=panicnil=1, in which case

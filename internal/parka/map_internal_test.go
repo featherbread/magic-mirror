@@ -52,7 +52,7 @@ func TestHandlerPanic(t *testing.T) {
 		}
 
 		for _, task := range s.tasks {
-			task.wg.Done()
+			close(task.done)
 		}
 	})
 }
