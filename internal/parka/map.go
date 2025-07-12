@@ -473,7 +473,7 @@ func (m *Map[K, V]) tryGetQueuedKey() (key K, ok bool) {
 			m.state.grants -= 1
 			if m.state.grants == 0 {
 				mustClose = m.state.emptied
-				m.state.emptied = nil
+				m.state.emptied = nil // TODO: Test waiting on a single map multiple times.
 			}
 
 		default:

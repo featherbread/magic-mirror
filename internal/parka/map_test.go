@@ -963,10 +963,26 @@ func TestMapWaitNonempty(t *testing.T) {
 	})
 }
 
-func TestMapCleanupEmpty(t *testing.T) {
+func TestMapCleanupWait(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		s := parka.NewSet(func(_ *parka.Handle, _ struct{}) error { return nil })
-		s.Cleanup(nil) // Should not panic or deadlock.
+		unblock := make(chan struct{})
+		s := parka.NewSet(func(_ *parka.Handle, _ struct{}) error {
+			<-unblock
+			return nil
+		})
+
+		s.Inform(struct{}{})
+
+		done := make(chan struct{})
+		go func() { s.Cleanup(nil); close(done) }()
+		synctest.Wait()
+		select {
+		case <-done:
+			assert.Fail(t, "Cleanup was not blocked")
+		default:
+		}
+
+		close(unblock)
 	})
 }
 
