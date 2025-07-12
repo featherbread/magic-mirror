@@ -33,35 +33,46 @@ func ExampleMap() {
 }
 
 func ExampleMap_context() {
-	// Create a context as usual.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	const (
+		concurrency = 3
+		timeout     = 10 * time.Second
+	)
 
+	// Create a parent context to support canceling in-flight handlers.
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Use that context in a map's handler, making child contexts as needed.
 	codes := parka.NewMap(func(_ *parka.Handle, url string) (int, error) {
-		// Use the context from the surrounding scope in the handler.
-		req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
-		if err != nil {
-			return 0, nil
-		}
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return 0, nil
-		}
-		resp.Body.Close()
-		return resp.StatusCode, nil
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		return headResponseCode(ctx, url)
 	})
 
-	// If Collect bails early on error, dequeue pending work before canceling the
-	// context (later in defer order). The map avoids starting new handlers that
-	// would fail anyways, while the context cancels the in-flight handlers.
-	// Note: this strategy does not wait for in-flight handlers to finish.
-	defer codes.DequeueAll()
+	// If Collect returns early on error, use Cleanup to dequeue pending work,
+	// cancel the context, and wait for in-flight handlers.
+	defer codes.Cleanup(cancel)
 
+	codes.Limit(concurrency)
 	codes.Collect(
 		"https://www.example.com/",
 		"https://www.example.net/",
 		// ...
 	)
+}
+
+func headResponseCode(ctx context.Context, url string) (code int, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+
+	resp.Body.Close()
+	return resp.StatusCode, nil
 }
 
 func ExampleMap_inform() {
@@ -949,5 +960,43 @@ func TestMapWaitNonempty(t *testing.T) {
 		for _, done := range dones {
 			<-done
 		}
+	})
+}
+
+func TestMapCleanupEmpty(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := parka.NewSet(func(_ *parka.Handle, _ struct{}) error { return nil })
+		s.Cleanup(nil) // Should not panic or deadlock.
+	})
+}
+
+func TestMapCleanup(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			keyCount     = 5
+			lastToHandle = 2
+		)
+		var (
+			maxHandled  = -1
+			ctx, cancel = context.WithCancel(context.Background())
+		)
+		s := parka.NewSet(func(_ *parka.Handle, x int) error {
+			maxHandled = max(maxHandled, x)
+			if x < lastToHandle {
+				return nil
+			}
+			<-ctx.Done()
+			return ctx.Err()
+		})
+		s.Limit(1)
+
+		keys := makeIntKeys(keyCount)
+		errCh := make(chan error, 1)
+		go func() { errCh <- s.Collect(keys...) }()
+		synctest.Wait()
+
+		s.Cleanup(cancel)
+		assert.Equal(t, lastToHandle, maxHandled, "Started handlers that should have been dequeued")
+		assert.ErrorIs(t, <-errCh, context.Canceled)
 	})
 }

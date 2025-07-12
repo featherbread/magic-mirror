@@ -236,6 +236,20 @@ func (m *Map[K, V]) Limit(limit int) {
 	}
 }
 
+// Cleanup terminates a map's work by dequeueing pending keys, calling an
+// optional cancel function, and waiting for handlers to finish.
+//
+// To terminate a map's work when returning early, it is recommended to defer
+// a Cleanup call with the cancel function for a [context.Context] in the
+// handler's scope. See the Context example in [Map] for details.
+func (m *Map[K, V]) Cleanup(cancel func()) {
+	m.DequeueAll()
+	if cancel != nil {
+		cancel()
+	}
+	m.Wait()
+}
+
 // DequeueAll removes and returns any queued keys that have not been picked up
 // for handling. Any retrieval of the keys' corresponding results started before
 // DequeueAll returns the zero value of V and [ErrTaskEjected]. Any retrieval
