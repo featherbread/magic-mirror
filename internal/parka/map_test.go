@@ -216,7 +216,7 @@ var someNilValue any
 
 func TestMapPanicNil(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		const keyCount = 10
+		const keyCount = 1000
 		var (
 			inflight  atomic.Int32
 			inflights = make(chan int, keyCount)
