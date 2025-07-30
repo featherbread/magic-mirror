@@ -1,8 +1,8 @@
 package copy
 
 import (
-	"github.com/ahamlinman/magic-mirror/internal/image"
-	"github.com/ahamlinman/magic-mirror/internal/log"
+	"github.com/featherbread/magic-mirror/internal/image"
+	"github.com/featherbread/magic-mirror/internal/log"
 )
 
 // blobIndexer discovers the existence of blobs in a repository using manifest

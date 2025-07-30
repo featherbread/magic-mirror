@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
+	"github.com/featherbread/magic-mirror/internal/parka/catch"
 )
 
 // TestWorkPanic asserts that our mockable panic() wrapper really does panic.

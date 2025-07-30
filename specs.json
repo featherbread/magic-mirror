@@ -1,5 +1,5 @@
 {
-  "src": "ghcr.io/ahamlinman/hypcast:latest",
+  "src": "ghcr.io/featherbread/hypcast:latest",
   "dst": "localhost:5000/imported/hypcast:latest"
 }
 
@@ -15,7 +15,7 @@
 ]
 
 {
-  "src": "ghcr.io/ahamlinman/hypcast:latest",
+  "src": "ghcr.io/featherbread/hypcast:latest",
   "dst": "localhost:5000/alsoimported/hypcast:latest",
   "transform": {
     "limitPlatforms": ["linux/amd64"]

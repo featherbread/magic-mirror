@@ -10,7 +10,7 @@ import (
 
 	"github.com/gammazero/deque"
 
-	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
+	"github.com/featherbread/magic-mirror/internal/parka/catch"
 )
 
 // ErrHandlerGoexit is panicked when retrieving a [Map] result for which the

@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ahamlinman/magic-mirror/internal/image"
-	"github.com/ahamlinman/magic-mirror/internal/image/registry"
-	"github.com/ahamlinman/magic-mirror/internal/log"
-	"github.com/ahamlinman/magic-mirror/internal/parka"
+	"github.com/featherbread/magic-mirror/internal/image"
+	"github.com/featherbread/magic-mirror/internal/image/registry"
+	"github.com/featherbread/magic-mirror/internal/log"
+	"github.com/featherbread/magic-mirror/internal/parka"
 )
 
 func uploadManifest(img image.Image, manifest image.ManifestKind) error {

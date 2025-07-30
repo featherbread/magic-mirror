@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"github.com/ahamlinman/magic-mirror/internal/image/copy"
-	"github.com/ahamlinman/magic-mirror/internal/log"
+	"github.com/featherbread/magic-mirror/internal/image/copy"
+	"github.com/featherbread/magic-mirror/internal/log"
 )
 
 var (

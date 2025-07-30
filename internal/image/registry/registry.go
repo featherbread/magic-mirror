@@ -10,7 +10,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
-	"github.com/ahamlinman/magic-mirror/internal/image"
+	"github.com/featherbread/magic-mirror/internal/image"
 )
 
 // Error is the type of the structured error that [Client.DoExpecting] returns

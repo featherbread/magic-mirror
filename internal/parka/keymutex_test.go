@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/ahamlinman/magic-mirror/internal/parka"
-	"github.com/ahamlinman/magic-mirror/internal/parka/catch"
+	"github.com/featherbread/magic-mirror/internal/parka"
+	"github.com/featherbread/magic-mirror/internal/parka/catch"
 )
 
 func TestKeyMutexZeroUnlock(t *testing.T) {

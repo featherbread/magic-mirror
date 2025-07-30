@@ -1,4 +1,4 @@
-module github.com/ahamlinman/magic-mirror
+module github.com/featherbread/magic-mirror
 
 go 1.25rc2
 
