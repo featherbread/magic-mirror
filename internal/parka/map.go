@@ -109,7 +109,7 @@ func (g *gate) Unlock() { close(*g) }
 func (t *task[V]) Wait() (V, error) {
 	t.gate.Wait()
 	if !t.result.Returned() {
-		panic(ErrHandlerGoexit) // Must be Goexit, since wg isn't done when the handler panics.
+		panic(ErrHandlerGoexit) // Must be Goexit, since the gate remains locked on panic.
 	}
 	return t.result.Unwrap()
 }
@@ -449,7 +449,6 @@ func (m *Map[K, V]) tryGetQueuedKey() (key K, ok bool) {
 		mustSendGrant bool
 		mustClose     chan struct{}
 	)
-
 	func() {
 		m.stateMu.Lock()
 		defer m.stateMu.Unlock()
