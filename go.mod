@@ -1,6 +1,6 @@
 module github.com/featherbread/magic-mirror
 
-go 1.25rc3
+go 1.25.0
 
 require (
 	github.com/containerd/platforms v0.2.1
